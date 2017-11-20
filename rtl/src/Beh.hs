@@ -68,9 +68,11 @@ executeNormally = do
       pc <- use msPC
 
       -- Bit 12: R -> PC
-      msPC .= if rpc
-                then r
-                else pc + 1
+      let pc' = if rpc
+                  then r
+                  else pc + 1
+
+      msPC .= pc'
 
       -- Bit 7: T -> N
       let dop = if tn
@@ -88,7 +90,7 @@ executeNormally = do
 
       let mread = if mt
                     then Just t
-                    else Just (pc + 1)
+                    else Just pc'
 
       msLoadFlag .= mt
 

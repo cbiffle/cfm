@@ -62,15 +62,20 @@ genspec sf = do
       go s v ^. _2 . msT == v
 
   context "universal instruction properties" $ do
-    let go s x = sf s (IS x u u)
+    let go s x d r = sf s (IS x d r)
         u = errorX "must not be used in this test"
 
     it "addresses R using new RPtr" $ property $ \x (Fetch s) ->
-      let (o, s') = go s x
+      let (o, s') = go s x u u
       in o ^. osROp . _1 == s' ^. msRPtr
     it "addresses D using new DPtr" $ property $ \x (Fetch s) ->
-      let (o, s') = go s x
+      let (o, s') = go s x u u
       in o ^. osDOp . _1 == s' ^. msDPtr
+    it "always produces a load or fetch" $ property $ \x (Fetch s) d r ->
+      let (o, s') = go s x d r
+      in o ^. osMRead == Just (if s' ^. msLoadFlag
+                                 then s ^. msT
+                                 else s' ^. msPC)
 
   context "literal push" $ do
     let mklit :: BitVector 15 -> BitVector 16
@@ -176,7 +181,7 @@ genspec sf = do
           0 -> Nothing
           1 -> Just (s ^. msT)
 
-    it "I[6]: T <- R" $ property $ \(Fetch s) x d r ->
+    it "I[6]: R <- T" $ property $ \(Fetch s) x d r ->
       go s x d r ^. _1 . osROp . _2 ==
         case slice d6 d6 x of
           0 -> Nothing
@@ -190,10 +195,7 @@ genspec sf = do
 
     context "I[4]: begin load" $ do
       it "triggers read of [T]" $ property $ \(Fetch s) x d r ->
-        go s x d r ^. _1 . osMRead == Just
-          (case slice d4 d4 x of
-             0 -> s ^. msPC + 1
-             1 -> s ^. msT)
+        slice d4 d4 x == 1 ==> go s x d r ^. _1 . osMRead == Just (s ^. msT)
       it "sets load flag" $ property $ \(Fetch s) x d r ->
         go s x d r ^. _2 . msLoadFlag == (slice d4 d4 x /= 0)
 
