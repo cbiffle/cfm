@@ -1,29 +1,16 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE DataKinds #-}
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE BinaryLiterals #-}
 {-# LANGUAGE TypeApplications #-}
 module Str where
 
 import Clash.Prelude hiding (Word, cycle)
-import GHC.Generics
-
-import Control.Lens
-import Control.Monad.State
-import Control.Monad.Reader
 
 import Types
 
 cycle' :: MS -> IS -> (OS, MS)
-cycle' m = runReader (runStateT cycle m)
-
-cycle :: (MonadReader IS m, MonadState MS m) => m OS
-cycle = do
-  IS m n r <- ask
-  MS dptr rptr pc t lf <- get
+cycle' (MS dptr rptr pc t lf) (IS m n r) =
   let inst = unpack m
-
-  let dptr' = if lf
+      dptr' = if lf
                 then dptr
                 else dptr + signExtend (case inst of
                        Lit _ -> 1
@@ -74,19 +61,17 @@ cycle = do
               NotLit (Call _) -> Just (pc + 1)
               NotLit (ALU _ _ _ True _ _ _ _) -> Just t
               _ -> Nothing
-
-  unless lf $ do
-    msDPtr .= dptr'
-    msRPtr .= rptr'
-    msPC .= pc'
-  msLoadFlag .= lf'
-  msT .= t'
-
-  pure OS
-    { _osMWrite = if lf then Nothing else case inst of
-                    NotLit (ALU _ _ _ _ True _ _ _) -> Just (t, n)
-                    _ -> Nothing
-    , _osMRead = if lf' then t else pc'
-    , _osDOp = (dptr', dop)
-    , _osROp = (rptr', rop)
-    }
+  in ( OS { _osMWrite = if lf then Nothing else case inst of
+                          NotLit (ALU _ _ _ _ True _ _ _) -> Just (t, n)
+                          _ -> Nothing
+          , _osMRead = if lf' then t else pc'
+          , _osDOp = (dptr', dop)
+          , _osROp = (rptr', rop)
+          }
+      , MS { _msDPtr = if lf then dptr else dptr'
+           , _msRPtr = if lf then rptr else rptr'
+           , _msPC = if lf then pc else pc'
+           , _msLoadFlag = lf'
+           , _msT = t'
+           }
+      )
