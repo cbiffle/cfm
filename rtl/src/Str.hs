@@ -32,27 +32,30 @@ cycle' (MS dptr rptr pc t lf) (IS m n r) =
               NotLit (JumpZ tgt) | t == 0 -> zeroExtend tgt
               NotLit (ALU True _ _ _ _ _ _ _) -> r
               _ -> pc + 1
+      tmux = case inst of
+              NotLit (ALU _ x _ _ _ _ _ _) -> x
+              NotLit (JumpZ _) -> 1
+              _ -> 0
+      t'mux = case tmux of
+                0 -> t
+                1 -> n
+                2 -> t + n
+                3 -> t .&. n
+                4 -> t .|. n
+                5 -> t `xor` n
+                6 -> complement t
+                7 -> signExtend $ pack $ n == t
+                8 -> signExtend $ pack $ unpack @(Signed 16) n < unpack t
+                9 -> n `shiftR` fromIntegral t
+                10 -> t + 0xFFFF
+                11 -> r
+                12 -> errorX "RESERVED"
+                13 -> n `shiftL` fromIntegral t
+                14 -> zeroExtend dptr
+                15 -> signExtend $ pack $ n < t
       t' = if lf then m else case inst of
             Lit v -> zeroExtend v
-            NotLit (JumpZ _) -> n
-            NotLit (ALU _ tmux _ _ _ _ _ _) -> case tmux of
-              0 -> t
-              1 -> n
-              2 -> t + n
-              3 -> t .&. n
-              4 -> t .|. n
-              5 -> t `xor` n
-              6 -> complement t
-              7 -> signExtend $ pack $ n == t
-              8 -> signExtend $ pack $ unpack @(Signed 16) n < unpack t
-              9 -> n `shiftR` fromIntegral t
-              10 -> t - 1
-              11 -> r
-              12 -> errorX "RESERVED"
-              13 -> n `shiftL` fromIntegral t
-              14 -> zeroExtend dptr
-              15 -> signExtend $ pack $ n < t
-            _ -> t
+            _ -> t'mux
       dop = if lf then Nothing else case inst of
               Lit _ -> Just t
               NotLit (ALU _ _ True _ _ _ _ _) -> Just t
