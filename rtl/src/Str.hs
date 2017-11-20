@@ -66,7 +66,6 @@ cycle = do
               14 -> zeroExtend dptr
               15 -> signExtend $ pack $ n < t
             _ -> t
-      mread = if lf' then t else pc'
       dop = if lf then Nothing else case inst of
               Lit _ -> Just t
               NotLit (ALU _ _ True _ _ _ _ _) -> Just t
@@ -76,10 +75,6 @@ cycle = do
               NotLit (ALU _ _ _ True _ _ _ _) -> Just t
               _ -> Nothing
 
-      mwrite = if lf then Nothing else case inst of
-                NotLit (ALU _ _ _ _ True _ _ _) -> Just (t, n)
-                _ -> Nothing
-
   unless lf $ do
     msDPtr .= dptr'
     msRPtr .= rptr'
@@ -88,8 +83,10 @@ cycle = do
   msT .= t'
 
   pure OS
-    { _osMWrite = mwrite
-    , _osMRead = mread
+    { _osMWrite = if lf then Nothing else case inst of
+                    NotLit (ALU _ _ _ _ True _ _ _) -> Just (t, n)
+                    _ -> Nothing
+    , _osMRead = if lf' then t else pc'
     , _osDOp = (dptr', dop)
     , _osROp = (rptr', rop)
     }
