@@ -49,7 +49,7 @@ executeNormally = do
       z <- (== 0) <$> use msT   -- test current T value for zero
       msDPtr -= 1               -- pop data stack
       assign msT =<< view isDData -- "
-    
+
       pc' <- (+ 1) <$> use msPC
       msPC .= if z then zeroExtend tgt else pc'
       fetch
