@@ -76,9 +76,11 @@ executeNormally = do
   inst <- view isMData
   if msb inst == 1
     then do -- Literal.
+      t <- use msT
+      msT .= zeroExtend (slice d14 d0 inst) -- load literal
       msDPtr += 1 -- push data stack
       next
-        <&> osDOp . _2 .~ Just (zeroExtend $ slice d14 d0 inst) -- write literal
+        <&> osDOp . _2 .~ Just t -- flush old T value
 
     else case slice d14 d13 inst of
       0b00 -> do -- Jump.
@@ -132,8 +134,28 @@ executeNormally = do
 
         msLoadFlag .= (slice d4 d4 inst /= 0)
 
+        depth <- use msDPtr
+
         msDPtr += signExtend (slice d1 d0 inst)
         msRPtr += signExtend (slice d3 d2 inst)
+
+        msT .= case slice d11 d8 inst of
+          0 -> t
+          1 -> n
+          2 -> t + n
+          3 -> t .&. n
+          4 -> t .|. n
+          5 -> t `xor` n
+          6 -> complement t
+          7 -> signExtend $ pack $ n == t
+          8 -> signExtend $ pack $ unpack @(Signed 16) n < unpack t
+          9 -> n `shiftR` fromIntegral t
+          10 -> t - 1
+          11 -> r
+          12 -> errorX "RESERVED"
+          13 -> n `shiftL` fromIntegral t
+          14 -> zeroExtend depth
+          15 -> signExtend $ pack $ n < t
 
         outputs
           <&> osMRead .~ mread

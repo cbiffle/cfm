@@ -29,10 +29,17 @@ test-suite cfm-rtl-test
   hs-source-dirs:      test
   main-is:             Spec.hs
   build-depends:       base
+                     , ghc-typelits-extra
+                     , ghc-typelits-natnormalise
+                     , ghc-typelits-knownnat
                      , cfm-rtl
                      , clash-prelude
                      , hspec
                      , QuickCheck
+                     , lens
   ghc-options:         -threaded -rtsopts -with-rtsopts=-N
+                       -fplugin=GHC.TypeLits.Extra.Solver
+                       -fplugin=GHC.TypeLits.Normalise
+                       -fplugin=GHC.TypeLits.KnownNat.Solver
   default-language:    Haskell2010
   other-modules:       CFMSpec
