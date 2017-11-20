@@ -35,12 +35,12 @@ data MS = MS
 makeLenses ''MS
 
 -- At reset, pretend we're in the second phase of a load. The undefined initial
--- memory contents will overwrite T, and the PC will roll over to 0.
+-- memory contents will overwrite T and then we'll fetch 0.
 instance Default MS where
   def = MS
     { _msDPtr = 0
     , _msRPtr = 0
-    , _msPC = 0xFFFF
+    , _msPC = 0
     , _msT = 0
     , _msLoadFlag = True
     }

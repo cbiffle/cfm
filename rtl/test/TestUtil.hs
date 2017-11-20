@@ -44,8 +44,8 @@ genspec sf = do
     it "doesn't write Memory" $ property $ test isNothing (_1 . osMWrite)
     it "doesn't write Return" $ property $ test isNothing (_1 . osROp . _2)
     it "doesn't write Data" $ property $ test isNothing (_1 . osDOp . _2)
-    it "fetches next" $ property $ \(Load s) ->
-      go s u ^. _1 . osMRead == Just (s ^. msPC + 1)
+    it "fetches current" $ property $ \(Load s) ->
+      go s u ^. _1 . osMRead == Just (s ^. msPC)
     it "addresses D" $ property $ \(Load s) ->
       go s u ^. _1 . osDOp . _1 == s ^. msDPtr
     it "addresses R" $ property $ \(Load s) ->
@@ -56,7 +56,7 @@ genspec sf = do
     it "clears load flag" $ property $ stdelta (const False) msLoadFlag
     it "preserves DPtr" $ property $ stdelta id msDPtr
     it "preserves RPtr" $ property $ stdelta id msRPtr
-    it "advances PC" $ property $ stdelta (+1) msPC
+    it "preserves PC" $ property $ stdelta id msPC
 
     it "loads T" $ property $ \(Load s) v ->
       go s v ^. _2 . msT == v

@@ -28,11 +28,11 @@ finishLoad :: (MonadState MS m, MonadReader IS m) => m OS
 finishLoad = do
   assign msT =<< view isMData
   msLoadFlag .= False
-  next
+  fetch
 
 executeNormally :: (MonadState MS m, MonadReader IS m) => m OS
 executeNormally = do
-  inst <- unpack <$> view isMData
+  inst <- views isMData unpack
   case inst of
     Lit v -> do
       t <- use msT
