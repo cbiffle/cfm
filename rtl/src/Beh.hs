@@ -89,8 +89,8 @@ executeNormally = do
                      else Nothing
 
       let mread = if mt
-                    then Just t
-                    else Just pc'
+                    then t
+                    else pc'
 
       msLoadFlag .= mt
 
@@ -132,10 +132,10 @@ fetch :: (MonadState MS m) => m OS
 fetch = do
   pc <- use msPC
   outputs
-    <&> osMRead .~ Just (pc ++# 0)
+    <&> osMRead .~ pc ++# 0
 
 outputs :: (MonadState MS m) => m OS
 outputs = do
   dsp <- use msDPtr
   rsp <- use msRPtr
-  pure $ OS Nothing Nothing (dsp, Nothing) (rsp, Nothing)
+  pure $ OS Nothing 0 (dsp, Nothing) (rsp, Nothing)

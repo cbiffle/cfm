@@ -47,7 +47,7 @@ instance Default MS where
 
 data OS = OS
   { _osMWrite :: Maybe (Addr, Word)
-  , _osMRead :: Maybe Addr
+  , _osMRead :: Addr
   , _osDOp :: (SP, Maybe Word)
   , _osROp :: (SP, Maybe Word)
   } deriving (Show, Generic, ShowX)

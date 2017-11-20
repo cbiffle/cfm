@@ -32,7 +32,7 @@ genspec sf = do
     it "does not write" $ property $
       isNothing $ sf def inputs ^. _1 . osMWrite
     it "fetches first instruction" $ property $
-      sf def inputs ^. _1 . osMRead == Just 0
+      sf def inputs ^. _1 . osMRead == 0
     it "starts out stack at 0" $ property $
       sf def inputs ^. _1 . osDOp == (0, Nothing)
     it "starts out return stack at 0" $ property $
@@ -46,7 +46,7 @@ genspec sf = do
     it "doesn't write Return" $ property $ test isNothing (_1 . osROp . _2)
     it "doesn't write Data" $ property $ test isNothing (_1 . osDOp . _2)
     it "fetches current" $ property $ \(Load s) ->
-      go s u ^. _1 . osMRead == Just (s ^. msPC)
+      go s u ^. _1 . osMRead == s ^. msPC
     it "addresses D" $ property $ \(Load s) ->
       go s u ^. _1 . osDOp . _1 == s ^. msDPtr
     it "addresses R" $ property $ \(Load s) ->
@@ -74,9 +74,9 @@ genspec sf = do
       in o ^. osDOp . _1 == s' ^. msDPtr
     it "always produces a load or fetch" $ property $ \x (Fetch s) d r ->
       let (o, s') = go s x d r
-      in o ^. osMRead == Just (if s' ^. msLoadFlag
-                                 then s ^. msT
-                                 else s' ^. msPC)
+      in o ^. osMRead == if s' ^. msLoadFlag
+                           then s ^. msT
+                           else s' ^. msPC
 
   context "literal push" $ do
     let mklit :: BitVector 15 -> BitVector 16
@@ -196,7 +196,7 @@ genspec sf = do
 
     context "I[4]: begin load" $ do
       it "triggers read of [T]" $ property $ \(Fetch s) x d r ->
-        slice d4 d4 x == 1 ==> go s x d r ^. _1 . osMRead == Just (s ^. msT)
+        slice d4 d4 x == 1 ==> go s x d r ^. _1 . osMRead == s ^. msT
       it "sets load flag" $ property $ \(Fetch s) x d r ->
         go s x d r ^. _2 . msLoadFlag == (slice d4 d4 x /= 0)
 
@@ -271,6 +271,6 @@ genspec sf = do
   instFetches mkinst = it "fetches" $ property $
     \(Fetch s) x ->
       let (o, s') = sf s (IS (mkinst x) u u)
-      in o ^. osMRead == Just (s' ^. msPC)
+      in o ^. osMRead == s' ^. msPC
       where u = errorX "must be unused"
  

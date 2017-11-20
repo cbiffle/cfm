@@ -66,7 +66,7 @@ cycle = do
               14 -> zeroExtend dptr
               15 -> signExtend $ pack $ n < t
             _ -> t
-      mread = Just $ if lf' then t else pc'
+      mread = if lf' then t else pc'
       dop = if lf then Nothing else case inst of
               Lit _ -> Just t
               NotLit (ALU _ _ True _ _ _ _ _) -> Just t
