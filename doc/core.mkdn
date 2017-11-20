@@ -5,24 +5,41 @@ The CFM core is a 16-bit dual-stack CPU patterned after James Bowman's J1 core.
 
 ## Architectural highlights
 
-- Memory, stacks, and PC are 16 bits wide.
+- Memory and stacks are 16 bits wide. Memory is, however, byte-addressed, and
+  the LSB of addresses is ignored.
+- Instructions are 16 bits long and aligned. The PC is 15 bits (LSB omitted) and
+  can address any word in the address space.
 - There are two stacks, data and return, for supporting Forth code.
 - Calls are single-cycle, returns can often be folded into a previous
   instruction.
 
 ## Compared to the J1
 
-Compared to the J1, the main deviation is that the CFM targets Lattice ICE40
-FPGAs. The ICE40 series uses 1R1W RAM, i.e. simple dual-ported RAM that can
-issue a single read and a single write independently per cycle. By contrast,
-the J1 targeted Xilinx's block RAMs, which are 1R1RW -- they can issue two
-reads. The J1 used this to ensure that a code fetch could always overlap with a
-memory operation; on ICE40 we have no such luxury.
+Compared to the J1 -- the original version from the paper -- the main deviation
+is that the CFM targets Lattice ICE40 FPGAs. The ICE40 series uses 1R1W RAM,
+i.e. simple dual-ported RAM that can issue a single read and a single write
+independently per cycle. By contrast, the J1 targeted Xilinx's block RAMs, which
+are 1R1RW -- they can issue two reads. The J1 used this to ensure that a code
+fetch could always overlap with a memory operation; on ICE40 we have no such
+luxury.
 
 As a result,
 
 - Bit 4 in the instruction has been repurposed to mean "begin load."
 - Loads now take two cycles.
+
+## Registers and data buses
+
+There are four visible internal registers:
+
+- `PC` (15 bits) holds the word address of the instruction being executed.
+- `T` (16 bits) holds the top word of the stack. The rest of the stack is in
+  data stack memory.
+- `DPtr` (8 bits) holds the data stack memory pointer.
+- `RPtr` (8 bits) holds the return stack memory pointer.
+
+The buses to the data and return stack memories are referred to as `N` and `R`,
+respectively.
 
 ## Instruction encoding and timing
 
@@ -54,7 +71,8 @@ result.
 
 Effect: `( -- )`
 
-`target` is zero-extended and loaded into the PC.
+`target` is zero-extended and loaded into the PC. Note that this means it's a
+*word address*, pointing into the lower 8 kiW / 16 kiB of the address space.
 
 ### Jump if Zero
 
@@ -68,6 +86,9 @@ Effect: `( f -- )`
 Pops a flag off the data stack. If it is zero, `target` is zero-extended and
 loaded into the PC. Otherwise, execution continues linearly.
 
+Note that `target` is a *word address*, pointing into the lower 8 kiW / 16 kiB
+of the address space.
+
 ### Call
 
     15   13 12                       0
@@ -79,7 +100,8 @@ Effect: `( -- )` `R: ( -- raddr )`
 
 Pushes the address of the next instruction onto the return stack.
 
-`target` is zero-extended and loaded into the PC.
+`target` is zero-extended and loaded into the PC.  Note that `target` is a *word
+address*, pointing into the lower 8 kiW / 16 kiB of the address space.
 
 ### ALU
 
@@ -93,17 +115,15 @@ information for the processor datapath.
 
 The single bit fields function as follows when *set*:
 
-`RP`: the top cell of the return stack is loaded into PC.
+`RP`: PC loaded from R.
 
-`TN`: the top cell of the data stack is copied into the second cell.
+`TN`: N loaded from T.
 
-`TR`: the top cell of the data stack is copied into the top cell of the return
-stack.
+`TR`: R loaded from T.
 
-`NM`: the second cell of the data stack is stored to memory at the address held
-in the top cell.
+`NM`: memory at address T loaded from N.
 
-`MT`: the memory cell addressed by T is loaded into T. **This takes an
+`MT`: begins a load from memory addressed by T into T. **This takes an
 additional cycle.**
 
 The `Tmux` field controls a multiplexer that chooses the next value for T.
@@ -148,3 +168,51 @@ has the effects
     DSTACK[dptr - 1] <= T
 
 or as a Forth stack comment: `( x n t -- t n )`.
+
+## Instruction set notes and tricks
+
+Here are some ALU-instruction encodings of common Forth words. Many of these are
+due to Bowman's J1 paper. Omitted fields are zero.
+
+    dup     ALU TN=1 Dadj=+1
+    over    ALU Tmux=1 TN=1 Dadj=+1
+    swap    ALU Tmux=1 TN=1
+    nip     ALU Dadj=-1
+    drop    ALU Tmux=1 Dadj=-1
+    depth   ALU Tmux=14 Dadj=+1
+
+    2nip    ALU Dadj=-2
+
+    >r      ALU Tmux=1 TR=1 Dadj=-1 Radj=+1
+    r>      ALU Tmux=11 TN=1 Dadj=+1 Radj=-1
+    r@      ALU Tmux=11 TN=1 Dadj=+1
+    exit    ALU RP=1 RAdj=-1
+
+    rdrop   ALU Radj=-1
+
+    +       ALU Tmux=2 Dadj=-1
+    and     ALU Tmux=3 Dadj=-1
+    or      ALU Tmux=4 Dadj=-1
+    xor     ALU Tmux=5 Dadj=-1
+    invert  ALU Tmux=6
+    =       ALU Tmux=7 Dadj=-1
+    <       ALU Tmux=8 Dadj=-1
+    rshift  ALU Tmux=9 Dadj=-1
+    1-      ALU Tmux=10
+    lshift  ALU Tmux=13 Dadj=-1
+    u<      ALU Tmux=15 Dadj=-1
+
+Forth's store-to-memory operator `!` requires two instructions on CFM (as with
+J1). This is because it needs to perform the write and drop *two* stack cells.
+An operator `(store)` that preserves the address can be defined as
+
+    ALU NM=1 Dadj=-1
+
+Follow this with `drop` to complete the Forth-style store.
+
+`exit` can be folded into previous ALU operations that don't otherwise use the
+return stack, by setting `RP=1` and `Radj=-1`.
+
+The fastest way to negate a number appears to cost two cycles:
+
+    1- invert

@@ -59,7 +59,7 @@ executeNormally = do
       msPC .= zeroExtend tgt
       msRPtr += 1  -- push return stack
       fetch
-        <&> osROp . _2 .~ Just pc'
+        <&> osROp . _2 .~ Just (pc' ++# 0)
 
     NotLit (ALU rpc t' tn tr nm mt rd dd) -> do
       n <- view isDData
@@ -69,7 +69,7 @@ executeNormally = do
 
       -- Bit 12: R -> PC
       let pc' = if rpc
-                  then r
+                  then slice d15 d1 r
                   else pc + 1
 
       msPC .= pc'
@@ -85,11 +85,11 @@ executeNormally = do
                   else Nothing
       -- Bit 5: N -> [T]
       let mwrite = if nm
-                     then Just (t, n)
+                     then Just (slice d15 d1 t, n)
                      else Nothing
 
       let mread = if mt
-                    then t
+                    then slice d15 d1 t
                     else pc'
 
       msLoadFlag .= mt

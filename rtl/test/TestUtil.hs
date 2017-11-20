@@ -75,7 +75,7 @@ genspec sf = do
     it "always produces a load or fetch" $ property $ \x (Fetch s) d r ->
       let (o, s') = go s x d r
       in o ^. osMRead == if s' ^. msLoadFlag
-                           then s ^. msT
+                           then s ^. msT & slice d15 d1
                            else s' ^. msPC
 
   context "literal push" $ do
@@ -136,7 +136,7 @@ genspec sf = do
 
     it "loads T from N" $ property $ \x (Fetch s) d ->
       go s x d ^. _2 . msT == d
-      
+
     it "jumps when T==0, otherwise proceeds" $ property $ \x (Fetch s) d ->
       go s x d ^. _2 . msPC == if s ^. msT == 0
                                  then zeroExtend x
@@ -159,8 +159,8 @@ genspec sf = do
         test p l = \x (Fetch s) -> p $ go s x ^. l
         stdelta f l = \x (Fetch s) -> (go s x ^. _2 . l) == f (s ^. l)
 
-    it "pushes return PC to R" $ property $ \x (Fetch s) ->
-      go s x ^. _1 . osROp . _2 == Just (s ^. msPC + 1)
+    it "pushes return PC to R as byte address" $ property $ \x (Fetch s) ->
+      go s x ^. _1 . osROp . _2 == Just ((s ^. msPC + 1) ++# 0)
 
     it "always jumps" $ property $ \x (Fetch s) ->
       go s x ^. _2 . msPC == zeroExtend x
@@ -174,7 +174,7 @@ genspec sf = do
       go s x d r ^. _2 . msPC ==
         case slice d12 d12 x of
           0 -> s ^. msPC + 1
-          1 -> r
+          1 -> slice d15 d1 r
 
     it "I[7]: N <- T" $ property $ \(Fetch s) x d r ->
       go s x d r ^. _1 . osDOp . _2 ==
@@ -192,11 +192,12 @@ genspec sf = do
       go s x d r ^. _1 . osMWrite ==
         case slice d5 d5 x of
           0 -> Nothing
-          1 -> Just (s ^. msT, d)
+          1 -> Just (slice d15 d1 (s ^. msT), d)
 
     context "I[4]: begin load" $ do
       it "triggers read of [T]" $ property $ \(Fetch s) x d r ->
-        slice d4 d4 x == 1 ==> go s x d r ^. _1 . osMRead == s ^. msT
+        slice d4 d4 x == 1 ==>
+          go s x d r ^. _1 . osMRead == slice d15 d1 (s ^. msT)
       it "sets load flag" $ property $ \(Fetch s) x d r ->
         go s x d r ^. _2 . msLoadFlag == (slice d4 d4 x /= 0)
 
@@ -206,7 +207,7 @@ genspec sf = do
       it "addresses R" $ property $ \(Fetch s) x d r ->
         go s x d r ^. _1 . osROp . _1 ==
           s ^. msRPtr + signExtend (slice d3 d2 x)
-    
+
     context "I[3:2]: DPtr adjust" $ do
       it "updates DPtr" $ property $ \(Fetch s) x d r ->
         go s x d r ^. _2 . msDPtr == s ^. msDPtr + signExtend (slice d1 d0 x)

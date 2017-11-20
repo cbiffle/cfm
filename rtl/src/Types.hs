@@ -15,7 +15,7 @@ import Control.Monad.State
 import Control.Monad.Reader
 
 type Word = BitVector 16
-type Addr = BitVector 16
+type WordAddr = BitVector 15
 type SP = BitVector 8
 
 data IS = IS
@@ -28,7 +28,7 @@ makeLenses ''IS
 data MS = MS
   { _msDPtr :: SP
   , _msRPtr :: SP
-  , _msPC :: Addr
+  , _msPC :: WordAddr
   , _msT :: Word
   , _msLoadFlag :: Bool
   } deriving (Show, Generic, ShowX)
@@ -46,8 +46,8 @@ instance Default MS where
     }
 
 data OS = OS
-  { _osMWrite :: Maybe (Addr, Word)
-  , _osMRead :: Addr
+  { _osMWrite :: Maybe (WordAddr, Word)
+  , _osMRead :: WordAddr
   , _osDOp :: (SP, Maybe Word)
   , _osROp :: (SP, Maybe Word)
   } deriving (Show, Generic, ShowX)
