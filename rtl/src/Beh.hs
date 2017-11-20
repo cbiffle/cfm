@@ -32,95 +32,94 @@ finishLoad = do
 
 executeNormally :: (MonadState MS m, MonadReader IS m) => m OS
 executeNormally = do
-  inst <- view isMData
-  if msb inst == 1
-    then do -- Literal.
+  inst <- unpack <$> view isMData
+  case inst of
+    Lit v -> do
       t <- use msT
-      msT .= zeroExtend (slice d14 d0 inst) -- load literal
+      msT .= zeroExtend v -- load literal
       msDPtr += 1 -- push data stack
       next
         <&> osDOp . _2 .~ Just t -- flush old T value
 
-    else case slice d14 d13 inst of
-      0b00 -> do -- Jump.
-        msPC .= zeroExtend (slice d12 d0 inst)
-        fetch
+    NotLit (Jump tgt) -> do
+      msPC .= zeroExtend tgt
+      fetch
 
-      0b01 -> do -- Conditional jump.
-        z <- (== 0) <$> use msT   -- test current T value for zero
-        msDPtr -= 1               -- pop data stack
-        assign msT =<< view isDData -- "
+    NotLit (JumpZ tgt) -> do
+      z <- (== 0) <$> use msT   -- test current T value for zero
+      msDPtr -= 1               -- pop data stack
+      assign msT =<< view isDData -- "
     
-        pc' <- (+ 1) <$> use msPC
-        msPC .= if z then zeroExtend $ slice d12 d0 inst else pc'
-        fetch
+      pc' <- (+ 1) <$> use msPC
+      msPC .= if z then zeroExtend tgt else pc'
+      fetch
 
-      0b10 -> do -- Call.
-        pc' <- (+ 1) <$> use msPC
-        msPC .= zeroExtend (slice d12 d0 inst)
-        msRPtr += 1  -- push return stack
-        fetch
-          <&> osROp . _2 .~ Just pc'
+    NotLit (Call tgt) -> do
+      pc' <- (+ 1) <$> use msPC
+      msPC .= zeroExtend tgt
+      msRPtr += 1  -- push return stack
+      fetch
+        <&> osROp . _2 .~ Just pc'
 
-      0b11 -> do -- ALU.
-        n <- view isDData
-        r <- view isRData
-        t <- use msT
-        pc <- use msPC
+    NotLit (ALU rpc t' tn tr nm mt rd dd) -> do
+      n <- view isDData
+      r <- view isRData
+      t <- use msT
+      pc <- use msPC
 
-        -- Bit 12: R -> PC
-        msPC .= if slice d12 d12 inst /= 0
-                  then r
-                  else pc + 1
+      -- Bit 12: R -> PC
+      msPC .= if rpc
+                then r
+                else pc + 1
 
-        -- Bit 7: T -> N
-        let dop = if slice d7 d7 inst /= 0
+      -- Bit 7: T -> N
+      let dop = if tn
+                  then Just t
+                  else Nothing
+
+      -- Bit 6: T -> R
+      let rop = if tr
+                  then Just t
+                  else Nothing
+      -- Bit 5: N -> [T]
+      let mwrite = if nm
+                     then Just (t, n)
+                     else Nothing
+
+      let mread = if mt
                     then Just t
-                    else Nothing
+                    else Just (pc + 1)
 
-        -- Bit 6: T -> R
-        let rop = if slice d6 d6 inst /= 0
-                    then Just t
-                    else Nothing
-        -- Bit 5: N -> [T]
-        let mwrite = if slice d5 d5 inst /= 0
-                       then Just (t, n)
-                       else Nothing
+      msLoadFlag .= mt
 
-        let mread = if slice d4 d4 inst /= 0
-                      then Just t
-                      else Just (pc + 1)
+      depth <- use msDPtr
 
-        msLoadFlag .= (slice d4 d4 inst /= 0)
+      msDPtr += signExtend dd
+      msRPtr += signExtend rd
 
-        depth <- use msDPtr
+      msT .= case t' of
+        0 -> t
+        1 -> n
+        2 -> t + n
+        3 -> t .&. n
+        4 -> t .|. n
+        5 -> t `xor` n
+        6 -> complement t
+        7 -> signExtend $ pack $ n == t
+        8 -> signExtend $ pack $ unpack @(Signed 16) n < unpack t
+        9 -> n `shiftR` fromIntegral t
+        10 -> t - 1
+        11 -> r
+        12 -> errorX "RESERVED"
+        13 -> n `shiftL` fromIntegral t
+        14 -> zeroExtend depth
+        15 -> signExtend $ pack $ n < t
 
-        msDPtr += signExtend (slice d1 d0 inst)
-        msRPtr += signExtend (slice d3 d2 inst)
-
-        msT .= case slice d11 d8 inst of
-          0 -> t
-          1 -> n
-          2 -> t + n
-          3 -> t .&. n
-          4 -> t .|. n
-          5 -> t `xor` n
-          6 -> complement t
-          7 -> signExtend $ pack $ n == t
-          8 -> signExtend $ pack $ unpack @(Signed 16) n < unpack t
-          9 -> n `shiftR` fromIntegral t
-          10 -> t - 1
-          11 -> r
-          12 -> errorX "RESERVED"
-          13 -> n `shiftL` fromIntegral t
-          14 -> zeroExtend depth
-          15 -> signExtend $ pack $ n < t
-
-        outputs
-          <&> osMRead .~ mread
-          <&> osDOp . _2 .~ dop
-          <&> osROp . _2 .~ rop
-          <&> osMWrite .~ mwrite
+      outputs
+        <&> osMRead .~ mread
+        <&> osDOp . _2 .~ dop
+        <&> osROp . _2 .~ rop
+        <&> osMWrite .~ mwrite
 
 next :: (MonadState MS m) => m OS
 next = do
