@@ -3,7 +3,7 @@
 {-# LANGUAGE BinaryLiterals #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
-module CFMSpec where
+module BehSpec where
 
 import Clash.Prelude
 import Test.Hspec
@@ -11,7 +11,7 @@ import Test.QuickCheck hiding ((.&.))
 import Control.Lens
 import Data.Maybe (isNothing)
 
-import CFM
+import Beh
 
 newtype Fetch = Fetch MS deriving (Show)
 

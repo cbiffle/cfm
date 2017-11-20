@@ -13,7 +13,7 @@ cabal-version:       >=1.10
 library
   hs-source-dirs:      src
   exposed-modules:     Lib
-                       CFM
+                       Beh
   build-depends:       base >= 4.7 && < 5
                      , ghc-typelits-extra
                      , ghc-typelits-natnormalise
@@ -42,4 +42,4 @@ test-suite cfm-rtl-test
                        -fplugin=GHC.TypeLits.Normalise
                        -fplugin=GHC.TypeLits.KnownNat.Solver
   default-language:    Haskell2010
-  other-modules:       CFMSpec
+  other-modules:       BehSpec

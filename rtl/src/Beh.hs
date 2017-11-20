@@ -6,7 +6,7 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DeriveAnyClass #-}
-module CFM where
+module Beh where
 
 import Clash.Prelude hiding (Word, cycle)
 import GHC.Generics
