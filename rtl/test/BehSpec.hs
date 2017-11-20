@@ -12,18 +12,8 @@ import Control.Lens
 import Data.Maybe (isNothing)
 
 import Beh
-
-newtype Fetch = Fetch MS deriving (Show)
-
-instance Arbitrary Fetch where
-  arbitrary = Fetch <$> (MS <$> arbitrary <*> arbitrary <*> arbitrary
-                            <*> arbitrary <*> pure False)
-
-newtype Load = Load MS deriving (Show)
-
-instance Arbitrary Load where
-  arbitrary = Load <$> (MS <$> arbitrary <*> arbitrary <*> arbitrary
-                           <*> arbitrary <*> pure True)
+import Types
+import TestUtil
 
 spec = do
   context "reset" $ do
@@ -60,6 +50,7 @@ spec = do
 
     it "loads T" $ property $ \(Load s) v ->
       go s v ^. _2 . msT == v
+
   context "universal instruction properties" $ do
     let go s x = cycle' s (IS x u u)
         u = errorX "must not be used in this test"
