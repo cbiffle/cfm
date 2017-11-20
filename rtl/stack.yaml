@@ -1,0 +1,27 @@
+resolver: nightly-2017-08-15
+
+packages:
+- '.'
+- location:
+    git: https://github.com/clash-lang/clash-compiler.git
+    commit: 1877cc0ef906b2eb37ff00e233d005bf5b41136e
+  subdirs:
+  - clash-lib
+  - clash-ghc
+  extra-dep: true
+- location:
+    git: https://github.com/clash-lang/clash-prelude.git
+    commit: 487906e1ab9f6c65945865ee9246d4d9df0debb4
+  extra-dep: true
+
+extra-deps:
+- ghc-tcplugins-extra-0.2.1
+- ghc-typelits-extra-0.2.3
+- ghc-typelits-knownnat-0.3
+- ghc-typelits-natnormalise-0.5.3
+- uu-parsinglib-2.9.1.1
+- uu-interleaved-0.2.0.0
+
+flags: {}
+
+extra-package-dbs: []

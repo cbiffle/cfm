@@ -1,0 +1,78 @@
+Clash Forth Machine
+===================
+
+Taking a break from my RISC-V work to do something simple and fun.
+
+This is a Forth-inspired processor targeting the Lattice ICE40 FPGA series. As a
+result of the FPGA choice, we have some interesting limitations.
+
+1. Block RAM is 256 x 16 bits and pseudo-dual-ported (1R1W with independent
+   addresses).
+2. No hard DSP blocks of any sort, but efficient carry chain hardware.
+3. Not a lot of room.
+
+Hooray, constraints to inspire!
+
+
+First sketch
+------------
+
+16-bit machine. Byte-addressed memory without unaligned access support.
+
+Dedicated stack RAMs: one for data, one for return. This gives 256-deep stacks,
+which is waaaaay plenty.
+
+There are three separate address spaces: data-stack, return-stack, and memory.
+Code is executed from memory. Stack addresses are not normally manipulated, but
+could be if it proves useful.
+
+As the RAMs are single-ported, we'll probably want to keep TOS in a register.
+This allows us, in a single cycle, to read and write the top two data stack
+cells (and optionally read/write the top return stack cell).
+
+Hm. I'm pretty sure that, despite the lack of legit dual-ported RAMs, I could
+implement James Bowman's J1 architecture, or something like it. Let's check.
+
+    Literal.
+      DWDATA := instruction[15:0]
+      DPUSH := 1
+      PC := PC+2
+
+    Call.
+      RWDATA := PC+2
+      RPUSH := 1
+      PC := instruction[12:0]
+
+    Jump.
+      PC := instruction[12:0]
+
+    Conditional jump.
+      PC := TZ ? instruction[12:0] : PC+2
+      DPOP := 1
+
+Ahhh, I see. Bowman was exploiting Xilinx's dual-ported RAMs to do parallel data
+and instruction fetches (fetching `[T]` every cycle). That's clever. If I wanted
+to do that I'd need to go harvard-architecture, and harvard-architecture seems
+really frustrating for a Forth machine!
+
+So, loads will take an additional cycle. A possible realization of this: setting
+a load-desired flop that would override the instruction fetch on the next cycle
+before clearing itself.
+
+There is, actually, a bit free in the J1 instruction encoding that I could
+repurpose to do exactly this. Its semantics could be
+
+    When clear:
+      - memory address is PC
+      - data load flop reset
+    When set:
+      - memory address is T
+      - data load flop set
+
+    When data load flop set:
+      - memory address is PC (to begin next fetch)
+      - memory output goes to T
+    When data load flop clear:
+      - instruction executes
+
+
