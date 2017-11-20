@@ -1,0 +1,10 @@
+#!/bin/sh
+
+GHCFLAGS="-XDataKinds -XTypeFamilies -XTypeOperators -XBinaryLiterals \
+         -XMagicHash -XConstraintKinds -XExplicitNamespaces -XKindSignatures \
+         -XScopedTypeVariables -XNoImplicitPrelude -XFlexibleContexts \
+         -XPolyKinds -XGADTs -XMultiParamTypeClasses -XFlexibleInstances \
+         -XRankNTypes -XViewPatterns -XFunctionalDependencies -XDeriveGeneric \
+         -XDeriveFunctor -XDeriveAnyClass"
+
+stack exec clash -- ${GHCFLAGS} $*
