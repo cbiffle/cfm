@@ -19,33 +19,24 @@ cycle' m = runReader (runStateT cycle m)
 
 cycle :: (MonadReader IS m, MonadState MS m) => m OS
 cycle = do
-  m <- view isMData
+  IS m n r <- ask
+  MS dptr rptr pc t lf <- get
   let inst = unpack m
-  lf <- use msLoadFlag
-  r <- view isRData
-  n <- view isDData
 
-  dptr <- use msDPtr
-  rptr <- use msRPtr
-  t <- use msT
-  pc <- use msPC
-
-  let dadj = if lf then 0 else case inst of
-        Lit _ -> 1
-        NotLit (ALU _ _ _ _ _ _ _ d) -> d
-        NotLit (JumpZ _) -> -1
-        _ -> 0
-
-  let radj = if lf then 0 else case inst of
-        NotLit (Call _) -> 1
-        NotLit (ALU _ _ _ _ _ _ d _) -> d
-        _ -> 0
-
-  let pc1 = pc + 1
-
-  let dptr' = dptr + signExtend dadj
-      rptr' = rptr + signExtend radj
-      lf' = if lf then False else case inst of
+  let dptr' = if lf
+                then dptr
+                else dptr + signExtend (case inst of
+                       Lit _ -> 1
+                       NotLit (ALU _ _ _ _ _ _ _ d) -> d
+                       NotLit (JumpZ _) -> -1
+                       _ -> 0)
+      rptr' = if lf
+                then rptr
+                else rptr + signExtend (case inst of
+                       NotLit (Call _) -> 1
+                       NotLit (ALU _ _ _ _ _ _ d _) -> d
+                       _ -> 0)
+      lf' = not lf && case inst of
               NotLit (ALU _ _ _ _ _ mt _ _) -> mt
               _ -> False
       pc' = if lf then pc else case inst of
@@ -53,7 +44,7 @@ cycle = do
               NotLit (Call tgt) -> zeroExtend tgt
               NotLit (JumpZ tgt) | t == 0 -> zeroExtend tgt
               NotLit (ALU True _ _ _ _ _ _ _) -> r
-              _ -> pc1
+              _ -> pc + 1
       t' = if lf then m else case inst of
             Lit v -> zeroExtend v
             NotLit (JumpZ _) -> n
@@ -75,14 +66,13 @@ cycle = do
               14 -> zeroExtend dptr
               15 -> signExtend $ pack $ n < t
             _ -> t
-
       mread = Just $ if lf' then t else pc'
       dop = if lf then Nothing else case inst of
               Lit _ -> Just t
               NotLit (ALU _ _ True _ _ _ _ _) -> Just t
               _ -> Nothing
       rop = if lf then Nothing else case inst of
-              NotLit (Call _) -> Just pc1
+              NotLit (Call _) -> Just (pc + 1)
               NotLit (ALU _ _ _ True _ _ _ _) -> Just t
               _ -> Nothing
 
@@ -90,10 +80,11 @@ cycle = do
                 NotLit (ALU _ _ _ _ True _ _ _) -> Just (t, n)
                 _ -> Nothing
 
-  msDPtr .= dptr'
-  msRPtr .= rptr'
+  unless lf $ do
+    msDPtr .= dptr'
+    msRPtr .= rptr'
+    msPC .= pc'
   msLoadFlag .= lf'
-  msPC .= pc'
   msT .= t'
 
   pure OS

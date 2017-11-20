@@ -27,7 +27,8 @@ instance Arbitrary Load where
 
 genspec sf = do
   context "reset" $ do
-    let inputs = errorX "inputs undefined at reset"
+    let u = errorX "inputs undefined at reset"
+        inputs = IS u u u
     it "does not write" $ property $
       isNothing $ sf def inputs ^. _1 . osMWrite
     it "fetches first instruction" $ property $
