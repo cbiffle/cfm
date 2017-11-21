@@ -3,10 +3,11 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE BinaryLiterals #-}
 module CFMTop where
 
 import Clash.Prelude hiding (Word)
-import Control.Lens
+import Control.Lens hiding ((:>))
 import Data.Tuple (swap)
 import Str
 import Types
@@ -42,7 +43,7 @@ system raminit ioin = ioout
     repackStack (_, Nothing) = Nothing
     repackStack (a, Just v) = Just (unpack a, v)
 
-    addrIO = bread <&> (> 16383)
+    addrIO = bread <&> slice d14 d14 <&> (/= 0)
     readWasIO = register False addrIO
 
     packRW _ (Just (a, v)) = (pack a, Just v)
@@ -51,4 +52,13 @@ system raminit ioin = ioout
     ioout = mux addrIO (Just <$> (packRW <$> bread <*> bwrite)) (pure Nothing)
 
 topEntity c r = withClockReset @System @Source @Asynchronous c r $
-  system (repeat @256 0)
+  system program
+
+program :: Vec 256 Word
+program =
+  -- This test program will gradually fill all of data stack memory with
+  -- patterns read from I/O address 0x8000.
+  0xFFFF :>               -- push literal address complement
+  0b0110011000000000 :>   -- invert it
+  0b0110000000010000 :>   -- load from it
+  repeat 0                -- repeat
