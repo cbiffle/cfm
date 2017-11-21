@@ -228,7 +228,7 @@ genspec sf = do
       it "N < T"  $ t'n  8 $
         \t n -> pack $ repeat $ unpack @(Signed 16) n < unpack t
       it "N >> T" $ t'n  9 $ \t n -> n `shiftR` fromIntegral t
-      it "T - 1"  $ t'  10 $ \s _ _ -> s ^. msT - 1
+      it "N - T"  $ t'n 10 $ flip (-)
       it "R"      $ t'  11 $ \_ _ r -> r
 
       context "[T]" $ do
@@ -239,7 +239,7 @@ genspec sf = do
 
       it "N << T" $ t'n 13 $ \t n -> n `shiftL` fromIntegral t
       it "depth"  $ t'  14 $ \s _ _ -> zeroExtend (s ^. msDPtr)
-      it "N < T"  $ t'n 15 $ \t n -> pack $ repeat $ n < t
+      it "N U< T"  $ t'n 15 $ \t n -> pack $ repeat $ n < t
 
   where
   instDoesNotWriteM mkinst = it "does not write memory" $ property $

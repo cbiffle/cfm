@@ -110,7 +110,7 @@ executeNormally = do
         7 -> signExtend $ pack $ n == t
         8 -> signExtend $ pack $ unpack @(Signed 16) n < unpack t
         9 -> n `shiftR` fromIntegral t
-        10 -> t - 1
+        10 -> n - t
         11 -> r
         12 -> errorX "value will be loaded next cycle"
         13 -> n `shiftL` fromIntegral t
