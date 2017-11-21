@@ -11,6 +11,7 @@ module Types where
 import Clash.Prelude hiding (Word, cycle)
 import GHC.Generics
 
+import Control.DeepSeq (NFData)
 import Control.Lens hiding ((:>))
 import Control.Monad.State
 import Control.Monad.Reader
@@ -23,7 +24,7 @@ data IS = IS
   { _isMData :: Word
   , _isDData :: Word
   , _isRData :: Word
-  } deriving (Show)
+  } deriving (Show, Generic, ShowX, NFData)
 makeLenses ''IS
 
 data MS = MS
@@ -32,7 +33,7 @@ data MS = MS
   , _msPC :: WordAddr
   , _msT :: Word
   , _msLoadFlag :: Bool
-  } deriving (Show, Generic, ShowX)
+  } deriving (Show, Generic, ShowX, NFData)
 makeLenses ''MS
 
 -- At reset, pretend we're in the second phase of a load. The undefined initial
@@ -51,7 +52,7 @@ data OS = OS
   , _osMRead :: WordAddr
   , _osDOp :: (SP, Maybe Word)
   , _osROp :: (SP, Maybe Word)
-  } deriving (Show, Generic, ShowX)
+  } deriving (Show, Generic, ShowX, NFData)
 makeLenses ''OS
 
 
