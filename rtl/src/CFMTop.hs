@@ -8,7 +8,9 @@ module CFMTop where
 
 import Clash.Prelude hiding (Word)
 import Control.Lens hiding ((:>))
+import Control.Monad (join)
 import Data.Tuple (swap)
+import Data.Maybe (fromMaybe)
 import Str
 import Types
 
@@ -36,29 +38,35 @@ system raminit ioin = ioout
     rread = coreOuts <&> (^. osROp . _1) <&> unpack
     rwrite = coreOuts <&> (^. osROp) <&> repackStack
 
-    mout = blockRamPow2 raminit mread (mux addrIO (pure Nothing) mwrite)
+    mout = blockRamPow2 raminit mread (mux writeIO (pure Nothing) mwrite)
     dout = blockRamPow2 (repeat 0) dread dwrite
     rout = blockRamPow2 (repeat 0) rread rwrite
 
     repackStack (_, Nothing) = Nothing
     repackStack (a, Just v) = Just (unpack a, v)
 
-    addrIO = bread <&> slice d14 d14 <&> (/= 0)
-    readWasIO = register False addrIO
+    writeIO = bwrite <&> maybe False ((/= 0) . slice d14 d14 . fst)
+    readIO = bread <&> slice d14 d14 <&> (/= 0)
+    readWasIO = register False readIO
 
     packRW _ (Just (a, v)) = (pack a, Just v)
     packRW a Nothing = (pack a, Nothing)
 
-    ioout = mux addrIO (Just <$> (packRW <$> bread <*> bwrite)) (pure Nothing)
+    ioout = mux ((.|.) <$> readIO <*> writeIO)
+                (Just <$> (packRW <$> bread <*> bwrite))
+                (pure Nothing)
 
 topEntity c r = withClockReset @System @Source @Asynchronous c r $
-  system program
+  system program (pure 0)
+    <&> fmap snd
+    <&> join
+    <&> fromMaybe 0
 
 program :: Vec 256 Word
 program =
-  -- This test program will gradually fill all of data stack memory with
-  -- patterns read from I/O address 0x8000.
+  0xD555 :>               -- push constant
   0xFFFF :>               -- push literal address complement
   0b0110011000000000 :>   -- invert it
-  0b0110110000000000 :>   -- load from it
+  0b0110000000100011 :>   -- store to it
+  0b0110000100000011 :>   -- drop address
   repeat 0                -- repeat
