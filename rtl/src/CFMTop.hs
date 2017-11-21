@@ -60,5 +60,5 @@ program =
   -- patterns read from I/O address 0x8000.
   0xFFFF :>               -- push literal address complement
   0b0110011000000000 :>   -- invert it
-  0b0110000000010000 :>   -- load from it
+  0b0110110000000000 :>   -- load from it
   repeat 0                -- repeat

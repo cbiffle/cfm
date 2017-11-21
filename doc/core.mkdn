@@ -19,14 +19,12 @@ Compared to the J1 -- the original version from the paper -- the main deviation
 is that the CFM targets Lattice ICE40 FPGAs. The ICE40 series uses 1R1W RAM,
 i.e. simple dual-ported RAM that can issue a single read and a single write
 independently per cycle. By contrast, the J1 targeted Xilinx's block RAMs, which
-are 1R1RW -- they can issue two reads. The J1 used this to ensure that a code
-fetch could always overlap with a memory operation; on ICE40 we have no such
-luxury.
+are 2RW -- they can issue two reads or writes per cycle. The J1 used this to
+ensure that a code fetch could always overlap with a memory operation; on ICE40
+we have no such luxury.
 
-As a result,
-
-- Bit 4 in the instruction has been repurposed to mean "begin load."
-- Loads now take two cycles.
+As a result, loads (ALU instructions with `Tmux` set to memory) now take two
+cycles.
 
 ## Registers and data buses
 
@@ -107,7 +105,7 @@ address*, pointing into the lower 8 kiW / 16 kiB of the address space.
 
     15   13                          0
     +------+--+--------+--+--+--+--+----+----+
-    |0 1 1 |RP| Tmux   |TN|TR|NM|MT|Radj|Dadj|
+    |0 1 1 |RP| Tmux   |TN|TR|NM|  |Radj|Dadj|
     +------+--+--------+--+--+--+--+----+----+
 
 The everything-else instruction. This instruction carries unencoded control
@@ -123,9 +121,6 @@ The single bit fields function as follows when *set*:
 
 `NM`: memory at address T loaded from N.
 
-`MT`: begins a load from memory addressed by T into T. **This takes an
-additional cycle.**
-
 The `Tmux` field controls a multiplexer that chooses the next value for T.
     0 -> t
     1 -> n
@@ -139,7 +134,7 @@ The `Tmux` field controls a multiplexer that chooses the next value for T.
     9 -> n `shiftR` fromIntegral t
     10 -> t - 1
     11 -> r
-    -- 12 currently reserved
+    12 -> memoryAt (t `shiftR` 1)
     13 -> n `shiftL` fromIntegral t
     14 -> zeroExtend depth
     15 -> signExtend $ pack $ n < t
@@ -148,8 +143,9 @@ Notes on those options:
 
 - Comparison results generate a full-word bitmask, in keeping with Forth
   tradition, rather than setting only bit 0 like MIPS.
-- One option (12) was read-from-memory on J1, which isn't so simple in CFM and
-  is thus reserved.
+- Loading from memory (option 12) triggers a state machine that processes the
+  load on the next cycle, so the instruction takes two cycles when this option
+  is selected.
 - `depth` (option 14) yields the current data stack pointer when the instruction
   began executing.
 
@@ -201,6 +197,8 @@ due to Bowman's J1 paper. Omitted fields are zero.
     1-      ALU Tmux=10
     lshift  ALU Tmux=13 Dadj=-1
     u<      ALU Tmux=15 Dadj=-1
+
+    @       ALU Tmux=12
 
 Forth's store-to-memory operator `!` requires two instructions on CFM (as with
 J1). This is because it needs to perform the write and drop *two* stack cells.

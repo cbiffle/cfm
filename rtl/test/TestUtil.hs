@@ -194,13 +194,6 @@ genspec sf = do
           0 -> Nothing
           1 -> Just (slice d15 d1 (s ^. msT), d)
 
-    context "I[4]: begin load" $ do
-      it "triggers read of [T]" $ property $ \(Fetch s) x d r ->
-        slice d4 d4 x == 1 ==>
-          go s x d r ^. _1 . osMRead == slice d15 d1 (s ^. msT)
-      it "sets load flag" $ property $ \(Fetch s) x d r ->
-        go s x d r ^. _2 . msLoadFlag == (slice d4 d4 x /= 0)
-
     context "I[3:2]: RPtr adjust" $ do
       it "updates RPtr" $ property $ \(Fetch s) x d r ->
         go s x d r ^. _2 . msRPtr == s ^. msRPtr + signExtend (slice d3 d2 x)
@@ -237,7 +230,13 @@ genspec sf = do
       it "N >> T" $ t'n  9 $ \t n -> n `shiftR` fromIntegral t
       it "T - 1"  $ t'  10 $ \s _ _ -> s ^. msT - 1
       it "R"      $ t'  11 $ \_ _ r -> r
-      -- 12 reserved
+
+      context "[T]" $ do
+        it "triggers read of [T]" $ property $ \(Fetch s) x d r ->
+          go' 12 s x d r ^. _1 . osMRead == slice d15 d1 (s ^. msT)
+        it "sets load flag" $ property $ \(Fetch s) x d r ->
+          go' 12 s x d r ^. _2 . msLoadFlag == True
+
       it "N << T" $ t'n 13 $ \t n -> n `shiftL` fromIntegral t
       it "depth"  $ t'  14 $ \s _ _ -> zeroExtend (s ^. msDPtr)
       it "N < T"  $ t'n 15 $ \t n -> pack $ repeat $ n < t

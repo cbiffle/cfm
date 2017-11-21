@@ -26,6 +26,9 @@ library
                      , lens
                      , mtl
   default-language:    Haskell2010
+  ghc-options:         -fplugin=GHC.TypeLits.Extra.Solver
+                       -fplugin=GHC.TypeLits.Normalise
+                       -fplugin=GHC.TypeLits.KnownNat.Solver
 
 test-suite cfm-rtl-test
   type:                exitcode-stdio-1.0

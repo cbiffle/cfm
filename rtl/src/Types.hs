@@ -5,6 +5,7 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 module Types where
 
 import Clash.Prelude hiding (Word, cycle)
@@ -70,7 +71,7 @@ instance BitPack Inst where
 data FlowOrAluInst = Jump (BitVector 13)
                    | JumpZ (BitVector 13)
                    | Call (BitVector 13)
-                   | ALU Bool (BitVector 4) Bool Bool Bool Bool
+                   | ALU Bool (BitVector 4) Bool Bool Bool
                          (BitVector 2) (BitVector 2)
                    deriving (Show)
 
@@ -80,15 +81,15 @@ instance BitPack FlowOrAluInst where
   pack (Jump v) = 0b00 ++# v
   pack (JumpZ v) = 0b01 ++# v
   pack (Call v) = 0b10 ++# v
-  pack (ALU rpc t' tn tr nm mt rd dd) = 0b11 ++#
-                                        pack (rpc, t', tn, tr, nm, mt, rd, dd)
+  pack (ALU rpc t' tn tr nm rd dd) = 0b11 ++#
+                                     pack (rpc, t', tn, tr, nm, low, rd, dd)
 
   unpack v = case slice d14 d13 v of
     0b00 -> Jump tgt
     0b01 -> JumpZ tgt
     0b10 -> Call tgt
-    0b11 -> ALU rpc t' tn tr nm mt rd dd
+    0b11 -> ALU rpc t' tn tr nm rd dd
     where
       tgt = slice d12 d0 v
-      (rpc, t', tn, tr, nm, mt, rd, dd) = unpack tgt
+      (rpc, t', tn, tr, nm, (_ :: Bit), rd, dd) = unpack tgt
 

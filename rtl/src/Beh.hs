@@ -61,7 +61,7 @@ executeNormally = do
       fetch
         <&> osROp . _2 .~ Just (pc' ++# 0)
 
-    NotLit (ALU rpc t' tn tr nm mt rd dd) -> do
+    NotLit (ALU rpc t' tn tr nm rd dd) -> do
       n <- view isDData
       r <- view isRData
       t <- use msT
@@ -88,11 +88,11 @@ executeNormally = do
                      then Just (slice d15 d1 t, n)
                      else Nothing
 
-      let mread = if mt
+      let mread = if t' == 12
                     then slice d15 d1 t
                     else pc'
 
-      msLoadFlag .= mt
+      msLoadFlag .= (t' == 12)
 
       depth <- use msDPtr
 
@@ -112,7 +112,7 @@ executeNormally = do
         9 -> n `shiftR` fromIntegral t
         10 -> t - 1
         11 -> r
-        12 -> errorX "RESERVED"
+        12 -> errorX "value will be loaded next cycle"
         13 -> n `shiftL` fromIntegral t
         14 -> zeroExtend depth
         15 -> signExtend $ pack $ n < t
