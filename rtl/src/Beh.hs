@@ -5,8 +5,7 @@
 {-# LANGUAGE TypeApplications #-}
 module Beh where
 
-import Clash.Prelude hiding (Word, cycle)
-import GHC.Generics
+import Clash.Prelude hiding (Word, cycle, v)
 
 import Control.Lens
 import Control.Monad.State
@@ -115,7 +114,7 @@ executeNormally = do
         12 -> errorX "value will be loaded next cycle"
         13 -> n `shiftL` fromIntegral t
         14 -> zeroExtend depth
-        15 -> signExtend $ pack $ n < t
+        _  -> signExtend $ pack $ n < t
 
       outputs
         <&> osMRead .~ mread

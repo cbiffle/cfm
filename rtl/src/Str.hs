@@ -3,7 +3,7 @@
 {-# LANGUAGE TypeApplications #-}
 module Str where
 
-import Clash.Prelude hiding (Word, cycle)
+import Clash.Prelude hiding (Word, cycle, v)
 
 import Types
 
@@ -54,7 +54,7 @@ cycle' (MS dptr rptr pc t lf) (IS m n r) =
                 12 -> errorX "value will be loaded next cycle"
                 13 -> n `shiftL` fromIntegral t
                 14 -> zeroExtend dptr
-                15 -> signExtend lessThan
+                _  -> signExtend lessThan
       dop = if lf then Nothing else case inst of
               Lit _ -> Just t
               NotLit (ALU _ _ True _ _ _ _) -> Just t

@@ -8,13 +8,11 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 module Types where
 
-import Clash.Prelude hiding (Word, cycle)
+import Clash.Prelude hiding (Word, cycle, v)
 import GHC.Generics
 
 import Control.DeepSeq (NFData)
 import Control.Lens hiding ((:>))
-import Control.Monad.State
-import Control.Monad.Reader
 
 type Word = BitVector 16
 type WordAddr = BitVector 15
@@ -66,8 +64,9 @@ instance BitPack Inst where
   pack (NotLit i) = 0 ++# pack i
   pack (Lit v) = 1 ++# v
 
-  unpack v | msb v == 0 = NotLit $ unpack $ slice d14 d0 v
-           | msb v == 1 = Lit $ slice d14 d0 v
+  unpack v = case msb v of
+    0 -> NotLit $ unpack $ slice d14 d0 v
+    _ -> Lit $ slice d14 d0 v
 
 data FlowOrAluInst = Jump (BitVector 13)
                    | JumpZ (BitVector 13)
@@ -89,7 +88,7 @@ instance BitPack FlowOrAluInst where
     0b00 -> Jump tgt
     0b01 -> JumpZ tgt
     0b10 -> Call tgt
-    0b11 -> ALU rpc t' tn tr nm rd dd
+    _    -> ALU rpc t' tn tr nm rd dd
     where
       tgt = slice d12 d0 v
       (rpc, t', tn, tr, nm, _ :: Bit, rd, dd) = unpack tgt

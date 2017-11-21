@@ -6,7 +6,7 @@
 {-# LANGUAGE BinaryLiterals #-}
 module CFMTop where
 
-import Clash.Prelude hiding (Word)
+import Clash.Prelude hiding (Word, v, readIO)
 import Control.Lens hiding ((:>))
 import Control.Monad (join)
 import Data.Tuple (swap)
@@ -56,7 +56,10 @@ system raminit ioin = ioout
                 (Just <$> (packRW <$> bread <*> bwrite))
                 (pure Nothing)
 
-topEntity c r = withClockReset @System @Source @Asynchronous c r $
+topEntity :: Clock System 'Source
+          -> Reset System 'Asynchronous
+          -> Signal System Word
+topEntity c r = withClockReset @System @'Source @'Asynchronous c r $
   register 0 $
   system program (pure 0)
     <&> fmap snd
