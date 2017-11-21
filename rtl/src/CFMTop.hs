@@ -66,7 +66,7 @@ topEntity c r = withClockReset @System @'Source @'Asynchronous c r $
     <&> join
     <&> fromMaybe 0
 
-program :: Vec 256 Word
+program :: Vec 16 Word
 program =
   0xD555 :>               -- push constant
   0xFFFF :>               -- push literal address complement
