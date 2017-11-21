@@ -92,5 +92,5 @@ instance BitPack FlowOrAluInst where
     0b11 -> ALU rpc t' tn tr nm rd dd
     where
       tgt = slice d12 d0 v
-      (rpc, t', tn, tr, nm, (_ :: Bit), rd, dd) = unpack tgt
+      (rpc, t', tn, tr, nm, _ :: Bit, rd, dd) = unpack tgt
 
