@@ -10,23 +10,22 @@ import Types
 cycle' :: MS -> IS -> (OS, MS)
 cycle' (MS dptr rptr pc t lf) (IS m n r) =
   let inst = unpack m
-      dptr' = if lf
-                then dptr
-                else dptr + signExtend (case inst of
-                       Lit _ -> 1
-                       NotLit (ALU _ _ _ _ _ _ d) -> d
-                       NotLit (JumpZ _) -> -1
-                       _ -> 0)
-      rptr' = if lf
-                then rptr
-                else rptr + signExtend (case inst of
-                       NotLit (Call _) -> 1
-                       NotLit (ALU _ _ _ _ _ d _) -> d
-                       _ -> 0)
+      dptr' | lf = dptr
+            | otherwise = dptr + signExtend (case inst of
+                Lit _ -> 1
+                NotLit (ALU _ _ _ _ _ _ d) -> d
+                NotLit (JumpZ _) -> -1
+                _ -> 0)
+      rptr' | lf = rptr
+            | otherwise = rptr + signExtend (case inst of
+                NotLit (Call _) -> 1
+                NotLit (ALU _ _ _ _ _ d _) -> d
+                _ -> 0)
       lf' = not lf && case inst of
               NotLit (ALU _ 12 _ _ _ _ _) -> True
               _ -> False
-      pc' = if lf then pc else case inst of
+      pc' | lf = pc
+          | otherwise = case inst of
               NotLit (Jump tgt) -> zeroExtend tgt
               NotLit (Call tgt) -> zeroExtend tgt
               NotLit (JumpZ tgt) | t == 0 -> zeroExtend tgt
@@ -56,9 +55,6 @@ cycle' (MS dptr rptr pc t lf) (IS m n r) =
                 13 -> n `shiftL` fromIntegral t
                 14 -> zeroExtend dptr
                 15 -> signExtend lessThan
-      t' = if lf then m else case inst of
-            Lit v -> zeroExtend v
-            _ -> t'mux
       dop = if lf then Nothing else case inst of
               Lit _ -> Just t
               NotLit (ALU _ _ True _ _ _ _) -> Just t
@@ -75,10 +71,12 @@ cycle' (MS dptr rptr pc t lf) (IS m n r) =
           , _osDOp = (dptr', dop)
           , _osROp = (rptr', rop)
           }
-      , MS { _msDPtr = if lf then dptr else dptr'
-           , _msRPtr = if lf then rptr else rptr'
-           , _msPC = if lf then pc else pc'
+      , MS { _msDPtr = dptr'
+           , _msRPtr = rptr'
+           , _msPC = pc'
            , _msLoadFlag = lf'
-           , _msT = t'
+           , _msT = if lf then m else case inst of
+                      Lit v -> zeroExtend v
+                      _ -> t'mux
            }
       )
