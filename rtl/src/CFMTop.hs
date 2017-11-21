@@ -57,6 +57,7 @@ system raminit ioin = ioout
                 (pure Nothing)
 
 topEntity c r = withClockReset @System @Source @Asynchronous c r $
+  register 0 $
   system program (pure 0)
     <&> fmap snd
     <&> join

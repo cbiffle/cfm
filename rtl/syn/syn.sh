@@ -18,9 +18,7 @@ rm -rf "${OUT}"/verilog/CFMTop/*outputVerifier*v
 
 
 yosys -p "read_verilog ${OUT}/verilog/CFMTop/*.v" \
-      -p "synth_ice40 -top CFMTop_topEntity -abc2 -run begin:blif"
-
-exit 0
+      -p "synth_ice40 -top CFMTop_topEntity -abc2 -blif ${OUT}/syn.blif"
 
 arachne-pnr -d 8k -P ct256 -p "${SYN}/syn.pcf" "${OUT}/syn.blif" \
             -o "${OUT}/syn.asc"
