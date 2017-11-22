@@ -1,0 +1,11 @@
+set_io c 21
+set_io r 3
+
+set_io result[0] 99
+set_io result[1] 98
+set_io result[2] 97
+set_io result[3] 96
+set_io result[4] 95
+
+set_io --warn-no-port RX 9
+set_io --warn-no-port TX 8
