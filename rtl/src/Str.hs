@@ -10,17 +10,17 @@ import Types
 cycle' :: MS -> IS -> (OS, MS)
 cycle' (MS dptr rptr pc t lf) (IS m n r) =
   let inst = unpack m
-      dptr' | lf = dptr
-            | otherwise = dptr + signExtend (case inst of
-                Lit _ -> 1
-                NotLit (ALU _ _ _ _ _ _ d) -> d
-                NotLit (JumpZ _) -> -1
-                _ -> 0)
-      rptr' | lf = rptr
-            | otherwise = rptr + signExtend (case inst of
-                NotLit (Call _) -> 1
-                NotLit (ALU _ _ _ _ _ d _) -> d
-                _ -> 0)
+      stack ptr ~(d, wr) | lf = (ptr, Nothing)
+                         | otherwise = (ptr + signExtend d, wr)
+      (dptr', dop) = stack dptr $ case inst of
+            Lit _ -> (1, Just t)
+            NotLit (ALU _ _ tn _ _ _ d) -> (d, if tn then Just t else Nothing)
+            NotLit (JumpZ _) -> (-1, Nothing)
+            _ -> (0, Nothing)
+      (rptr', rop) = stack rptr $ case inst of
+            NotLit (Call _) -> (1, Just ((pc + 1) ++# 0))
+            NotLit (ALU _ _ _ tr _ d _) -> (d, if tr then Just t else Nothing)
+            _ -> (0, Nothing)
       lf' = not lf && case inst of
               NotLit (ALU _ 12 _ _ _ _ _) -> True
               _ -> False
@@ -55,14 +55,6 @@ cycle' (MS dptr rptr pc t lf) (IS m n r) =
                 13 -> n `shiftL` fromIntegral t
                 14 -> zeroExtend dptr
                 _  -> signExtend lessThan
-      dop = if lf then Nothing else case inst of
-              Lit _ -> Just t
-              NotLit (ALU _ _ True _ _ _ _) -> Just t
-              _ -> Nothing
-      rop = if lf then Nothing else case inst of
-              NotLit (Call _) -> Just ((pc + 1) ++# 0)
-              NotLit (ALU _ _ _ True _ _ _) -> Just t
-              _ -> Nothing
   in ( OS { _osMWrite =
               if lf then Nothing else case inst of
                 NotLit (ALU _ _ _ _ True _ _) -> Just (slice d15 d1 t, n)
