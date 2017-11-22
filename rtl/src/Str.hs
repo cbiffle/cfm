@@ -14,9 +14,11 @@ cycle' (MS dptr rptr pc t lf) (IS m n r) =
               NotLit (ALU _ x _ _ _ _ _) -> x
               NotLit (JumpZ _) -> 1
               _ -> 0
+      duringLoadElse :: t -> t -> t
+      a `duringLoadElse` b = if lf then a else b
 
-      stack ptr ~(d, wr) | lf = (ptr, Nothing)
-                         | otherwise = (ptr + signExtend d, wr)
+      stack ptr ~(d, wr) = (ptr, Nothing) `duringLoadElse`
+                           (ptr + signExtend d, wr)
       (dptr', dop) = stack dptr $ case inst of
             Lit _ -> (1, Just t)
             NotLit (ALU _ _ tn _ _ _ d) -> (d, if tn then Just t else Nothing)
@@ -30,8 +32,7 @@ cycle' (MS dptr rptr pc t lf) (IS m n r) =
       lf' = not lf && case inst of
               NotLit (ALU _ 12 _ _ _ _ _) -> True
               _ -> False
-      pc' | lf = pc
-          | otherwise = case inst of
+      pc' = pc `duringLoadElse` case inst of
               NotLit (Jump tgt) -> zeroExtend tgt
               NotLit (Call tgt) -> zeroExtend tgt
               NotLit (JumpZ tgt) | t == 0 -> zeroExtend tgt
@@ -59,8 +60,7 @@ cycle' (MS dptr rptr pc t lf) (IS m n r) =
                 14 -> zeroExtend dptr
                 _  -> signExtend lessThan
 
-  in ( OS { _osMWrite =
-              if lf then Nothing else case inst of
+  in ( OS { _osMWrite = Nothing `duringLoadElse` case inst of
                 NotLit (ALU _ _ _ _ True _ _) -> Just (slice d15 d1 t, n)
                 _ -> Nothing
           , _osMRead = if lf' then slice d15 d1 t else pc'
@@ -71,7 +71,7 @@ cycle' (MS dptr rptr pc t lf) (IS m n r) =
            , _msRPtr = rptr'
            , _msPC = pc'
            , _msLoadFlag = lf'
-           , _msT = if lf then m else case inst of
+           , _msT = m `duringLoadElse` case inst of
                       Lit v -> zeroExtend v
                       _ -> t'mux
            }
