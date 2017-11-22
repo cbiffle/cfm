@@ -71,8 +71,7 @@ instance BitPack Inst where
 data FlowOrAluInst = Jump (BitVector 13)
                    | JumpZ (BitVector 13)
                    | Call (BitVector 13)
-                   | ALU Bool (BitVector 4) Bool Bool Bool
-                         (BitVector 2) (BitVector 2)
+                   | ALU Bool TMux Bool Bool Bool (BitVector 2) (BitVector 2)
                    deriving (Show)
 
 instance BitPack FlowOrAluInst where
@@ -93,3 +92,25 @@ instance BitPack FlowOrAluInst where
       tgt = slice d12 d0 v
       (rpc, t', tn, tr, nm, _ :: Bit, rd, dd) = unpack tgt
 
+data TMux = T
+          | N
+          | TPlusN
+          | TAndN
+          | TOrN
+          | TXorN
+          | NotT
+          | NEqT
+          | NLtT
+          | NRshiftT
+          | NMinusT
+          | R
+          | MemAtT
+          | NLshiftT
+          | Depth
+          | NULtT
+          deriving (Eq, Enum, Bounded, Show)
+
+instance BitPack TMux where
+  type BitSize TMux = 4
+  pack = fromIntegral . fromEnum
+  unpack = toEnum . fromIntegral

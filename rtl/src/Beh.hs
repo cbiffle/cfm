@@ -87,11 +87,11 @@ executeNormally = do
                      then Just (slice d15 d1 t, n)
                      else Nothing
 
-      let mread = if t' == 12
+      let mread = if t' == MemAtT
                     then slice d15 d1 t
                     else pc'
 
-      msLoadFlag .= (t' == 12)
+      msLoadFlag .= (t' == MemAtT)
 
       depth <- use msDPtr
 
@@ -99,22 +99,22 @@ executeNormally = do
       msRPtr += signExtend rd
 
       msT .= case t' of
-        0 -> t
-        1 -> n
-        2 -> t + n
-        3 -> t .&. n
-        4 -> t .|. n
-        5 -> t `xor` n
-        6 -> complement t
-        7 -> signExtend $ pack $ n == t
-        8 -> signExtend $ pack $ unpack @(Signed 16) n < unpack t
-        9 -> n `shiftR` fromIntegral t
-        10 -> n - t
-        11 -> r
-        12 -> errorX "value will be loaded next cycle"
-        13 -> n `shiftL` fromIntegral t
-        14 -> zeroExtend depth
-        _  -> signExtend $ pack $ n < t
+        T        -> t
+        N        -> n
+        TPlusN   -> t + n
+        TAndN    -> t .&. n
+        TOrN     -> t .|. n
+        TXorN    -> t `xor` n
+        NotT     -> complement t
+        NEqT     -> signExtend $ pack $ n == t
+        NLtT     -> signExtend $ pack $ unpack @(Signed 16) n < unpack t
+        NRshiftT -> n `shiftR` fromIntegral t
+        NMinusT  -> n - t
+        R        -> r
+        MemAtT   -> errorX "value will be loaded next cycle"
+        NLshiftT -> n `shiftL` fromIntegral t
+        Depth    -> zeroExtend depth
+        NULtT    -> signExtend $ pack $ n < t
 
       outputs
         <&> osMRead .~ mread

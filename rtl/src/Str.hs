@@ -12,8 +12,8 @@ cycle' (MS dptr rptr pc t lf) (IS m n r) =
   let inst = unpack m
       tmux = case inst of
             NotLit (ALU _ x _ _ _ _ _) -> x
-            NotLit (JumpZ _)           -> 1
-            _                          -> 0
+            NotLit (JumpZ _)           -> N
+            _                          -> T
       duringLoadElse :: t -> t -> t
       a `duringLoadElse` b = if lf then a else b
 
@@ -30,8 +30,8 @@ cycle' (MS dptr rptr pc t lf) (IS m n r) =
             _                           -> (0, Nothing)
 
       lf' = not lf && case inst of
-            NotLit (ALU _ 12 _ _ _ _ _) -> True
-            _                           -> False
+            NotLit (ALU _ MemAtT _ _ _ _ _) -> True
+            _                               -> False
       pc' = pc `duringLoadElse` case inst of
             NotLit (Jump tgt)             -> zeroExtend tgt
             NotLit (Call tgt)             -> zeroExtend tgt
@@ -43,22 +43,22 @@ cycle' (MS dptr rptr pc t lf) (IS m n r) =
       signedLessThan | msb t /= msb n = msb n
                      | otherwise = lessThan
       t' = case tmux of
-            0  -> t
-            1  -> n
-            2  -> t + n
-            3  -> t .&. n
-            4  -> t .|. n
-            5  -> t `xor` n
-            6  -> complement t
-            7  -> signExtend $ pack $ n == t
-            8  -> signExtend signedLessThan
-            9  -> n `shiftR` fromIntegral t
-            10 -> nMinusT
-            11 -> r
-            12 -> errorX "value will be loaded next cycle"
-            13 -> n `shiftL` fromIntegral t
-            14 -> zeroExtend dptr
-            _  -> signExtend lessThan
+            T        -> t
+            N        -> n
+            TPlusN   -> t + n
+            TAndN    -> t .&. n
+            TOrN     -> t .|. n
+            TXorN    -> t `xor` n
+            NotT     -> complement t
+            NEqT     -> signExtend $ pack $ n == t
+            NLtT     -> signExtend signedLessThan
+            NRshiftT -> n `shiftR` fromIntegral t
+            NMinusT  -> nMinusT
+            R        -> r
+            MemAtT   -> errorX "value will be loaded next cycle"
+            NLshiftT -> n `shiftL` fromIntegral t
+            Depth    -> zeroExtend dptr
+            NULtT    -> signExtend lessThan
 
   in ( OS { _osMWrite = Nothing `duringLoadElse` case inst of
                 NotLit (ALU _ _ _ _ True _ _) -> Just (slice d15 d1 t, n)
