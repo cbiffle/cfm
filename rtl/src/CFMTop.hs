@@ -15,6 +15,7 @@ import Data.Bool
 import Str
 import Types
 import GPIO
+import FlopStack
 
 core :: HasClockReset dom gated synchronous
      => Signal dom IS -> Signal dom OS
@@ -33,18 +34,16 @@ system raminit = outs
     mread = bread <&> truncateB <&> unpack
     mwrite = bwrite <&> fmap (_1 %~ (unpack . truncateB))
 
-    dread = coreOuts <&> (^. osDOp . _1) <&> unpack
-    dwrite = coreOuts <&> (^. osDOp) <&> repackStack
+    ddlt = coreOuts <&> (^. osDOp . _2)
+    dwrite = coreOuts <&> (^. osDOp . _3)
 
-    rread = coreOuts <&> (^. osROp . _1) <&> unpack
-    rwrite = coreOuts <&> (^. osROp) <&> repackStack
+    rdlt = coreOuts <&> (^. osROp . _2)
+    rwrite = coreOuts <&> (^. osROp . _3)
 
     mout = blockRamPow2 raminit mread (mux writeIO (pure Nothing) mwrite)
-    dout = blockRamPow2 (repeat 0) dread dwrite
-    rout = blockRamPow2 (repeat 0) rread rwrite
 
-    repackStack (_, _, Nothing) = Nothing
-    repackStack (a, _, Just v) = Just (unpack a, v)
+    dout = flopStack d15 ddlt dwrite
+    rout = flopStack d16 rdlt rwrite
 
     -- The I/O space is the top 16kiW of the address space, so it's sufficient
     -- to detect when bit 14 is set. I/O is single ported, so we merge the two
