@@ -39,7 +39,8 @@ executeNormally = do
       msT .= zeroExtend v -- load literal
       msDPtr += 1 -- push data stack
       next
-        <&> osDOp . _2 .~ Just t -- flush old T value
+        <&> osDOp . _2 .~ 1
+        <&> osDOp . _3 .~ Just t -- flush old T value
 
     NotLit (Jump tgt) -> do
       msPC .= zeroExtend tgt
@@ -59,7 +60,8 @@ executeNormally = do
       msPC .= zeroExtend tgt
       msRPtr += 1  -- push return stack
       fetch
-        <&> osROp . _2 .~ Just (pc' ++# 0)
+        <&> osROp . _2 .~ 1
+        <&> osROp . _3 .~ Just (pc' ++# 0)
 
     NotLit (ALU rpc t' tn tr nm rd dd) -> do
       n <- view isDData
@@ -119,8 +121,10 @@ executeNormally = do
 
       outputs
         <&> osMRead .~ mread
-        <&> osDOp . _2 .~ dop
-        <&> osROp . _2 .~ rop
+        <&> osDOp . _2 .~ unpack dd
+        <&> osDOp . _3 .~ dop
+        <&> osROp . _2 .~ unpack rd
+        <&> osROp . _3 .~ rop
         <&> osMWrite .~ mwrite
 
 next :: (MonadState MS m) => m OS
@@ -138,4 +142,4 @@ outputs :: (MonadState MS m) => m OS
 outputs = do
   dsp <- use msDPtr
   rsp <- use msRPtr
-  pure $ OS Nothing 0 (dsp, Nothing) (rsp, Nothing)
+  pure $ OS Nothing 0 (dsp, 0, Nothing) (rsp, 0, Nothing)

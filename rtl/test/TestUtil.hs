@@ -35,17 +35,17 @@ genspec sf = do
     it "fetches first instruction" $ property $
       sf def inputs ^. _2 . osMRead == 0
     it "starts out stack at 0" $ property $
-      sf def inputs ^. _2 . osDOp == (0, Nothing)
+      sf def inputs ^. _2 . osDOp == (0, 0, Nothing)
     it "starts out return stack at 0" $ property $
-      sf def inputs ^. _2 . osROp == (0, Nothing)
+      sf def inputs ^. _2 . osROp == (0, 0, Nothing)
 
   context "load flag behavior" $ do
     let u = errorX "must not be used"
         go s x = sf s (IS x u u)
         test p l = \(Load s) -> p $ go s u ^. l
     it "doesn't write Memory" $ property $ test isNothing (_2 . osMWrite)
-    it "doesn't write Return" $ property $ test isNothing (_2 . osROp . _2)
-    it "doesn't write Data" $ property $ test isNothing (_2 . osDOp . _2)
+    it "doesn't write Return" $ property $ test isNothing (_2 . osROp . _3)
+    it "doesn't write Data" $ property $ test isNothing (_2 . osDOp . _3)
     it "fetches current" $ property $ \(Load s) ->
       go s u ^. _2 . osMRead == s ^. msPC
     it "addresses D" $ property $ \(Load s) ->
@@ -94,7 +94,7 @@ genspec sf = do
     it "advances PC" $ instChanges mklit msPC (+1)
 
     it "flushes T" $ property $ \x (Fetch s) ->
-      go s x ^. _2 . osDOp == (s ^. msDPtr + 1, Just (s ^. msT))
+      go s x ^. _2 . osDOp == (s ^. msDPtr + 1, 1, Just (s ^. msT))
 
     it "loads T from literal" $ property $ \x (Fetch s) ->
       go s x ^. _1 . msT == zeroExtend x
@@ -161,7 +161,7 @@ genspec sf = do
         stdelta f l = \x (Fetch s) -> (go s x ^. _1 . l) == f (s ^. l)
 
     it "pushes return PC to R as byte address" $ property $ \x (Fetch s) ->
-      go s x ^. _2 . osROp . _2 == Just ((s ^. msPC + 1) ++# 0)
+      go s x ^. _2 . osROp . _3 == Just ((s ^. msPC + 1) ++# 0)
 
     it "always jumps" $ property $ \x (Fetch s) ->
       go s x ^. _1 . msPC == zeroExtend x
@@ -178,13 +178,13 @@ genspec sf = do
           1 -> slice d15 d1 r
 
     it "I[7]: N <- T" $ property $ \(Fetch s) x d r ->
-      go s x d r ^. _2 . osDOp . _2 ==
+      go s x d r ^. _2 . osDOp . _3 ==
         case slice d7 d7 x of
           0 -> Nothing
           1 -> Just (s ^. msT)
 
     it "I[6]: R <- T" $ property $ \(Fetch s) x d r ->
-      go s x d r ^. _2 . osROp . _2 ==
+      go s x d r ^. _2 . osROp . _3 ==
         case slice d6 d6 x of
           0 -> Nothing
           1 -> Just (s ^. msT)
@@ -248,11 +248,11 @@ genspec sf = do
       where u = errorX "must be unused"
 
   instDoesNotWriteR mkinst = it "does not write return" $ property $
-    \(Fetch s) x -> isNothing $ sf s (IS (mkinst x) u u) ^. _2 . osROp . _2
+    \(Fetch s) x -> isNothing $ sf s (IS (mkinst x) u u) ^. _2 . osROp . _3
       where u = errorX "must be unused"
   
   instDoesNotWriteD mkinst = it "does not write return" $ property $
-    \(Fetch s) x -> isNothing $ sf s (IS (mkinst x) u u) ^. _2 . osDOp . _2
+    \(Fetch s) x -> isNothing $ sf s (IS (mkinst x) u u) ^. _2 . osDOp . _3
       where u = errorX "must be unused"
   
   instLeavesLFClear mkinst = it "leaves load flag clear" $ property $

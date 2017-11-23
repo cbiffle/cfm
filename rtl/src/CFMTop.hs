@@ -41,8 +41,8 @@ system raminit ioin = ioout
     dout = blockRamPow2 (repeat 0) dread dwrite
     rout = blockRamPow2 (repeat 0) rread rwrite
 
-    repackStack (_, Nothing) = Nothing
-    repackStack (a, Just v) = Just (unpack a, v)
+    repackStack (_, _, Nothing) = Nothing
+    repackStack (a, _, Just v) = Just (unpack a, v)
 
     writeIO = bwrite <&> maybe False ((/= 0) . slice d14 d14 . fst)
     readIO = bread <&> slice d14 d14 <&> (/= 0)

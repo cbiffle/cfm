@@ -2,6 +2,7 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE ViewPatterns #-}
+{-# LANGUAGE FlexibleContexts #-}
 
 -- | Structural model for ICE40 synthesis.
 module Str where
@@ -28,16 +29,16 @@ datapath (MS dptr rptr pc t lf) (IS m n r) =
 
       -- Common stack logic. Preserves stack during load, otherwise applies the
       -- delta and write operation.
-      stack ptr ~(d, wr) = (ptr, Nothing) `duringLoadElse`
-                           (ptr + signExtend d, wr)
+      stack ptr ~(d, wr) = (ptr, 0, Nothing) `duringLoadElse`
+                           (ptr + signExtend d, unpack d, wr)
 
       -- Data and return stack interface.
-      (dptr', dop) = stack dptr $ case inst of
+      (dptr', ddlt, dop) = stack dptr $ case inst of
             Lit _                       -> (1, Just t)
             NotLit (ALU _ _ tn _ _ _ d) -> (d, if tn then Just t else Nothing)
             NotLit (JumpZ _)            -> (-1, Nothing)
             _                           -> (0, Nothing)
-      (rptr', rop) = stack rptr $ case inst of
+      (rptr', rdlt, rop) = stack rptr $ case inst of
             NotLit (Call _)             -> (1, Just ((pc + 1) ++# 0))
             NotLit (ALU _ _ _ tr _ d _) -> (d, if tr then Just t else Nothing)
             _                           -> (0, Nothing)
@@ -92,7 +93,7 @@ datapath (MS dptr rptr pc t lf) (IS m n r) =
                 NotLit (ALU _ _ _ _ True _ _) -> Just (slice d15 d1 t, n)
                 _                             -> Nothing
           , _osMRead = if lf' then slice d15 d1 t else pc'
-          , _osDOp = (dptr', dop)
-          , _osROp = (rptr', rop)
+          , _osDOp = (dptr', ddlt, dop)
+          , _osROp = (rptr', rdlt, rop)
           }
      )

@@ -5,6 +5,7 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 module Types where
 
@@ -14,9 +15,11 @@ import GHC.Generics
 import Control.DeepSeq (NFData)
 import Control.Lens hiding ((:>))
 
-type Word = BitVector 16
-type WordAddr = BitVector 15
+type Width = 16
+type Word = BitVector Width
+type WordAddr = BitVector (Width - 1)
 type SP = BitVector 8
+type SDelta = Signed 2
 
 data IS = IS
   { _isMData :: Word
@@ -48,8 +51,8 @@ instance Default MS where
 data OS = OS
   { _osMWrite :: Maybe (WordAddr, Word)
   , _osMRead :: WordAddr
-  , _osDOp :: (SP, Maybe Word)
-  , _osROp :: (SP, Maybe Word)
+  , _osDOp :: (SP, SDelta, Maybe Word)
+  , _osROp :: (SP, SDelta, Maybe Word)
   } deriving (Show, Generic, ShowX, NFData)
 makeLenses ''OS
 
