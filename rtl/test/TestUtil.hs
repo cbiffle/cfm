@@ -228,7 +228,7 @@ genspec sf = do
       it "T == N" $ t'n  7 $ \t n -> pack $ repeat $ t == n
       it "N < T"  $ t'n  8 $
         \t n -> pack $ repeat $ unpack @(Signed 16) n < unpack t
-      it "N >> T" $ t'n  9 $ \t n -> n `shiftR` fromIntegral t
+      it "N >> T" $ t'n  9 $ \t n -> n `shiftR` fromIntegral (slice d3 d0 t)
       it "N - T"  $ t'n 10 $ flip (-)
       it "R"      $ t'  11 $ \_ _ r -> r
 
@@ -238,7 +238,7 @@ genspec sf = do
         it "sets load flag" $ property $ \(Fetch s) x d r ->
           go' 12 s x d r ^. _1 . msLoadFlag == True
 
-      it "N << T" $ t'n 13 $ \t n -> n `shiftL` fromIntegral t
+      it "N << T" $ t'n 13 $ \t n -> n `shiftL` fromIntegral (slice d3 d0 t)
       it "depth"  $ t'  14 $ \s _ _ -> zeroExtend (s ^. msDPtr)
       it "N U< T"  $ t'n 15 $ \t n -> pack $ repeat $ n < t
 

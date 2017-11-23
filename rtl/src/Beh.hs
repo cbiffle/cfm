@@ -109,11 +109,11 @@ executeNormally = do
         NotT     -> complement t
         NEqT     -> signExtend $ pack $ n == t
         NLtT     -> signExtend $ pack $ unpack @(Signed 16) n < unpack t
-        NRshiftT -> n `shiftR` fromIntegral t
+        NRshiftT -> n `shiftR` fromIntegral (slice d3 d0 t)
         NMinusT  -> n - t
         R        -> r
         MemAtT   -> errorX "value will be loaded next cycle"
-        NLshiftT -> n `shiftL` fromIntegral t
+        NLshiftT -> n `shiftL` fromIntegral (slice d3 d0 t)
         Depth    -> zeroExtend depth
         NULtT    -> signExtend $ pack $ n < t
 
