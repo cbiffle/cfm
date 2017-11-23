@@ -1,24 +1,35 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE TypeApplications #-}
+
+-- | Structural model for ICE40 synthesis.
 module Str where
 
 import Clash.Prelude hiding (Word, v)
 
 import Types
 
+-- | Combinational datapath for CFM core.
 datapath :: MS -> IS -> (MS, OS)
 datapath (MS dptr rptr pc t lf) (IS m n r) =
-  let inst = unpack m
+  let -- instruction decoding
+      inst = unpack m
       tmux = case inst of
             NotLit (ALU _ x _ _ _ _ _) -> x
-            NotLit (JumpZ _)           -> N
-            _                          -> T
+            NotLit (JumpZ _)           -> N   -- pops data stack
+            _                          -> T   -- leaves data stack unchanged
+
+      -- Factored pattern: a mux that depends on the state of the Load Flag
+      -- register, for doing something different during a load cycle.
       duringLoadElse :: t -> t -> t
       a `duringLoadElse` b = if lf then a else b
 
+      -- Common stack logic. Preserves stack during load, otherwise applies the
+      -- delta and write operation.
       stack ptr ~(d, wr) = (ptr, Nothing) `duringLoadElse`
                            (ptr + signExtend d, wr)
+
+      -- Data and return stack interface.
       (dptr', dop) = stack dptr $ case inst of
             Lit _                       -> (1, Just t)
             NotLit (ALU _ _ tn _ _ _ d) -> (d, if tn then Just t else Nothing)
@@ -29,6 +40,7 @@ datapath (MS dptr rptr pc t lf) (IS m n r) =
             NotLit (ALU _ _ _ tr _ d _) -> (d, if tr then Just t else Nothing)
             _                           -> (0, Nothing)
 
+      -- Register updates other than the ALU
       lf' = not lf && case inst of
             NotLit (ALU _ MemAtT _ _ _ _ _) -> True
             _                               -> False
@@ -39,6 +51,8 @@ datapath (MS dptr rptr pc t lf) (IS m n r) =
             NotLit (ALU True _ _ _ _ _ _) -> slice d15 d1 r
             _                             -> pc + 1
 
+      -- The ALU. Magnitude comparison is implemented in terms of subtraction.
+      -- This means we get subtraction for free.
       (lessThan, nMinusT) = split (n `minus` t)
       signedLessThan | msb t /= msb n = msb n
                      | otherwise = lessThan
@@ -51,6 +65,10 @@ datapath (MS dptr rptr pc t lf) (IS m n r) =
             TXorN    -> t `xor` n
             NotT     -> complement t
             NEqT     -> signExtend $ pack $ n == t
+              -- Note: equality could be implemented more compactly by testing
+              -- the subtractor output against zero. However, the subtractor is
+              -- one of the longer paths through the ALU, and testing its
+              -- result adds to that, reducing speed.
             NLtT     -> signExtend signedLessThan
             NRshiftT -> n `shiftR` fromIntegral t
             NMinusT  -> nMinusT
