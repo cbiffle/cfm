@@ -50,7 +50,7 @@ datapath (MS dptr rptr pc t lf) (IS m n r) =
             TOrN     -> t .|. n
             TXorN    -> t `xor` n
             NotT     -> complement t
-            NEqT     -> signExtend $ pack $ nMinusT == 0
+            NEqT     -> signExtend $ pack $ n == t
             NLtT     -> signExtend signedLessThan
             NRshiftT -> n `shiftR` fromIntegral t
             NMinusT  -> nMinusT
