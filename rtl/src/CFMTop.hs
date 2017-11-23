@@ -9,14 +9,13 @@ module CFMTop where
 import Clash.Prelude hiding (Word, v, readIO)
 import Control.Lens hiding ((:>))
 import Control.Monad (join)
-import Data.Tuple (swap)
 import Data.Maybe (fromMaybe)
 import Str
 import Types
 
 core :: HasClockReset dom gated synchronous
      => Signal dom IS -> Signal dom OS
-core = mealy (\s i -> swap $ cycle' s i) def
+core = mealy datapath def
 
 system :: (HasClockReset dom gated synchronous, KnownNat n, (n + m) ~ 15)
        => Vec (2 ^ n) Word

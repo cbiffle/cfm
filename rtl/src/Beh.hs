@@ -7,14 +7,15 @@ module Beh where
 
 import Clash.Prelude hiding (Word, cycle, v)
 
+import Data.Tuple (swap)
 import Control.Lens
 import Control.Monad.State
 import Control.Monad.Reader
 
 import Types
 
-cycle' :: MS -> IS -> (OS, MS)
-cycle' m = runReader (runStateT cycle m)
+datapath :: MS -> IS -> (MS, OS)
+datapath m = swap . runReader (runStateT cycle m)
 
 cycle :: (MonadState MS m, MonadReader IS m) => m OS
 cycle = do

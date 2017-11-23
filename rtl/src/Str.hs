@@ -3,12 +3,12 @@
 {-# LANGUAGE TypeApplications #-}
 module Str where
 
-import Clash.Prelude hiding (Word, cycle, v)
+import Clash.Prelude hiding (Word, v)
 
 import Types
 
-cycle' :: MS -> IS -> (OS, MS)
-cycle' (MS dptr rptr pc t lf) (IS m n r) =
+datapath :: MS -> IS -> (MS, OS)
+datapath (MS dptr rptr pc t lf) (IS m n r) =
   let inst = unpack m
       tmux = case inst of
             NotLit (ALU _ x _ _ _ _ _) -> x
@@ -60,19 +60,19 @@ cycle' (MS dptr rptr pc t lf) (IS m n r) =
             Depth    -> zeroExtend dptr
             NULtT    -> signExtend lessThan
 
-  in ( OS { _osMWrite = Nothing `duringLoadElse` case inst of
-                NotLit (ALU _ _ _ _ True _ _) -> Just (slice d15 d1 t, n)
-                _                             -> Nothing
-          , _osMRead = if lf' then slice d15 d1 t else pc'
-          , _osDOp = (dptr', dop)
-          , _osROp = (rptr', rop)
-          }
-     , MS { _msDPtr = dptr'
+  in ( MS { _msDPtr = dptr'
           , _msRPtr = rptr'
           , _msPC = pc'
           , _msLoadFlag = lf'
           , _msT = m `duringLoadElse` case inst of
                 Lit v -> zeroExtend v
                 _     -> t'
+          }
+     , OS { _osMWrite = Nothing `duringLoadElse` case inst of
+                NotLit (ALU _ _ _ _ True _ _) -> Just (slice d15 d1 t, n)
+                _                             -> Nothing
+          , _osMRead = if lf' then slice d15 d1 t else pc'
+          , _osDOp = (dptr', dop)
+          , _osROp = (rptr', rop)
           }
      )
