@@ -2,9 +2,10 @@
 
 set -e
 
-SYN="$(dirname "$0")"
-ROOT="${SYN}/.."
-OUT="${SYN}/out"
+cd "$(dirname "$0")"
+SYN="."
+ROOT=".."
+OUT="out"
 
 rm -rf "${OUT}"
 
