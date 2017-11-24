@@ -1,6 +1,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE BinaryLiterals #-}
+{-# LANGUAGE TupleSections #-}
 module Main where
 
 import Text.Parsec hiding (spaces, State)
@@ -25,6 +26,10 @@ data AsmTop = Colon String [AsmFrag]
 
 data AsmFrag = Word String
              | Comment String
+             | Begin [AsmFrag] LoopEnd
+             deriving (Show)
+
+data LoopEnd = Again
              deriving (Show)
 
 sourceFile = skipMany space >> many top <* eof
@@ -48,16 +53,26 @@ variable = do
 
 interp = Interp <$> frag
 
-frag = comment <|> word
+frag = comment <|> loop <|> word
 
 comment = Comment <$> (do sic "\\"
                           c <- many (noneOf "\n")
-                          (newline *> skipMany space <|> eof)
+                          (newline *> ws)
                           pure c
-                       <|> sic "(" *> many (noneOf ")") <* char ')')
+                       <|> sic "(" *> many (noneOf ")") <* char ')' <* ws)
                   <?> "comment"
 
-word = Word <$> lexeme
+loop = uncurry Begin <$> (sic "begin" *> frag `manyTill'` loopEnd)
+       <?> "loop"
+
+loopEnd = sic "again" >> pure Again
+                     
+
+word = do
+  w <- lexeme
+  if w == ";"
+    then unexpected "semicolon"
+    else pure (Word w)
 
 sic :: String -> Parser ()
 sic s = try (string s *> ws)
@@ -67,6 +82,13 @@ lexeme = many1 (satisfy (not . isSpace)) <* ws <?> "word"
 
 ws :: Parser ()
 ws = (skipMany1 space *> pure ()) <|> eof
+
+manyTill' :: Stream s m t
+          => ParsecT s u m a -> ParsecT s u m end -> ParsecT s u m ([a], end)
+manyTill' p end = scan
+  where
+    scan = (([],) <$> end)
+        <|> ((\x (xs, e) -> (x : xs, e)) <$> p <*> scan)
 
 ---------
 
@@ -123,9 +145,7 @@ comma _ = error "internal error: value passed to comma out of range"
 run (Colon name body) = do
   p <- here
   create name $ Compiled p
-  forM_ body $ \f -> case f of
-    Comment _ -> pure ()
-    Word w -> find w >>= compile
+  mapM_ compile' body
 
 run (Constant name) = do
   v <- pop
@@ -144,8 +164,17 @@ run (Interp (Word s)) = do
     Immediate f -> f
     _ -> throwError ("word " ++ s ++ " cannot be used in interpreted code")
 
+run (Interp (Begin _ _)) = throwError "loops not permitted in interpreted code"
+
+compile' (Comment _) = pure ()
+compile' (Word w) = find w >>= compile
+compile' (Begin body Again) = do
+  begin <- here
+  mapM_ compile' body
+  jmp begin
+
 compile (Compiled a)
-  | a < 8192 = comma a
+  | a < 8192 = comma (0x4000 .|. a)
   | otherwise = error "internal error: colon def out of range"
 
 compile (InlineLit x)
@@ -155,13 +184,19 @@ compile (InlineLit x)
 
 compile (Immediate f) = f
 
+jmp a | a < 8192 = comma a
+      | otherwise = error "internal error: jump destination out of range"
 
 prim n a = create n (Immediate a)
 
 prims :: [(String, Asm ())]
 prims =
-  [ ("swap", comma 0b0110000110000000)
-  , ("<",    comma 0b0110100000000011)
+  [ ("swap",   comma 0b0110000110000000)
+  , ("<",      comma 0b0110100000000011)
+  , ("invert", comma 0b0110011000000000)
+  , ("2dup!",  comma 0b0110000000100000)
+  , ("drop",   comma 0b0110000100000011)
+  , ("+",      comma 0b0110001000000011)
   ]
 
 asm tops = do
