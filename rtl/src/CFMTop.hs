@@ -79,9 +79,12 @@ topEntity c r = withClockReset @System @'Source @'Asynchronous c r $
 
 program :: Vec 16 Word
 program =
-  0xD555 :>               -- push constant
-  0xFFFF :>               -- push literal address complement
-  0b0110011000000000 :>   -- invert it
-  0b0110000000100011 :>   -- store to it
-  0b0110000100000011 :>   -- drop address
-  repeat 0                -- repeat
+  0x8000 :>               -- push zero
+  -- loop begins here at address 1                                c
+  0xFFFF :>               -- push literal address complement      c ~a
+  0b0110011000000000 :>   -- invert it                            c a
+  0b0110000000100000 :>   -- store to it without dropping counter c a
+  0b0110000100000011 :>   -- drop address                         c
+  0x8001 :>               -- literal 1                            c 1
+  0b0110001000000011 :>   -- add                                  c'
+  repeat 1                -- repeat
