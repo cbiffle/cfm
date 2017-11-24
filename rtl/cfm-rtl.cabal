@@ -16,6 +16,7 @@ library
                        Types
                        Shifter
                        FlopStack
+                       GPIO
                        Beh
                        Str
                        CFMTop
