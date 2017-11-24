@@ -14,6 +14,7 @@ library
   hs-source-dirs:      src
   exposed-modules:     Lib
                        Types
+                       Shifter
                        Beh
                        Str
                        CFMTop
