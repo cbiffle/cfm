@@ -21,8 +21,8 @@ core = mealy datapath def
 
 data StackType = Flops | RAMs
 
-system :: (HasClockReset dom gated synchronous, KnownNat n)
-       => Vec n Word
+system :: (HasClockReset dom gated synchronous)
+       => FilePath
        -> StackType
        -> Signal dom Word
 system raminit stackType = outs
@@ -38,7 +38,7 @@ system raminit stackType = outs
     dop = coreOuts <&> (^. osDOp)
     rop = coreOuts <&> (^. osROp)
 
-    mout = blockRam raminit mread (mux writeIO (pure Nothing) mwrite)
+    mout = blockRamFile d256 raminit mread (mux writeIO (pure Nothing) mwrite)
 
     dout = case stackType of
       Flops -> flopStack d15 (dop <&> (^. _2))
@@ -84,7 +84,7 @@ topEntity :: Clock System 'Source
           -> Signal System Word
 topEntity c r = withClockReset @System @'Source @'Asynchronous c r $
   register 0 $
-  system program RAMs
+  system "random-256.bin" RAMs
 
 program :: Vec 16 Word
 program =

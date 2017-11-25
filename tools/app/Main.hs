@@ -180,10 +180,10 @@ main = do
 
           putStrLn "Symbols:"
           forM_ (M.toList $ asDict s) $ \(n, d) -> case d of
-            Compiled a -> printf "  %04x %s\n" a n
+            Compiled a -> printf "  %04x %s\n" (2 * a) n
             _ -> pure ()
 
           out <- openFile dest WriteMode
           forM_ [0 .. maxAddr] $ \a ->
-            hPrintf out "%016b\n" $ fromMaybe 0xDEAD $ M.lookup a $ asMem s
+            hPrintf out "%04x\n" $ fromMaybe 0xDEAD $ M.lookup a $ asMem s
           hClose out
