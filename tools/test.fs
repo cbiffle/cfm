@@ -1,5 +1,6 @@
 \ Test input for assembler.
 
+\ Primitive ALU instruction definitions
 0x6180 alu: swap
 0x6020 alu: 2dup!
 0x6103 alu: drop
