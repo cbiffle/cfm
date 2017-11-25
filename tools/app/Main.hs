@@ -87,6 +87,9 @@ run (Colon name body) = do
   p <- here
   create name $ Compiled p
   mapM_ compile' body
+  -- TODO: this is where we'd do return fusion, and where we'd elide the return
+  -- on any words with an outermost infinite loop.
+  compile $ RawInst 0x700C
 
 run (Constant name) = do
   v <- pop
