@@ -9,8 +9,6 @@ module CFMTop where
 
 import Clash.Prelude hiding (Word, v, readIO)
 import Control.Lens hiding ((:>))
-import Control.Monad (join)
-import Data.Maybe (fromMaybe)
 import Data.Bool
 import Str
 import Types
@@ -21,10 +19,13 @@ core :: HasClockReset dom gated synchronous
      => Signal dom IS -> Signal dom OS
 core = mealy datapath def
 
+data StackType = Flops | RAMs
+
 system :: (HasClockReset dom gated synchronous, KnownNat n, (n + m) ~ 15)
        => Vec (2 ^ n) Word
+       -> StackType
        -> Signal dom Word
-system raminit = outs
+system raminit stackType = outs
   where
     coreOuts = core $ IS <$> mux readWasIO ioresp mout <*> dout <*> rout
 
@@ -34,16 +35,25 @@ system raminit = outs
     mread = bread <&> truncateB <&> unpack
     mwrite = bwrite <&> fmap (_1 %~ (unpack . truncateB))
 
-    ddlt = coreOuts <&> (^. osDOp . _2)
-    dwrite = coreOuts <&> (^. osDOp . _3)
-
-    rdlt = coreOuts <&> (^. osROp . _2)
-    rwrite = coreOuts <&> (^. osROp . _3)
+    dop = coreOuts <&> (^. osDOp)
+    rop = coreOuts <&> (^. osROp)
 
     mout = blockRamPow2 raminit mread (mux writeIO (pure Nothing) mwrite)
 
-    dout = flopStack d15 ddlt dwrite
-    rout = flopStack d16 rdlt rwrite
+    dout = case stackType of
+      Flops -> flopStack d15 (dop <&> (^. _2))
+                             (dop <&> (^. _3))
+      RAMs  -> blockRamPow2 (repeat 0) (dop <&> (^. _1) <&> unpack)
+                                       (dop <&> repackStack)
+
+    rout = case stackType of
+      Flops -> flopStack d16 (rop <&> (^. _2))
+                             (rop <&> (^. _3))
+      RAMs  -> blockRamPow2 (repeat 0) (rop <&> (^. _1) <&> unpack)
+                                       (rop <&> repackStack)
+
+    repackStack (_, _, Nothing) = Nothing
+    repackStack (a, _, Just v) = Just (unpack a, v)
 
     -- The I/O space is the top 16kiW of the address space, so it's sufficient
     -- to detect when bit 14 is set. I/O is single ported, so we merge the two
@@ -74,7 +84,7 @@ topEntity :: Clock System 'Source
           -> Signal System Word
 topEntity c r = withClockReset @System @'Source @'Asynchronous c r $
   register 0 $
-  system program
+  system program RAMs
 
 program :: Vec 16 Word
 program =
