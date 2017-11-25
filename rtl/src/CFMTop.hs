@@ -21,8 +21,8 @@ core = mealy datapath def
 
 data StackType = Flops | RAMs
 
-system :: (HasClockReset dom gated synchronous, KnownNat n, (n + m) ~ 15)
-       => Vec (2 ^ n) Word
+system :: (HasClockReset dom gated synchronous, KnownNat n)
+       => Vec n Word
        -> StackType
        -> Signal dom Word
 system raminit stackType = outs
@@ -32,13 +32,13 @@ system raminit stackType = outs
     bread = coreOuts <&> (^. osMRead)
     bwrite = coreOuts <&> (^. osMWrite)
 
-    mread = bread <&> truncateB <&> unpack
-    mwrite = bwrite <&> fmap (_1 %~ (unpack . truncateB))
+    mread = bread
+    mwrite = bwrite
 
     dop = coreOuts <&> (^. osDOp)
     rop = coreOuts <&> (^. osROp)
 
-    mout = blockRamPow2 raminit mread (mux writeIO (pure Nothing) mwrite)
+    mout = blockRam raminit mread (mux writeIO (pure Nothing) mwrite)
 
     dout = case stackType of
       Flops -> flopStack d15 (dop <&> (^. _2))
