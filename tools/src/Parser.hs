@@ -51,6 +51,8 @@ data AsmFrag = Word String
 -- | A loop ending.
 data LoopEnd = Again
                 -- ^ begin ... again, an infinite loop
+             | Until
+                -- ^ begin ... until
              deriving (Show)
 
 sourceFile = skipMany space >> many top <* eof
@@ -92,7 +94,8 @@ comment = Comment <$> (do sic "\\"
 loop = uncurry Begin <$> (sic "begin" *> frag `manyTill'` loopEnd)
        <?> "loop"
 
-loopEnd = sic "again" >> pure Again
+loopEnd = (sic "again" >> pure Again)
+      <|> (sic "until" >> pure Until)
                      
 
 word = do

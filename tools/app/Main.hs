@@ -125,10 +125,12 @@ run (Interp (Begin _ _)) = throwError "loops not permitted in interpreted code"
 compile' :: AsmFrag -> Asm ()
 compile' (Comment _) = pure ()
 compile' (Word w) = find w >>= compile
-compile' (Begin body Again) = do
+compile' (Begin body end) = do
   begin <- here
   mapM_ compile' body
-  jmp begin
+  case end of
+    Again -> jmp begin
+    Until -> jmp0 begin
 
 compile :: Def -> Asm()
 compile (Compiled a)
@@ -144,9 +146,12 @@ compile (RawInst i)
   | 0 <= i && i < 65536 = comma i
   | otherwise = error "internal error: instruction doesn't fit in 16 bits"
 
-jmp :: Int -> Asm ()
+jmp, jmp0 :: Int -> Asm ()
 jmp a | a < 8192 = comma a
       | otherwise = error "internal error: jump destination out of range"
+
+jmp0 a | a < 8192 = comma $ 0x2000 .|. a
+       | otherwise = error "internal error: jump destination out of range"
 
 asm :: [AsmTop] -> Asm ()
 asm tops = forM_ tops run
