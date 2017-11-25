@@ -11,11 +11,12 @@ import Text.Printf
 import Data.Bits
 import Data.Default
 import Data.Char (isSpace)
-import Data.Maybe (fromJust)
+import Data.Maybe (fromJust, fromMaybe)
 import Data.Word (Word16)
 import qualified Data.Map.Strict as M
 import qualified Data.Set as S
 import System.Environment (getArgs)
+import System.IO (openFile, IOMode(WriteMode), hClose)
 
 import Control.Monad.State
 import Control.Monad.Except
@@ -23,6 +24,8 @@ import Control.Monad.Except
 data AsmTop = Colon String [AsmFrag]
             | Constant String
             | Variable String
+            | OrgDirective
+            | ALUPrim String
             | Interp AsmFrag
             deriving (Show)
 
@@ -39,6 +42,8 @@ sourceFile = skipMany space >> many top <* eof
 top = label colon "colon definition"
   <|> label constant "constant definition"
   <|> label variable "variable definition"
+  <|> label org "org directive"
+  <|> label aluprim "ALU primitive definition"
   <|> label interp "interpreted code"
 
 colon = do
@@ -53,15 +58,19 @@ variable = do
   sic "variable"
   Variable <$> lexeme
 
+org = sic "org" >> pure OrgDirective
+
+aluprim = sic "alu:" >> ALUPrim <$> lexeme
+
 interp = Interp <$> frag
 
 frag = comment <|> loop <|> word
 
 comment = Comment <$> (do sic "\\"
                           c <- many (noneOf "\n")
-                          (newline *> ws)
+                          (newline *> maybeWs)
                           pure c
-                       <|> sic "(" *> many (noneOf ")") <* char ')' <* ws)
+                       <|> sic "(" *> many (noneOf ")") <* char ')' <* maybeWs)
                   <?> "comment"
 
 loop = uncurry Begin <$> (sic "begin" *> frag `manyTill'` loopEnd)
@@ -85,6 +94,9 @@ lexeme = many1 (satisfy (not . isSpace)) <* ws <?> "word"
 ws :: Parser ()
 ws = (skipMany1 space *> pure ()) <|> eof
 
+maybeWs :: Parser ()
+maybeWs = (skipMany space *> pure ()) <|> eof
+
 manyTill' :: Stream s m t
           => ParsecT s u m a -> ParsecT s u m end -> ParsecT s u m ([a], end)
 manyTill' p end = scan
@@ -96,6 +108,7 @@ manyTill' p end = scan
 
 data Def = Compiled Int
          | InlineLit Int
+         | RawInst Int
          | Immediate (Asm ())
 
 instance Show Def where
@@ -135,7 +148,7 @@ find n = do
   case md of
     Nothing -> case reads n of
       [(x, "")] -> pure (InlineLit x)
-      _         ->throwError ("use of unknown word " ++ n)
+      _         -> throwError ("use of unknown word " ++ n)
     Just d -> pure d
 
 store v a = do
@@ -163,12 +176,25 @@ run (Variable name) = do
   create name $ InlineLit p
   comma 0
 
+run OrgDirective = do
+  a <- pop
+  if a .&. 1 /= 0
+    then throwError ("odd address in org directive: " ++ show a)
+    else modify $ \s -> s { asPos = a `shiftR` 1 }
+
+run (ALUPrim name) = do
+  bits <- pop
+  if 0 <= bits && bits < 65536
+    then create name $ RawInst bits
+    else throwError "ALU primitive must fit in 16 bits"
+
 run (Interp (Comment _)) = pure ()
 
 run (Interp (Word s)) = do
   d <- find s
   case d of
     Immediate f -> f
+    InlineLit x -> push x
     _ -> throwError ("word " ++ s ++ " cannot be used in interpreted code")
 
 run (Interp (Begin _ _)) = throwError "loops not permitted in interpreted code"
@@ -191,28 +217,19 @@ compile (InlineLit x)
 
 compile (Immediate f) = f
 
+compile (RawInst i)
+  | 0 <= i && i < 65536 = comma i
+  | otherwise = error "internal error: instruction doesn't fit in 16 bits"
+
 jmp a | a < 8192 = comma a
       | otherwise = error "internal error: jump destination out of range"
 
-prim n a = create n (Immediate a)
-
-prims :: [(String, Asm ())]
-prims =
-  [ ("swap",   comma 0b0110000110000000)
-  , ("<",      comma 0b0110100000000011)
-  , ("invert", comma 0b0110011000000000)
-  , ("2dup!",  comma 0b0110000000100000)
-  , ("drop",   comma 0b0110000100000011)
-  , ("+",      comma 0b0110001000000011)
-  ]
-
-asm tops = do
-  forM_ prims $ uncurry prim
-  forM_ tops run
+asm tops = forM_ tops run
 
 main = do
-  args <- getArgs
-  pr <- parseFromFile sourceFile (head args)
+  [source, dest] <- getArgs
+  pr <- parseFromFile sourceFile source
+
   case pr of
     Left e -> putStrLn $ show e
     Right tops -> do
@@ -220,10 +237,11 @@ main = do
       case r of
         Left str -> putStrLn $ "Error: " ++ str
         Right st -> do
-          putStrLn "ok"
-          putStrLn $ "cells used: " ++ show (asPos s)
-
           let maxAddr = fromJust $ S.lookupMax $ M.keysSet $ asMem s
+
+          putStrLn "ok"
+          putStrLn $ "cells used: " ++ show (maxAddr + 1)
+
           forM_ [0 .. maxAddr] $ \a ->
             case M.lookup a (asMem s) of
               Just v  -> printf "  %04x %04x\n" (2 * a) v
@@ -233,3 +251,8 @@ main = do
           forM_ (M.toList $ asDict s) $ \(n, d) -> case d of
             Compiled a -> printf "  %04x %s\n" a n
             _ -> pure ()
+
+          out <- openFile dest WriteMode
+          forM_ [0 .. maxAddr] $ \a ->
+            hPrintf out "%016b\n" $ fromMaybe 0xDEAD $ M.lookup a $ asMem s
+          hClose out
