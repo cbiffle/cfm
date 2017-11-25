@@ -11,8 +11,10 @@ import Text.Printf
 import Data.Bits
 import Data.Default
 import Data.Char (isSpace)
+import Data.Maybe (fromJust)
 import Data.Word (Word16)
 import qualified Data.Map.Strict as M
+import qualified Data.Set as S
 import System.Environment (getArgs)
 
 import Control.Monad.State
@@ -92,8 +94,8 @@ manyTill' p end = scan
 
 ---------
 
-data Def = Compiled Integer
-         | InlineLit Integer
+data Def = Compiled Int
+         | InlineLit Int
          | Immediate (Asm ())
 
 instance Show Def where
@@ -103,13 +105,13 @@ instance Show Def where
 
 data AS = AS
   { asDict :: M.Map String Def
-  , asStack :: [Integer]
-  , asPos :: Integer
-  , asMem :: [Word16]
+  , asStack :: [Int]
+  , asPos :: Int
+  , asMem :: M.Map Int Int
   } deriving (Show)
 
 instance Default AS where
-  def = AS M.empty [] 0 []
+  def = AS M.empty [] 0 M.empty
 
 newtype Asm a = Asm { runAsm :: ExceptT String (State AS) a }
   deriving (Functor, Applicative, Monad, MonadState AS, MonadError String)
@@ -123,7 +125,7 @@ pop = do
       modify $ \s -> s { asStack = xs }
       pure x
 
-here :: Asm Integer
+here :: Asm Int
 here = gets asPos
 
 create n d = modify $ \s -> s { asDict = M.insert n d (asDict s) }
@@ -136,10 +138,15 @@ find n = do
       _         ->throwError ("use of unknown word " ++ n)
     Just d -> pure d
 
-comma v | 0 <= v && v < 65536 =
-  modify $ \s -> s { asPos = asPos s + 1
-                   , asMem = fromIntegral v : asMem s
-                   }
+store v a = do
+  dupe <- gets $ M.member a . asMem
+  if dupe
+    then throwError ("Duplicate definition at address " ++ show a)
+    else modify $ \s -> s { asMem = M.insert a v (asMem s) }
+
+comma v | 0 <= v && v < 65536 = do
+  here >>= store v
+  modify $ \s -> s { asPos = asPos s + 1 }
 comma _ = error "internal error: value passed to comma out of range"
   
 run (Colon name body) = do
@@ -215,8 +222,13 @@ main = do
         Right st -> do
           putStrLn "ok"
           putStrLn $ "cells used: " ++ show (asPos s)
-          forM_ (zip [0 :: Word16 ..] $ reverse (asMem s)) $ \(i, c) -> 
-            printf "  %04x %04x\n" (2 * i) c
+
+          let maxAddr = fromJust $ S.lookupMax $ M.keysSet $ asMem s
+          forM_ [0 .. maxAddr] $ \a ->
+            case M.lookup a (asMem s) of
+              Just v  -> printf "  %04x %04x\n" (2 * a) v
+              Nothing -> printf "  %04x ....\n" (2 * a)
+
           putStrLn "Symbols:"
           forM_ (M.toList $ asDict s) $ \(n, d) -> case d of
             Compiled a -> printf "  %04x %s\n" a n
