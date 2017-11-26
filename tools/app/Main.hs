@@ -8,7 +8,7 @@ import Text.Printf
 
 import Data.Bits
 import Data.Default
-import Data.Maybe (fromJust, fromMaybe)
+import Data.Maybe (fromJust)
 import qualified Data.Map.Strict as M
 import qualified Data.Set as S
 import System.Environment (getArgs)
@@ -28,11 +28,18 @@ instance Show Def where
   show (InlineLit x) = "InlineLit " ++ show x
   show (RawInst x) = "RawInst " ++ show x
 
+data Val = Data Int
+         | Inst Int
+         deriving (Show, Eq)
+deval :: Val -> Int
+deval (Data x) = x
+deval (Inst x) = x
+
 data AS = AS
   { asDict :: M.Map String Def
   , asStack :: [Int]
   , asPos :: Int
-  , asMem :: M.Map Int Int
+  , asMem :: M.Map Int Val
   } deriving (Show)
 
 instance Default AS where
@@ -68,28 +75,48 @@ find n = do
       _         -> throwError ("use of unknown word " ++ n)
     Just d -> pure d
 
-store :: Int -> Int -> Asm ()
+store :: Val -> Int -> Asm ()
 store v a = do
-  dupe <- gets $ M.member a . asMem
-  if dupe
-    then throwError ("Duplicate definition at address " ++ show a)
-    else modify $ \s -> s { asMem = M.insert a v (asMem s) }
+  prev <- gets $ M.lookup a . asMem
+  case prev of
+    Nothing ->  modify $ \s -> s { asMem = M.insert a v (asMem s) }
+    Just v' | v == v' -> modify $ \s -> s { asMem = M.insert a v (asMem s) }
+    Just v' -> throwError ("Address " ++ show a ++ " previously set to " ++
+                           show v' ++ " can't be changed to " ++ show v)
+
+patch :: Val -> Val -> Int -> Asm ()
+patch p v a = do
+  prev <- gets $ M.lookup a . asMem
+  case prev of
+    Nothing ->  modify $ \s -> s { asMem = M.insert a v (asMem s) }
+    Just v' | p == v' -> modify $ \s -> s { asMem = M.insert a v (asMem s) }
+    Just v' -> throwError ("Address " ++ show a ++ " previously set to " ++
+                           show v' ++ " can't be changed to " ++ show v)
 
 comma :: Int -> Asm ()
 comma v | 0 <= v && v < 65536 = do
-  here >>= store v
+  here >>= store (Data v)
   modify $ \s -> s { asPos = asPos s + 1 }
 comma _ = error "internal error: value passed to comma out of range"
+
+cComma :: Int -> Asm ()
+cComma v | 0 <= v && v < 65536 = do
+  here >>= store (Inst v)
+  modify $ \s -> s { asPos = asPos s + 1 }
+cComma _ = error "internal error: value passed to cComma out of range"
 
 run :: AsmTop -> Asm ()
  
 run (Colon name body) = do
-  p <- here
-  create name $ Compiled p
+  create name . Compiled =<< here
   mapM_ compile' body
-  -- TODO: this is where we'd do return fusion, and where we'd elide the return
-  -- on any words with an outermost infinite loop.
-  compile $ RawInst 0x700C
+
+  end <- here
+  lastInst <- gets $ M.lookup (end - 1) . asMem
+  case lastInst of
+    Just (Inst v) | v .&. 0xF00C == 0x6000 ->
+      patch (Inst v) (Inst (v .|. 0x100C)) (end - 1)
+    _ -> compile $ RawInst 0x700C
 
 run (Constant name) = do
   v <- pop
@@ -134,23 +161,22 @@ compile' (Begin body end) = do
 
 compile :: Def -> Asm()
 compile (Compiled a)
-  | a < 8192 = comma (0x4000 .|. a)
+  | a < 8192 = cComma (0x4000 .|. a)
   | otherwise = error "internal error: colon def out of range"
 
 compile (InlineLit x)
-  | 0 <= x && x < 32768 = comma (x .|. 0x8000)
-  | -32768 <= x && x < 0 = comma (complement x .|. 0x8000)
+  | 0 <= x && x < 32768 = cComma (x .|. 0x8000)
   | otherwise = error "internal error: literal out of range"
 
 compile (RawInst i)
-  | 0 <= i && i < 65536 = comma i
+  | 0 <= i && i < 65536 = cComma i
   | otherwise = error "internal error: instruction doesn't fit in 16 bits"
 
 jmp, jmp0 :: Int -> Asm ()
-jmp a | a < 8192 = comma a
+jmp a | a < 8192 = cComma a
       | otherwise = error "internal error: jump destination out of range"
 
-jmp0 a | a < 8192 = comma $ 0x2000 .|. a
+jmp0 a | a < 8192 = cComma $ 0x2000 .|. a
        | otherwise = error "internal error: jump destination out of range"
 
 asm :: [AsmTop] -> Asm ()
@@ -175,7 +201,7 @@ main = do
 
           forM_ [0 .. maxAddr] $ \a ->
             case M.lookup a (asMem s) of
-              Just v  -> printf "  %04x %04x\n" (2 * a) v
+              Just v  -> printf "  %04x %04x\n" (2 * a) (deval v)
               Nothing -> printf "  %04x ....\n" (2 * a)
 
           putStrLn "Symbols:"
@@ -185,5 +211,5 @@ main = do
 
           out <- openFile dest WriteMode
           forM_ [0 .. maxAddr] $ \a ->
-            hPrintf out "%04x\n" $ fromMaybe 0xDEAD $ M.lookup a $ asMem s
+            hPrintf out "%04x\n" $ maybe 0xDEAD deval $ M.lookup a $ asMem s
           hClose out
