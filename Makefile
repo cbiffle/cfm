@@ -1,5 +1,8 @@
 all:
 
+clean:
+	-rm -f build/*
+
 program: build/icestick-256-prog.bin
 	iceprog $<
 
@@ -25,3 +28,5 @@ build/icestick-256-prog.asc: build/icestick-256.asc build/test.hex
 	icepack < $< > $@
 
 FORCE:
+
+.PHONY: all clean
