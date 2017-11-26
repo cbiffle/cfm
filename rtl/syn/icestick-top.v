@@ -1,6 +1,6 @@
 `default_nettype none
 
-`define GO_SLOW
+// `define GO_SLOW
 
 module top(
   input clk_12mhz,

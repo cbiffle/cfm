@@ -35,8 +35,8 @@
 
 0x7FFF constant ~outport
 
-\ For 19200 bps at 12MHz core clock
-: bit-delay 124 delay ;
+\ For 19200 bps at 40MHz core clock
+: bit-delay 416 delay ;
 
 : ! over/swap/! drop ;
 
