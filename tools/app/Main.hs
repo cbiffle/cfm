@@ -18,6 +18,7 @@ import Control.Monad.State
 import Control.Monad.Except
 
 import Parser
+import qualified InstInfo as II
 
 data Def = Compiled Int         -- ^ Callable address.
          | InlineLit Int        -- ^ 15-bit literal.
@@ -40,13 +41,18 @@ data AS = AS
   , asStack :: [Int]
   , asPos :: Int
   , asMem :: M.Map Int Val
+  , asCanFuse :: Bool
   } deriving (Show)
 
 instance Default AS where
-  def = AS M.empty [] 0 M.empty
+  def = AS M.empty [] 0 M.empty False
 
 newtype Asm a = Asm { runAsm :: ExceptT String (State AS) a }
   deriving (Functor, Applicative, Monad, MonadState AS, MonadError String)
+
+blockFusion, allowFusion :: Asm ()
+blockFusion = modify $ \s -> s { asCanFuse = False }
+allowFusion = modify $ \s -> s { asCanFuse = True }
 
 push :: Int -> Asm ()
 push x = modify $ \s -> s { asStack = x : asStack s }
@@ -93,30 +99,44 @@ patch p v a = do
     Just v' -> throwError ("Address " ++ show a ++ " previously set to " ++
                            show v' ++ " can't be changed to " ++ show v)
 
+commaVal :: Val -> Asm ()
+commaVal v = do
+  here >>= store v
+  modify $ \s -> s { asPos = asPos s + 1 }
+
 comma :: Int -> Asm ()
 comma v | 0 <= v && v < 65536 = do
-  here >>= store (Data v)
-  modify $ \s -> s { asPos = asPos s + 1 }
+  commaVal (Data v)
 comma _ = error "internal error: value passed to comma out of range"
 
 cComma :: Int -> Asm ()
 cComma v | 0 <= v && v < 65536 = do
-  here >>= store (Inst v)
-  modify $ \s -> s { asPos = asPos s + 1 }
+  canFuse <- gets asCanFuse
+  allowFusion
+  if not canFuse
+    then commaVal (Inst v)
+    else do
+      -- Inspect the most recently compiled instruction.
+      end <- here
+      lastInst <- gets $ M.lookup (end - 1) . asMem
+      case lastInst of
+        Just (Inst i) -> case M.lookup (i, v) II.lazyFusionMap of
+          Just (_, iF) -> patch (Inst i) (Inst iF) (end - 1)
+          Nothing -> commaVal (Inst v)
+        _ -> commaVal (Inst v)
 cComma _ = error "internal error: value passed to cComma out of range"
+
+exit :: Asm ()
+exit = do
+  cComma 0x700C
+  blockFusion
 
 run :: AsmTop -> Asm ()
  
 run (Colon name body) = do
   create name . Compiled =<< here
   mapM_ compile' body
-
-  end <- here
-  lastInst <- gets $ M.lookup (end - 1) . asMem
-  case lastInst of
-    Just (Inst v) | v .&. 0xF00C == 0x6000 ->
-      patch (Inst v) (Inst (v .|. 0x100C)) (end - 1)
-    _ -> compile $ RawInst 0x700C
+  exit
 
 run (Constant name) = do
   v <- pop
@@ -154,6 +174,7 @@ compile' (Comment _) = pure ()
 compile' (Word w) = find w >>= compile
 compile' (Begin body end) = do
   begin <- here
+  blockFusion
   mapM_ compile' body
   case end of
     Again -> jmp begin

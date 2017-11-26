@@ -17,17 +17,17 @@
 0x6081 alu: dup           ( x -- x x )
 0x6c00 alu: @             ( x -- [x] )
 0x6703 alu: =             ( a b -- a=b )
+0x6181 alu: over          ( a b -- a b a )
 
 4 org
 
 : 0= 0 = ;
 
-\ Delays for u iterations, which in practice means 5u + 3 cycles.
-\ TODO drops to 5u + 2 with drop-return fusion.
+\ Delays for u iterations, which in practice means 5u + 2 cycles.
 : delay   ( u -- )
   begin
     1 -   ( u' )
-    0 over/=
+    0 over =
   until drop ;
 
 : blinky
