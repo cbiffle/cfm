@@ -19,7 +19,8 @@ rm -rf "${OUT}"/verilog/CFMTop/*outputVerifier*v
 
 
 yosys -p "read_verilog ${OUT}/verilog/CFMTop/*.v ${SYN}/icestick-top.v" \
-      -p "synth_ice40 -top top -abc2 -blif ${OUT}/syn1k.blif"
+      -p "synth_ice40 -top top -abc2 -blif ${OUT}/syn1k.blif" \
+      -q
 
 arachne-pnr -d 1k -p "${SYN}/icestick.pcf" "${OUT}/syn1k.blif" \
             -o "${OUT}/syn1k.asc"
