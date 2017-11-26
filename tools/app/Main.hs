@@ -44,10 +44,11 @@ data AS = AS
   , asPos :: Int
   , asMem :: M.Map Int Val
   , asCanFuse :: Bool
+  , asCompiling :: Bool
   } deriving (Show)
 
 instance Default AS where
-  def = AS M.empty [] 0 M.empty False
+  def = AS M.empty [] 0 M.empty False False
 
 newtype Asm a = Asm { runAsm :: ExceptT String (State AS) a }
   deriving (Functor, Applicative, Monad, MonadState AS, MonadError String)
@@ -137,8 +138,10 @@ run :: AsmTop -> Asm ()
  
 run (Colon name body) = do
   create name . Compiled =<< here
+  modify $ \s -> s { asCompiling = True }
   mapM_ compile' body
   exit
+  modify $ \s -> s { asCompiling = False }
 
 run (Constant name) = do
   v <- pop
@@ -204,9 +207,23 @@ jmp a | a < 8192 = cComma a
 jmp0 a | a < 8192 = cComma $ 0x2000 .|. a
        | otherwise = error "internal error: jump destination out of range"
 
+macroBang :: Asm ()
+macroBang = compileOnly $ do
+  cComma 0x6020   -- non-destructive store
+  cComma 0x6103   -- drop
+  cComma 0x6103   -- drop
+
+compileOnly :: Asm () -> Asm ()
+compileOnly x = do
+  c <- gets asCompiling
+  if c
+    then x
+    else throwError "use of compile-only word in interpreted context"
+
 asm :: [AsmTop] -> Asm ()
 asm tops = do
-  create "exit" $ Immediate exit
+  create "exit" $ Immediate $ compileOnly exit
+  create "!" $ Immediate macroBang
   forM_ tops run
 
 main :: IO ()

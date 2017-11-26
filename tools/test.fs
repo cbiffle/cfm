@@ -8,8 +8,6 @@
 0x6600 alu: invert        ( x -- ~x )
 0x6203 alu: +             ( a b -- a+b)
 0x6a03 alu: -             ( a b -- a-b)
-0x6700 alu: over/=        ( a b -- a a=b )
-0x6123 alu: over/swap/!   ( a b -- a )
 0x6903 alu: rshift        ( a b -- a>>b )
 0x6d03 alu: lshift        ( a b -- a<<b )
 0x6303 alu: and           ( a b -- a&b)
@@ -43,8 +41,6 @@
 
 \ For 19200 bps at 40MHz core clock
 : bit-delay 416 delay ;
-
-: ! over/swap/! drop ;
 
 : bit  ( c -- c' )
   1 2dup/and          ( c 1 lsb )
