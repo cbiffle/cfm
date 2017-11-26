@@ -43,9 +43,10 @@ tmux v t n r = case v of
   13 -> binary "<<"
   14 -> "depth"
   15 -> binary "U<"
-  where binary s = n <> s <> t  -- non-commutative
-        binaryC s | n <= t = n <> s <> t  -- commutative
-                  | otherwise = t <> s <> n
+  where binary s = p n <> s <> p t  -- non-commutative
+        binaryC s | n <= t = p n <> s <> p t  -- commutative
+                  | otherwise = p t <> s <> p n
+        p s = "(" <> s <> ")"
 
 -- | Produces a Forth-style stack effect diagram given before and after stacks.
 -- Any common suffix will be hidden.
