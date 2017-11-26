@@ -23,11 +23,13 @@ import qualified InstInfo as II
 data Def = Compiled Int         -- ^ Callable address.
          | InlineLit Int        -- ^ 15-bit literal.
          | RawInst Int          -- ^ Arbitrary 16-bit instruction
+         | Immediate (Asm ())   -- ^ Action to be performed
 
 instance Show Def where
   show (Compiled x) = "Compiled " ++ show x
   show (InlineLit x) = "InlineLit " ++ show x
   show (RawInst x) = "RawInst " ++ show x
+  show (Immediate _) = "Immediate ..."
 
 data Val = Data Int
          | Inst Int
@@ -193,6 +195,8 @@ compile (RawInst i)
   | 0 <= i && i < 65536 = cComma i
   | otherwise = error "internal error: instruction doesn't fit in 16 bits"
 
+compile (Immediate f) = f
+
 jmp, jmp0 :: Int -> Asm ()
 jmp a | a < 8192 = cComma a
       | otherwise = error "internal error: jump destination out of range"
@@ -201,7 +205,9 @@ jmp0 a | a < 8192 = cComma $ 0x2000 .|. a
        | otherwise = error "internal error: jump destination out of range"
 
 asm :: [AsmTop] -> Asm ()
-asm tops = forM_ tops run
+asm tops = do
+  create "exit" $ Immediate exit
+  forM_ tops run
 
 main :: IO ()
 main = do
