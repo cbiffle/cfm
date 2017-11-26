@@ -4,6 +4,7 @@
 
 module top(
   input clk_12mhz,
+  output TX,
   output [4:0] led);
 
 wire clk_core;
@@ -58,5 +59,6 @@ wire pll_locked;
         );
 
         assign led = out[15:11];
+        assign TX = out[0];
 
 endmodule
