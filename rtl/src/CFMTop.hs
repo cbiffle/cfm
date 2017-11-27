@@ -45,14 +45,16 @@ coreWithStacks stackType bresp = (bread, bwrite)
     n = case stackType of
       Flops -> flopStack d15 (dop <&> (^. _2))
                              (dop <&> (^. _3))
-      RAMs  -> blockRamPow2 (repeat 0) (dop <&> (^. _1) <&> unpack)
-                                       (dop <&> repackStack)
+      RAMs  -> readNew (blockRamPow2 (repeat $ errorX "D"))
+                       (dop <&> (^. _1) <&> unpack)
+                       (dop <&> repackStack)
 
     r = case stackType of
       Flops -> flopStack d16 (rop <&> (^. _2))
                              (rop <&> (^. _3))
-      RAMs  -> blockRamPow2 (repeat 0) (rop <&> (^. _1) <&> unpack)
-                                       (rop <&> repackStack)
+      RAMs  -> readNew (blockRamPow2 (repeat $ errorX "R"))
+                       (rop <&> (^. _1) <&> unpack)
+                       (rop <&> repackStack)
 
     repackStack (_, _, Nothing) = Nothing
     repackStack (a, _, Just v) = Just (unpack a, v)
