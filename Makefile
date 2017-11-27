@@ -16,6 +16,9 @@ build/test.hex: build tools/test.fs
 	  stack --silent exec tools-exe test.fs ../build/test.hex
 
 build/icestick-256.asc: build
+	cd rtl && \
+	  stack --silent setup && \
+	  stack --silent build --only-dependencies
 	rtl/syn/syn-1k.sh
 	cp rtl/syn/out/syn1k.asc build/icestick-256.asc
 
