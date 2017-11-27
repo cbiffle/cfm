@@ -20,6 +20,10 @@ import Control.Monad.Except
 import Parser
 import qualified InstInfo as II
 
+finally :: (MonadError e m) => m a -> m b -> m a
+finally body handler = (body <* handler) `catchError`
+                          \e -> handler >> throwError e
+
 data Def = Compiled Int         -- ^ Callable address.
          | InlineLit Int        -- ^ 15-bit literal.
          | RawInst Int          -- ^ Arbitrary 16-bit instruction
@@ -139,9 +143,8 @@ run :: AsmTop -> Asm ()
 run (Colon name body) = do
   create name . Compiled =<< here
   modify $ \s -> s { asCompiling = True }
-  mapM_ compile' body
-  exit
-  modify $ \s -> s { asCompiling = False }
+  (mapM_ compile' body >> exit) `finally`
+    modify (\s -> s { asCompiling = False })
 
 run (Constant name) = do
   v <- pop
