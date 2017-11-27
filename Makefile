@@ -3,6 +3,8 @@ all:
 clean:
 	-rm -f build/*
 
+syn: build/icestick-256.asc
+
 program: build/icestick-256-prog.bin
 	iceprog $<
 
@@ -32,4 +34,4 @@ build/icestick-256-prog.asc: build/icestick-256.asc build/test.hex
 
 FORCE:
 
-.PHONY: all clean
+.PHONY: all clean syn
