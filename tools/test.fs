@@ -60,6 +60,7 @@
   ;
 
 : chatty
+  1 bit drop            \ Ensure TX is high for a bit time before beginning.
   begin
     0x48 tx
     0x65 tx
