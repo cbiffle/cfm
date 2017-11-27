@@ -16,6 +16,7 @@ library
                        Types
                        Shifter
                        FlopStack
+                       IOBus
                        GPIO
                        Beh
                        Str

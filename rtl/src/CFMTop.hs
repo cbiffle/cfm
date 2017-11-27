@@ -4,14 +4,13 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE BinaryLiterals #-}
-{-# LANGUAGE ViewPatterns #-}
 module CFMTop where
 
 import Clash.Prelude hiding (Word, v, readIO)
 import Control.Lens hiding ((:>))
-import Data.Bool
 import Str
 import Types
+import IOBus
 import GPIO
 import FlopStack
 
@@ -66,18 +65,8 @@ system raminit stackType = outs
 
     writeIO = bwrite <&> maybe False ((/= 0) . slice d14 d14 . fst)
 
-    (ioresp, outs) = outport $ iobus
-        <&> \(split -> (m, a), w) -> bool Nothing (Just (a, w)) (unpack m)
-    iobus = iointerface bread bwrite
-
-iointerface :: Signal d WordAddr
-            -> Signal d (Maybe (WordAddr, Word))
-            -> Signal d (WordAddr, Maybe Word)
-iointerface rd wr = repack <$> rd <*> wr
-  where
-    repack _ (Just (a, w)) = (a, Just w)
-    repack a _ = (a, Nothing)
-
+    (ioresp, outs) = outport iobus
+    iobus = coreToIO bread bwrite
 
 topEntity :: Clock System 'Source
           -> Reset System 'Asynchronous
