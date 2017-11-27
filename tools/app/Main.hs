@@ -176,6 +176,7 @@ run (Interp (Word s)) = do
     _ -> throwError ("word " ++ s ++ " cannot be used in interpreted code")
 
 run (Interp (Begin _ _)) = throwError "loops not permitted in interpreted code"
+run (Interp (If _ _)) = throwError "if-then not permitted in interpreted code"
 
 compile' :: AsmFrag -> Asm ()
 compile' (Comment _) = pure ()
@@ -187,6 +188,26 @@ compile' (Begin body end) = do
   case end of
     Again -> jmp begin
     Until -> jmp0 begin
+
+compile' (If trueBody melse) = do
+  let placeholder = 0
+      mark = here <* comma placeholder <* blockFusion
+      resolve op loc = do
+        dest <- here
+        patch (Data placeholder) (Inst (op .|. dest)) loc
+        blockFusion
+
+  if_ <- mark
+  mapM_ compile' trueBody
+
+  case melse of
+    Just falseBody -> do
+      else_ <- mark
+      resolve 0x2000 if_
+      mapM_ compile' falseBody
+      resolve 0x0000 else_
+
+    Nothing -> resolve 0x2000 if_
 
 compile :: Def -> Asm()
 compile (Compiled a)
