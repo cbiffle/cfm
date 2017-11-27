@@ -17,6 +17,11 @@ build/test.hex: build tools/test.fs
 	  stack --silent build && \
 	  stack --silent exec tools-exe test.fs ../build/test.hex
 
+%.readmemb: %.hex
+	ruby -e 'STDIN.each_line { |line| printf("%016b\n", line.to_i(16)) }' \
+	  < $< \
+	  > $@
+
 build/icestick-256.asc: build
 	cd rtl && \
 	  stack --silent setup && \
