@@ -8,10 +8,8 @@ syn: build/icestick-2k.asc
 program: build/icestick-2k-prog.bin
 	iceprog $<
 
-build:
-	mkdir build
-
-build/test.hex: build tools/test.fs
+build/test.hex: tools/test.fs
+	mkdir -p build
 	cd tools && \
 	  stack --silent setup && \
 	  stack --silent build && \
@@ -22,7 +20,8 @@ build/test.hex: build tools/test.fs
 	  < $< \
 	  > $@
 
-build/icestick-2k.asc: build
+build/icestick-2k.asc:
+	mkdir -p build
 	cd rtl && \
 	  stack --silent setup && \
 	  stack --silent build --only-dependencies
