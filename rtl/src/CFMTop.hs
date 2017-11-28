@@ -69,9 +69,8 @@ coreWithRAM
   -> SNat ramSize       -- ^ Size of RAM (need not be pow2).
   -> FilePath           -- ^ Synthesis-relative RAM initialization file path.
   -> Signal dom (Maybe Word)  -- ^ I/O read response, valid when addressed.
-  -> ( Signal dom (Maybe (IOAddr, Maybe Word))  -- ^ I/O bus outputs
-     , Signal dom Bool )
-coreWithRAM stackType ramSize ramPath ioresp = (ioreq, readWasIO')
+  -> Signal dom (Maybe (IOAddr, Maybe Word))  -- ^ I/O bus outputs
+coreWithRAM stackType ramSize ramPath ioresp = ioreq
   where
     (bread, bwrite) = coreWithStacks stackType bresp
 
@@ -84,7 +83,7 @@ coreWithRAM stackType ramSize ramPath ioresp = (ioreq, readWasIO')
 
     -- The I/O bridge generates the ioreq signal and the status signal we use
     -- to suppress memory writes.
-    (ioreq, readWasIO', writeIsIO) = coreToIO bread bwrite
+    (ioreq, writeIsIO) = coreToIO bread bwrite
 
 system :: (HasClockReset dom gated synchronous)
        => FilePath
@@ -92,13 +91,12 @@ system :: (HasClockReset dom gated synchronous)
        -> Signal dom Word
 system raminit stackType = outs
   where
-    (ioreq, readWasIO') = coreWithRAM stackType (SNat @2048) raminit ioresp
-    -- HACK: should use responseMux
-    readWasIO = register False readWasIO'
+    ioreq = coreWithRAM stackType (SNat @2048) raminit ioresp
+    (ioreq0 :> _ :> Nil, ioch) = ioDecoder @1 ioreq
+    ioresp = responseMux (ioresp0 :> pure 0 :> Nil) ioch
 
     -- I/O devices
-    (ioresp', outs) = outport ioreq
-    ioresp = mux readWasIO (Just <$> ioresp') (pure Nothing)
+    (ioresp0, outs) = outport ioreq0
 
 topEntity :: Clock System 'Source
           -> Reset System 'Asynchronous

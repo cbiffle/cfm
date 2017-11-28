@@ -24,14 +24,13 @@ type IOAddr = BitVector 14
 coreToIO :: Signal d WordAddr                       -- ^ read address from core
          -> Signal d (Maybe (WordAddr, t))          -- ^ write command from core
          -> ( Signal d (Maybe (IOAddr, Maybe t))    -- ^ combined I/O interface
-            , Signal d Bool                         -- ^ I/O read active signal
             , Signal d Bool                         -- ^ I/O write active signal
             )
 coreToIO read write = unbundle $ datapath <$> read <*> write
   where
-    datapath _ (Just (split -> (1, wa), wd)) = (Just (wa, Just wd), False, True)
-    datapath (split -> (1, ra)) _ = (Just (ra, Nothing), True, False)
-    datapath _ _ = (Nothing, False, False)
+    datapath _ (Just (split -> (1, wa), wd)) = (Just (wa, Just wd), True)
+    datapath (split -> (1, ra)) _ = (Just (ra, Nothing), False)
+    datapath _ _ = (Nothing, False)
 
 
 -- | Splits an I/O command from the core into device-specific commands, and
@@ -69,7 +68,7 @@ topBits
   :: (KnownNat bits, KnownNat extra)
   => BitVector (bits + extra)
   -> BitVector bits
-topBits = pack . takeI . unpack @(Vec _ Bit)
+topBits = fst . split
 
 -- | Routes device responses.
 --
