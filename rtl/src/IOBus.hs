@@ -42,22 +42,23 @@ coreToIO read write = unbundle $ datapath <$> read <*> write
 -- then demultiplexed onto @2 ^ m@ different channels. The index of the channel
 -- chosen is separately provided to be latched by the response mux.
 ioDecoder :: forall m n t d. (KnownNat m, KnownNat n)
-          => Signal d (Maybe (BitVector (m + n), t))
-          -> ( Vec (2 ^ m) (Signal d (Maybe (BitVector n, t)))
+          => Signal d (Maybe (BitVector (m + n), Maybe t))
+          -> ( Vec (2 ^ m) (Signal d (Maybe (BitVector n, Maybe t)))
              , Signal d (Maybe (BitVector m))
              )
 ioDecoder = first unbundle . unbundle . fmap ioDecoder'
 
 ioDecoder' :: forall m n t. (KnownNat m, KnownNat n)
-           => Maybe (BitVector (m + n), t)
-           -> (Vec (2 ^ m) (Maybe (BitVector n, t)), Maybe (BitVector m))
-ioDecoder' input = (map (\i -> join (gate i <$> top <*> input')) indicesI, top)
+           => Maybe (BitVector (m + n), Maybe t)
+           -> (Vec (2 ^ m) (Maybe (BitVector n, Maybe t)), Maybe (BitVector m))
+ioDecoder' input = (map (\i -> join (gate i <$> top <*> input')) indicesI, ch)
   where
     gate :: Index (2 ^ m) -> BitVector m -> a -> Maybe a
     gate i b | pack i == b = Just
              | otherwise = const Nothing
     input' = truncateAddr input
     top = topBits . fst <$> input
+    ch = join (maybe top (const Nothing) . snd <$> input)
 
 truncateAddr :: (KnownNat n)
              => Maybe (BitVector (m + n), t)
