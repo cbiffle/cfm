@@ -6,7 +6,7 @@
 {-# LANGUAGE BinaryLiterals #-}
 module CFMTop where
 
-import Clash.Prelude hiding (Word, v, readIO, read)
+import Clash.Prelude hiding (Word, readIO, read)
 import Control.Lens hiding ((:>))
 import Data.Maybe (fromMaybe)
 import Str

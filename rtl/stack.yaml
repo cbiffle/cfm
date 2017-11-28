@@ -4,14 +4,14 @@ packages:
 - '.'
 - location:
     git: https://github.com/clash-lang/clash-compiler.git
-    commit: 1877cc0ef906b2eb37ff00e233d005bf5b41136e
+    commit: 2211ef41203d7666c345f1b607aec18e78080f03
   subdirs:
   - clash-lib
   - clash-ghc
   extra-dep: true
 - location:
     git: https://github.com/clash-lang/clash-prelude.git
-    commit: 487906e1ab9f6c65945865ee9246d4d9df0debb4
+    commit: 7fbf635210c184038ee8638cfde84c0ca4a0559a
   extra-dep: true
 
 extra-deps:

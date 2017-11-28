@@ -5,7 +5,7 @@
 {-# LANGUAGE TypeApplications #-}
 module Beh where
 
-import Clash.Prelude hiding (Word, cycle, v)
+import Clash.Prelude hiding (Word, cycle)
 
 import Data.Tuple (swap)
 import Control.Lens

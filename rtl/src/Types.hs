@@ -9,7 +9,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 module Types where
 
-import Clash.Prelude hiding (Word, cycle, v)
+import Clash.Prelude hiding (Word, cycle)
 import GHC.Generics
 
 import Control.DeepSeq (NFData)

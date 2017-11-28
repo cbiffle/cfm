@@ -10,7 +10,7 @@
 -- | IO bus support and interfacing
 module IOBus where
 
-import Clash.Prelude hiding (Word, v, read)
+import Clash.Prelude hiding (Word, read)
 
 import Control.Monad (join)
 import Control.Arrow (first)

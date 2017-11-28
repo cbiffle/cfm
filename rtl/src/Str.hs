@@ -7,7 +7,7 @@
 -- | Structural model for ICE40 synthesis.
 module Str where
 
-import Clash.Prelude hiding (Word, v)
+import Clash.Prelude hiding (Word)
 
 import Shifter
 import Types
