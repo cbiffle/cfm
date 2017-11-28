@@ -112,8 +112,7 @@ commaVal v = do
   modify $ \s -> s { asPos = asPos s + 1 }
 
 comma :: Int -> Asm ()
-comma v | 0 <= v && v < 65536 = do
-  commaVal (Data v)
+comma v | 0 <= v && v < 65536 = commaVal (Data v)
 comma _ = error "internal error: value passed to comma out of range"
 
 cComma :: Int -> Asm ()
@@ -260,7 +259,7 @@ main = do
   pr <- parseSourceFile source
 
   case pr of
-    Left e -> putStrLn $ show e
+    Left e -> print e
     Right tops -> do
       let (r, s) = runState (runExceptT $ runAsm $ asm tops) def
       case r of
