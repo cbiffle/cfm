@@ -128,11 +128,14 @@ cComma v | 0 <= v && v < 65536 = do
       case lastInst of
         Just (Inst i) -> case M.lookup (i, v) II.lazyFusionMap of
           Just (_, iF) -> patch (Inst i) (Inst iF) (end - 1)
-          Nothing ->
-            -- Detect tail-calls, replace with branches.
-            if v == 0x700C && (i .&. 0xE000) == 0x4000
-              then patch (Inst i) (Inst (i .&. 0x1FFF)) (end - 1)
-              else commaVal (Inst v)
+          Nothing -> case (i .&. 0xE000, v) of
+            -- Call-Return: convert to jump (tail-call optimization)
+            (0x4000, 0x700C) -> patch (Inst i) (Inst (i .&. 0x1FFF)) (end - 1)
+            -- Jump-Return: elide return, e.g. "begin again ;"
+            (0x0000, 0x700C) -> pure ()
+            -- Otherwise, compile it.
+            _ -> commaVal (Inst v)
+        -- No previous instruction? Must be after an org directive. Don't fuse.
         _ -> commaVal (Inst v)
 cComma _ = error "internal error: value passed to cComma out of range"
 
