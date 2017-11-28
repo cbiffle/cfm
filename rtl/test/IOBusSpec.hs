@@ -3,6 +3,7 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE TypeFamilies #-}
 module IOBusSpec where
 
 import Clash.Prelude
@@ -15,15 +16,10 @@ import IOBus
 
 spec = do
   context "ioDecoder' at various type indices" $ do
-    context "normal ones" $ do
-      ioDecoderDatapathSpec d1 d4
-      ioDecoderDatapathSpec d2 d4
-      ioDecoderDatapathSpec d3 d4
-
-    context "corner cases" $ do
-      ioDecoderDatapathSpec d0 d0
-      ioDecoderDatapathSpec d0 d4
-      ioDecoderDatapathSpec d4 d0
+    ioDecoderDatapathSpec d1 d4
+    ioDecoderDatapathSpec d2 d4
+    ioDecoderDatapathSpec d3 d4
+    ioDecoderDatapathSpec d4 d0
 
   context "responseMux at various type indices" $ do
     responseMuxSpec d0
@@ -31,7 +27,7 @@ spec = do
     responseMuxSpec d2
 
 ioDecoderDatapathSpec
-  :: forall m n. (KnownNat m, KnownNat n)
+  :: forall m n. (KnownNat m, KnownNat n, CmpNat m 0 ~ 'GT)
   => SNat m -> SNat n -> Spec
 ioDecoderDatapathSpec mS nS =
   context ("ioDecoder' " L.++ show mS L.++ " " L.++ show nS) $ do

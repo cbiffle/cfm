@@ -4,7 +4,6 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE FlexibleContexts #-}
 
 -- | IO bus support and interfacing
@@ -40,14 +39,14 @@ coreToIO read write = unbundle $ datapath <$> read <*> write
 -- top @m@ bits) and a device address (the bottom @n@ bits). The I/O command is
 -- then demultiplexed onto @2 ^ m@ different channels. The index of the channel
 -- chosen is separately provided to be latched by the response mux.
-ioDecoder :: forall m n t d. (KnownNat m, KnownNat n)
+ioDecoder :: forall m n t d. (KnownNat m, KnownNat n, CmpNat m 0 ~ 'GT)
           => Signal d (Maybe (BitVector (m + n), Maybe t))
           -> ( Vec (2 ^ m) (Signal d (Maybe (BitVector n, Maybe t)))
              , Signal d (Maybe (BitVector m))
              )
 ioDecoder = first unbundle . unbundle . fmap ioDecoder'
 
-ioDecoder' :: forall m n t. (KnownNat m, KnownNat n)
+ioDecoder' :: forall m n t. (KnownNat m, KnownNat n, CmpNat m 0 ~ 'GT)
            => Maybe (BitVector (m + n), Maybe t)
            -> (Vec (2 ^ m) (Maybe (BitVector n, Maybe t)), Maybe (BitVector m))
 ioDecoder' input = (map (\i -> join (gate i <$> top <*> input')) indicesI, ch)
