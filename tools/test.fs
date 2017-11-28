@@ -19,8 +19,6 @@
 
 4 org
 
-: 0= 0 = ;
-
 \ Delays for u iterations, which in practice means 5u + 2 cycles.
 : delay   ( u -- )
   begin
