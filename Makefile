@@ -3,9 +3,9 @@ all:
 clean:
 	-rm -f build/*
 
-syn: build/icestick-256.asc
+syn: build/icestick-2k.asc
 
-program: build/icestick-256-prog.bin
+program: build/icestick-2k-prog.bin
 	iceprog $<
 
 build:
@@ -22,17 +22,17 @@ build/test.hex: build tools/test.fs
 	  < $< \
 	  > $@
 
-build/icestick-256.asc: build
+build/icestick-2k.asc: build
 	cd rtl && \
 	  stack --silent setup && \
 	  stack --silent build --only-dependencies
 	rtl/syn/syn-1k.sh
-	cp rtl/syn/out/syn1k.asc build/icestick-256.asc
+	cp rtl/syn/out/syn1k.asc build/icestick-2k.asc
 
-build/icestick-256-prog.asc: build/icestick-256.asc build/test.hex
-	icebram -v rtl/syn/random-256.hex build/test.hex \
-	  < build/icestick-256.asc \
-	  > build/icestick-256-prog.asc
+build/icestick-2k-prog.asc: build/icestick-2k.asc build/test.hex
+	icebram -v rtl/syn/random-2k.hex build/test.hex \
+	  < build/icestick-2k.asc \
+	  > build/icestick-2k-prog.asc
 
 %.bin: %.asc
 	icepack < $< > $@

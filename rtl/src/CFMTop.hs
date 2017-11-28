@@ -92,7 +92,7 @@ system :: (HasClockReset dom gated synchronous)
        -> Signal dom Word
 system raminit stackType = outs
   where
-    (ioreq, readWasIO') = coreWithRAM stackType d256 raminit ioresp
+    (ioreq, readWasIO') = coreWithRAM stackType (SNat @2048) raminit ioresp
     -- HACK: should use responseMux
     readWasIO = register False readWasIO'
 
@@ -105,7 +105,7 @@ topEntity :: Clock System 'Source
           -> Signal System Word
 topEntity c r = withClockReset @System @'Source @'Asynchronous c r $
   register 0 $
-  system "random-256.bin" RAMs
+  system "random-2k.readmemb" RAMs
 
 program :: Vec 16 Word
 program =
