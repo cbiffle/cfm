@@ -19,6 +19,6 @@ outport :: (HasClockReset d g s)
 outport cmd = (resp, outs)
   where
     outs = register 0 $ fromMaybe <$> outs <*> (join . fmap snd <$> cmd)
-    resp = pure 0
+    resp = outs
 
 

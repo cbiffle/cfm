@@ -52,10 +52,10 @@ wire pll_locked;
 
         wire [15:0] out;
 
-        CFMTop_topEntity _inst(
-          .c(clk_core),
-          .r(~resetn),
-          .result(out),
+        cfm_demo_top _inst(
+          .clk_core(clk_core),
+          .reset(~resetn),
+          .outport(out),
         );
 
         assign led = out[15:11];

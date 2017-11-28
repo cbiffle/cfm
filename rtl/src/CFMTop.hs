@@ -98,9 +98,14 @@ system raminit stackType = outs
     -- I/O devices
     (ioresp0, outs) = outport ioreq0
 
+{-# ANN topEntity (defTop { t_name = "cfm_demo_top"
+                          , t_inputs = [ PortName "clk_core"
+                                       , PortName "reset"
+                                       ]
+                          , t_output = PortName "outport"
+                          }) #-}
 topEntity :: Clock System 'Source
           -> Reset System 'Asynchronous
           -> Signal System Word
 topEntity c r = withClockReset @System @'Source @'Asynchronous c r $
-  register 0 $
   system "random-2k.readmemb" RAMs

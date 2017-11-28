@@ -6,6 +6,7 @@ cd "$(dirname "$0")"
 SYN="."
 ROOT=".."
 OUT="out"
+VERILOG="${OUT}/verilog/CFMTop/cfm_demo_top"
 
 rm -rf "${OUT}"
 
@@ -14,11 +15,11 @@ rm -rf "${OUT}"
                 --verilog \
                 "${ROOT}/src/CFMTop.hs"
 
-rm -rf "${OUT}"/verilog/CFMTop/*testbench*v
-rm -rf "${OUT}"/verilog/CFMTop/*outputVerifier*v
+rm -rf "${VERILOG}"/*testbench*v
+rm -rf "${VERILOG}"/*outputVerifier*v
 
 
-yosys -p "read_verilog ${OUT}/verilog/CFMTop/*.v ${SYN}/icestick-top.v" \
+yosys -p "read_verilog ${VERILOG}/*.v ${SYN}/icestick-top.v" \
       -p "synth_ice40 -top top -abc2 -blif ${OUT}/syn1k.blif" \
       -q
 
