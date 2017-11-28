@@ -21,4 +21,11 @@ outport cmd = (resp, outs)
     outs = register 0 $ fromMaybe <$> outs <*> (join . fmap snd <$> cmd)
     resp = outs
 
+inport :: (HasClockReset d g s)
+       => Signal d Word
+       -> Signal d (Maybe (BitVector n, Maybe Word))
+       -> Signal d Word
+inport port _ = resp
+  where
+    resp = register 0 port
 

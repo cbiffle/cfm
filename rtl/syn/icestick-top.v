@@ -5,6 +5,7 @@
 module top(
   input clk_12mhz,
   output TX,
+  input RX,
   output [4:0] led);
 
 wire clk_core;
@@ -51,14 +52,17 @@ wire pll_locked;
           end
 
         wire [15:0] out;
+        wire [15:0] in;
 
         cfm_demo_top _inst(
           .clk_core(clk_core),
           .reset(~resetn),
           .outport(out),
+          .inport(in),
         );
 
         assign led = out[15:11];
         assign TX = out[0];
+        assign in = {15'b0, RX};
 
 endmodule
