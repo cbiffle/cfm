@@ -129,7 +129,11 @@ cComma v | 0 <= v && v < 65536 = do
       case lastInst of
         Just (Inst i) -> case M.lookup (i, v) II.lazyFusionMap of
           Just (_, iF) -> patch (Inst i) (Inst iF) (end - 1)
-          Nothing -> commaVal (Inst v)
+          Nothing ->
+            -- Detect tail-calls, replace with branches.
+            if v == 0x700C && (i .&. 0xE000) == 0x4000
+              then patch (Inst i) (Inst (i .&. 0x1FFF)) (end - 1)
+              else commaVal (Inst v)
         _ -> commaVal (Inst v)
 cComma _ = error "internal error: value passed to cComma out of range"
 
