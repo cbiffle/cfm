@@ -16,9 +16,14 @@
 0x6c00 alu: @             ( x -- [x] )
 0x6703 alu: =             ( a b -- a=b )
 0x6f03 alu: u<            ( a b -- a<b )
+0x6803 alu: <             ( a b -- a<b )
 0x6181 alu: over          ( a b -- a b a )
+0x6e81 alu: depth         ( a b -- a b a )
+0x6147 alu: >r            ( a --  R: -- a )
 
 4 org
+
+: execute  ( i*x xt -- j*x ) >r ;
 
 \ Delays for u iterations, which in practice means 5u + 2 cycles.
 : delay   ( u -- )
@@ -30,8 +35,8 @@
 \ I/O port addresses are defined as their complements, so they can be loaded by a
 \ literal instruction and inverted before use. TODO - the assembler should probably
 \ do this for us.
-0x7FFF constant ~outport
-0x5FFF constant ~inport
+0x7FFF constant ~outport ( 8000 )
+0x5FFF constant ~inport  ( A000 )
 
 \ For 19200 bps at 40MHz core clock
 : bit-delay 416 delay ;
@@ -79,35 +84,136 @@
   2 = \ Stop bit high, start bit low => binary 10 => 2
   ;
 
-\ UART demo
+: rx!
+  rx if exit then
+  rx! ;
+
+\ Simple monitor
 : cr 0x0d tx 0x0a tx ;
 : space 0x20 tx ;
 
 : .nib  ( c -- c' )
   dup 12 rshift   \ extract top nibble
-  9 over u< if 7 + then 0x30 +   \ convert to hex
+  9 over u< if 7 + then [char] 0 +   \ convert to hex
   tx
   4 lshift ;
 
 : .hex .nib .nib .nib .nib space drop ;
 
+: >nib  ( x -- x' ? )
+  begin
+    rx!
+    3 over = if drop 0 exit then
+    32 over < if
+      dup tx
+      [char] 0 -  9 over u< if 7 - then
+      0xF over u< if
+        7 tx  8 tx
+      else
+        swap 4 lshift or
+        1 exit
+      then
+    else
+      drop 7 tx
+    then
+  again ;
+
+: read-word
+  0 >nib if >nib if >nib if >nib if 1 exit then then then then
+  drop 0 ;
+
+: dump
+  begin
+    over over = if drop drop exit then
+    dup .hex space
+    dup @ .hex cr
+    2 +
+  again ;
+
+: cmd
+  [char] > tx space
+  rx! dup tx
+
+  [char] r over = if drop
+    read-word if
+      space @ .hex
+    else
+      [char] ? tx
+    then
+    cr exit
+  then
+
+  [char] w over = if drop
+    read-word if
+      space read-word if
+        swap ! [char] ! tx
+      else
+        [char] ? tx
+      then
+    else
+      [char] ? tx
+    then
+    cr exit
+  then
+
+  [char] t over = if drop
+    space dup .hex cr exit
+  then
+
+  [char] p over = if drop
+    read-word if
+    else
+      [char] ? tx
+    then
+    cr exit
+  then
+
+  [char] d over = if drop
+    drop cr exit
+  then
+
+  [char] ? over = if drop
+    space depth .hex cr exit
+  then
+
+  [char] x over = if drop
+    read-word if
+      cr
+      execute
+    else
+      [char] ? tx cr
+    then
+    exit
+  then
+
+  [char] v over = if drop
+    read-word if
+      space read-word if
+        cr swap dump
+      else
+        [char] ? tx cr
+      then
+    else
+      [char] ? tx cr
+    then
+    exit
+  then
+
+  drop
+  [char] ? tx cr ;
+
 : hello
-  0x48 tx
-  0x65 tx
-  0x6c dup tx tx
-  0x6f tx
-  0x21 tx
+  [char] H tx
+  [char] e tx
+  [char] l dup tx tx
+  [char] o tx
+  [char] ! tx
   cr ;
 
 : chatty
   1 bit> drop           \ Ensure TX is high for a bit time before beginning.
   hello
-  0x2152 invert .hex cr
-  begin
-    rx 0 = if 0x21 tx 0x3F tx cr then
-    dup tx cr
-    .hex cr
-  again ;
+  begin cmd again ;
 
 0 org
 : main chatty ;
