@@ -131,7 +131,7 @@
   again ;
 
 : cmd
-  [char] > tx space
+  depth .hex [char] > tx space
   rx! dup tx
 
   [char] r over = if drop
@@ -170,10 +170,6 @@
 
   [char] d over = if drop
     drop cr exit
-  then
-
-  [char] ? over = if drop
-    space depth .hex cr exit
   then
 
   [char] x over = if drop
