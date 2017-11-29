@@ -1,4 +1,4 @@
-all:
+all: build/icestick-2k-prog.bin
 
 clean:
 	-rm -f build/*
