@@ -90,27 +90,30 @@ system :: (HasClockReset dom gated synchronous)
        => FilePath
        -> StackType
        -> Signal dom Word
-       -> Signal dom Word
-system raminit stackType ins = outs
+       -> (Signal dom Word, Signal dom Word)
+system raminit stackType ins = (outs, outs2)
   where
     ioreq = coreWithRAM stackType (SNat @2048) raminit ioresp
-    (ioreq0 :> ioreq1 :> Nil, ioch) = ioDecoder @1 ioreq
-    ioresp = responseMux (ioresp0 :> ioresp1 :> Nil) ioch
+    (ioreq0 :> ioreq1 :> ioreq2 :> _ :> Nil, ioch) = ioDecoder @2 ioreq
+    ioresp = responseMux (ioresp0 :> ioresp1 :> ioresp2 :> pure 0 :> Nil) ioch
 
     -- I/O devices
     (ioresp0, outs) = outport ioreq0
     ioresp1 = inport ins ioreq1
+    (ioresp2, outs2) = outport ioreq2
 
 {-# ANN topEntity (defTop { t_name = "cfm_demo_top"
                           , t_inputs = [ PortName "clk_core"
                                        , PortName "reset"
                                        , PortName "inport"
                                        ]
-                          , t_output = PortName "outport"
+                          , t_output = PortField "" [ PortName "out1"
+                                                    , PortName "out2"
+                                                    ]
                           }) #-}
 topEntity :: Clock System 'Source
           -> Reset System 'Asynchronous
           -> Signal System Word
-          -> Signal System Word
+          -> (Signal System Word, Signal System Word)
 topEntity c r = withClockReset @System @'Source @'Asynchronous c r $
   system "random-2k.readmemb" RAMs

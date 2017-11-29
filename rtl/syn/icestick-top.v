@@ -51,18 +51,20 @@ wire pll_locked;
             reset_delay <= reset_delay + 1;
           end
 
-        wire [15:0] out;
+        wire [15:0] out1;
+        wire [15:0] out2;
         wire [15:0] in;
 
         cfm_demo_top _inst(
           .clk_core(clk_core),
           .reset(~resetn),
-          .outport(out),
+          .out1(out1),
+          .out2(out2),
           .inport(in),
         );
 
-        assign led = out[15:11];
-        assign TX = out[0];
+        assign led = out2[4:0];
+        assign TX = out1[0];
         assign in = {15'b0, RX};
 
 endmodule

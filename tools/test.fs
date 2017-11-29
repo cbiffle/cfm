@@ -31,7 +31,7 @@
 \ literal instruction and inverted before use. TODO - the assembler should probably
 \ do this for us.
 0x7FFF constant ~outport
-0x3FFF constant ~inport
+0x5FFF constant ~inport
 
 \ For 19200 bps at 40MHz core clock
 : bit-delay 416 delay ;
