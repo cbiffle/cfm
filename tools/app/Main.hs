@@ -278,7 +278,7 @@ main = do
 
           forM_ [0 .. maxAddr] $ \a ->
             case M.lookup a (asMem s) of
-              Just v  -> printf "  %04x %04x\n" (2 * a) (deval v)
+              Just v  -> printf "  %04x %04x   %s\n" (2 * a) (deval v) (dis v)
               Nothing -> printf "  %04x ....\n" (2 * a)
 
           putStrLn "Symbols:"
@@ -290,3 +290,7 @@ main = do
           forM_ [0 .. maxAddr] $ \a ->
             hPrintf out "%04x\n" $ maybe 0xDEAD deval $ M.lookup a $ asMem s
           hClose out
+
+dis (Data v) | v < 0x8000 = show v
+             | otherwise = "raw: " ++ show v
+dis (I i) = show i
