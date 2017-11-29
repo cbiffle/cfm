@@ -68,7 +68,11 @@ newtype Reserved x = Res x deriving (Eq, Show, BitPack, Arbitrary)
 
 -- | Predicate for filtering out instructions with reserved bits set.
 canonicalInst :: Inst -> Bool
+-- ALU instructions with reserved bit 4 set are reserved.
 canonicalInst (NotLit (ALU _ _ _ _ _ (Res 1) _ _)) = False
+-- ALU instructions executing a simultaneous load and store are reserved.
+canonicalInst (NotLit (ALU _ MemAtT _ _ True _ _ _)) = False
+-- Everything else is fine.
 canonicalInst _ = True
 
 -------------------------------------------------------------------------------------
