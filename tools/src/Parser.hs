@@ -1,5 +1,4 @@
 {-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE BinaryLiterals #-}
 {-# LANGUAGE TupleSections #-}
 {-# OPTIONS_GHC -fno-warn-missing-signatures #-}
@@ -88,7 +87,7 @@ frag = comment <|> loop <|> ifThen <|> word
 
 comment = Comment <$> (do sic "\\"
                           c <- many (noneOf "\n")
-                          (newline *> maybeWs)
+                          newline *> maybeWs
                           pure c
                        <|> sic "(" *> many (noneOf ")") <* char ')' <* maybeWs)
                   <?> "comment"
