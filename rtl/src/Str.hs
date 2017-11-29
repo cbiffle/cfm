@@ -24,6 +24,8 @@ datapath (MS dptr rptr pc t lf lastSpace) (IS m i n r) =
             NotLit (JumpZ _)             -> N   -- pops data stack
             _                            -> T   -- leaves data stack unchanged
 
+      pc1 = pc + 1
+
       -- Factored pattern: a mux that depends on the state of the Load Flag
       -- register, for doing something different during a load cycle.
       duringLoadElse :: t -> t -> t
@@ -42,7 +44,7 @@ datapath (MS dptr rptr pc t lf lastSpace) (IS m i n r) =
             NotLit (JumpZ _)              -> (-1, Nothing)
             _                             -> (0, Nothing)
       (rptr', rdlt, rop) = stack rptr $ case inst of
-            NotLit (Call _)               -> (1, Just (low ++# (pc + 1) ++# low))
+            NotLit (Call _)               -> (1, Just (low ++# pc1 ++# low))
             NotLit (ALU _ _ _ tr _ _ d _) -> (d, if tr then Just t else Nothing)
             _                             -> (0, Nothing)
 
@@ -55,7 +57,7 @@ datapath (MS dptr rptr pc t lf lastSpace) (IS m i n r) =
             NotLit (Call tgt)               -> zeroExtend tgt
             NotLit (JumpZ tgt) | t == 0     -> zeroExtend tgt
             NotLit (ALU True _ _ _ _ _ _ _) -> slice d14 d1 r
-            _                               -> pc + 1
+            _                               -> pc1
 
       -- The ALU. Magnitude comparison is implemented in terms of subtraction.
       -- This means we get subtraction for free.
