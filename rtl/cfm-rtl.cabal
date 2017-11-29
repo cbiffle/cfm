@@ -13,7 +13,7 @@ cabal-version:       >=1.10
 library
   hs-source-dirs:      src
   exposed-modules:     Lib
-                       Types
+                       CoreInterface
                        Shifter
                        FlopStack
                        IOBus
@@ -45,6 +45,7 @@ test-suite cfm-rtl-test
                      , ghc-typelits-extra
                      , ghc-typelits-natnormalise
                      , ghc-typelits-knownnat
+                     , cfm-arch
                      , cfm-rtl
                      , clash-prelude
                      , hspec

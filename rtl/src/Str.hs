@@ -11,6 +11,7 @@ import Clash.Prelude hiding (Word)
 import Inst
 import Shifter
 import Types
+import CoreInterface
 
 -- | Combinational datapath for CFM core.
 datapath :: MS -> IS -> (MS, OS)

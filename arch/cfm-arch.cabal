@@ -14,6 +14,7 @@ cabal-version:       >=1.10
 library
   hs-source-dirs:      src
   exposed-modules:     Inst
+                       Types
   build-depends:       base >= 4.7 && < 5
                      , clash-prelude
                      , QuickCheck

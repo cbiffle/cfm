@@ -11,6 +11,7 @@ import Control.Lens hiding ((:>))
 import Data.Maybe (fromMaybe)
 import Str
 import Types
+import CoreInterface
 import IOBus
 import GPIO
 import FlopStack

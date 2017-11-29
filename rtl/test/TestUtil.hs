@@ -12,6 +12,7 @@ import Test.Hspec
 import Test.QuickCheck hiding ((.&.))
 
 import Types
+import CoreInterface
 
 newtype Fetch = Fetch MS deriving (Show)
 

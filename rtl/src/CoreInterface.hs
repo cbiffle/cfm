@@ -1,13 +1,10 @@
-{-# LANGUAGE BinaryLiterals #-}
 {-# LANGUAGE DataKinds #-}
-{-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE TypeOperators #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-module Types where
+module CoreInterface where
 
 import Clash.Prelude hiding (Word, cycle)
 import GHC.Generics
@@ -15,11 +12,7 @@ import GHC.Generics
 import Control.DeepSeq (NFData)
 import Control.Lens hiding ((:>))
 
-type Width = 16
-type Word = BitVector Width
-type WordAddr = BitVector (Width - 1)
-type SP = BitVector 8
-type SDelta = Signed 2
+import Types
 
 data IS = IS
   { _isMData :: Word

@@ -13,7 +13,7 @@ import Control.Monad.State
 import Control.Monad.Reader
 
 import Inst
-import Types
+import CoreInterface
 
 datapath :: MS -> IS -> (MS, OS)
 datapath m = swap . runReader (runStateT cycle m)
