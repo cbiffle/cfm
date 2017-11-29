@@ -32,17 +32,21 @@
     0 over =
   until drop ;
 
-\ I/O port addresses are defined as their complements, so they can be loaded by a
-\ literal instruction and inverted before use. TODO - the assembler should probably
-\ do this for us.
+\ I/O port addresses are defined as their complements, so they can be loaded by
+\ a literal instruction and inverted before use. TODO - the assembler should
+\ probably do this for us.
 0x7FFF constant ~outport ( 8000 )
 0x5FFF constant ~inport  ( A000 )
 
-\ For 19200 bps at 40MHz core clock
-: bit-delay 416 delay ;
-: half-bit-delay 208 delay ;
+\ For 19200 bps, one bit = 52083.333 ns
+\ At 48MHz core clock, 1 cycle = 20.833 ns
+\ Thus: 2500.04 cycles / bit
+\ The 'delay' word delays for 5u+2 cycles, so we need to hand it...
+: bit-delay 500 delay ;
+: half-bit-delay 250 delay ;
 
-\ Treating 'c' as a shift register, transmits its LSB and shifts it to the right.
+\ Treating 'c' as a shift register, transmits its LSB and shifts it to the
+\ right.
 : bit>  ( c -- c' )
   1 2dup/and          ( c 1 lsb )
   ~outport invert !   ( c 1 )

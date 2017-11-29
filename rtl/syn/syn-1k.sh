@@ -28,4 +28,4 @@ arachne-pnr -d 1k -p "${SYN}/icestick.pcf" "${OUT}/syn1k.blif" \
             -o "${OUT}/syn1k.asc"
 
 icepack "${OUT}/syn1k.asc" "${OUT}/syn1k.bin"
-icetime -md hx1k -c 40 "${OUT}/syn1k.asc"
+icetime -md hx1k -c 48 "${OUT}/syn1k.asc"
