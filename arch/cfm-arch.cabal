@@ -1,0 +1,35 @@
+name:                cfm-arch
+version:             0.1.0.0
+synopsis:            Common architecture files for CFM
+license:             BSD3
+license-file:        LICENSE
+author:              Cliff L. Biffle
+maintainer:          code@cliffle.com
+copyright:           2017 Cliff L. Biffle
+category:            Hardware
+build-type:          Simple
+extra-source-files:  README.md
+cabal-version:       >=1.10
+
+library
+  hs-source-dirs:      src
+  exposed-modules:     Inst
+  build-depends:       base >= 4.7 && < 5
+                     , clash-prelude
+                     , QuickCheck
+  default-language:    Haskell2010
+  ghc-options:         -Wall
+
+test-suite cfm-arch-test
+  type:                exitcode-stdio-1.0
+  hs-source-dirs:      test
+  main-is:             Spec.hs
+  build-depends:       base
+                     , cfm-arch
+                     , clash-prelude
+                     , QuickCheck
+                     , hspec
+  ghc-options:         -threaded -rtsopts -with-rtsopts=-N -Wall
+                       -Wno-missing-signatures
+  default-language:    Haskell2010
+  other-modules:       InstSpec
