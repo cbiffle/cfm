@@ -13,7 +13,7 @@ build/test.hex: tools/test.fs
 	cd tools && \
 	  stack --silent setup && \
 	  stack --silent build && \
-	  stack --silent exec tools-exe test.fs ../build/test.hex
+	  stack --silent exec cfm-as test.fs ../build/test.hex
 
 %.readmemb: %.hex
 	ruby -e 'STDIN.each_line { |line| printf("%016b\n", line.to_i(16)) }' \
