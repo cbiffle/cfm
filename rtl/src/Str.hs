@@ -17,15 +17,7 @@ import CoreInterface
 -- | Combinational datapath for CFM core.
 datapath :: MS -> IS -> (MS, OS)
 datapath (MS dptr rptr pc t lf lastSpace) (IS m i n r) =
-  let -- instruction decoding
-      inst = unpack m
-      tmux = case inst of
-            NotLit (ALU _ x _ _ _ _ _ _) -> x
-            NotLit (JumpZ _)             -> N   -- pops data stack
-            _                            -> T   -- leaves data stack unchanged
-
-      pc1 = pc + 1
-
+  let -- things that do not depend on instruction decoding
       -- Factored pattern: a mux that depends on the state of the Load Flag
       -- register, for doing something different during a load cycle.
       duringLoadElse :: t -> t -> t
@@ -37,6 +29,19 @@ datapath (MS dptr rptr pc t lf lastSpace) (IS m i n r) =
       stack ptr ~(d, wr) = (ptr, 0, Nothing) `duringLoadElse`
                            (ptr + pack (signExtend d), d, wr)
 
+      pc1 = pc + 1
+      -- Magnitude comparison and subtraction are implemented in terms of each
+      -- other.
+      (lessThan, nMinusT) = split @_ @1 (n `minus` t)
+      signedLessThan | msb t /= msb n = msb n
+                     | otherwise = lessThan
+
+      space = unpack $ msb t
+      loadResult = case lastSpace of
+            MSpace -> m
+            ISpace -> i
+  in let  -- things that *do* depend on instruction decoding
+      inst = unpack m
       -- Data and return stack interface.
       (dptr', ddlt, dop) = stack dptr $ case inst of
             Lit _                         -> (1, Just t)
@@ -47,7 +52,6 @@ datapath (MS dptr rptr pc t lf lastSpace) (IS m i n r) =
             NotLit (Call _)               -> (1, Just (low ++# pc1 ++# low))
             NotLit (ALU _ _ _ tr _ _ d _) -> (d, if tr then Just t else Nothing)
             _                             -> (0, Nothing)
-
       -- Register updates other than the ALU
       lf' = not lf && case inst of
             NotLit (ALU _ MemAtT _ _ _ _ _ _) -> True
@@ -58,12 +62,11 @@ datapath (MS dptr rptr pc t lf lastSpace) (IS m i n r) =
             NotLit (JumpZ tgt) | t == 0     -> zeroExtend tgt
             NotLit (ALU True _ _ _ _ _ _ _) -> slice d14 d1 r
             _                               -> pc1
-
-      -- The ALU. Magnitude comparison is implemented in terms of subtraction.
-      -- This means we get subtraction for free.
-      (lessThan, nMinusT) = split @_ @1 (n `minus` t)
-      signedLessThan | msb t /= msb n = msb n
-                     | otherwise = lessThan
+      -- The ALU mux.
+      tmux = case inst of
+            NotLit (ALU _ x _ _ _ _ _ _) -> x
+            NotLit (JumpZ _)             -> N   -- pops data stack
+            _                            -> T   -- leaves data stack unchanged
       t' = case tmux of
             T        -> t
             N        -> n
@@ -85,21 +88,10 @@ datapath (MS dptr rptr pc t lf lastSpace) (IS m i n r) =
             NLshiftT -> n `leftShift` slice d3 d0 t
             Depth    -> zeroExtend dptr
             NULtT    -> signExtend lessThan
-
-      space = unpack $ msb t
+      -- Bus output.
       write = Nothing `duringLoadElse` case inst of
             NotLit (ALU _ _ _ _ True _ _ _) -> Just (space, slice d14 d1 t, n)
             _                               -> Nothing
-      busReq = if lf'
-                  then case space of
-                    MSpace -> MReq (slice d14 d1 t) write
-                    ISpace -> IReq (slice d14 d1 t)
-                  else MReq pc' write
-
-      loadResult = case lastSpace of
-            MSpace -> m
-            ISpace -> i
-
   in ( MS { _msDPtr = dptr'
           , _msRPtr = rptr'
           , _msPC = pc'
@@ -109,7 +101,11 @@ datapath (MS dptr rptr pc t lf lastSpace) (IS m i n r) =
                 Lit v -> zeroExtend v
                 _     -> t'
           }
-     , OS { _osBusReq = busReq
+     , OS { _osBusReq = if lf'
+                  then case space of
+                    MSpace -> MReq (slice d14 d1 t) write
+                    ISpace -> IReq (slice d14 d1 t)
+                  else MReq pc' write
           , _osDOp = (dptr', ddlt, dop)
           , _osROp = (rptr', rdlt, rop)
           }
