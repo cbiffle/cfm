@@ -2,7 +2,8 @@ resolver: nightly-2017-08-15
 
 packages:
 - '.'
-- ../arch
+- location: ../arch
+  extra-dep: true
 - location:
     git: https://github.com/clash-lang/clash-compiler.git
     commit: 2211ef41203d7666c345f1b607aec18e78080f03

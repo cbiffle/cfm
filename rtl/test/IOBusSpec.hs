@@ -55,20 +55,14 @@ responseMuxSpec mS = context ("responseMux " L.++ show mS) $ do
   let special = withClockReset systemClockGen systemResetGen $
                 responseMux @m @(BitVector m)
       sim :: [Vec (2^m) (BitVector m)] -> [Maybe (BitVector m)]
-          -> [Maybe (BitVector m)]
+          -> [BitVector m]
       sim inputs ch =
         let ix = indices (d2 `powSNat` mS)
             sep = map (\i -> L.map (!! i) inputs) ix
             inputsS = map fromList sep
             chS = fromList ch
         in sampleN (L.length inputs) (special inputsS chS)
- 
-  it "does not assert outputs on first cycle after reset" $ property $
-    \inputs ch -> sim [inputs] [ch] `shouldBe` [Nothing]
-
-  it "does not route data after ch=Nothing" $ property $
-    \i0 i1 ch1 -> L.last (sim [i0, i1] [Nothing, ch1]) `shouldBe` Nothing
 
   it "routes data after ch=Just x" $ property $
     \i0 ch0 i1 ch1 -> L.last (sim [i0, i1] [Just ch0, ch1])
-        `shouldBe` Just (i1 !! ch0)
+        `shouldBe` (i1 !! ch0)

@@ -31,6 +31,7 @@ library
                      , lens
                      , mtl
                      , deepseq
+                     , QuickCheck
   default-language:    Haskell2010
   ghc-options:         -fplugin=GHC.TypeLits.Extra.Solver
                        -fplugin=GHC.TypeLits.Normalise

@@ -13,6 +13,7 @@ import Clash.Prelude hiding (Word, read)
 
 import Control.Monad (join)
 import Control.Arrow (first)
+import Data.Maybe (fromMaybe, isJust)
 import Types
 
 -- | Addresses with the top bit set are I/O addresses, leaving 14 bits of space
@@ -77,8 +78,7 @@ topBits = fst . split
 responseMux :: forall m t d g s. (KnownNat m, HasClockReset d g s)
             => Vec (2 ^ m) (Signal d t)  -- ^ response from each device
             -> Signal d (Maybe (BitVector m)) -- ^ decoder output
-            -> Signal d (Maybe t)  -- ^ response to core
-responseMux inputs ch' = switch <$> bundle inputs <*> ch
-  where
-    ch = register Nothing ch'
-    switch is = fmap (is !!)
+            -> Signal d t  -- ^ response to core
+responseMux inputs ch' = (!!) <$> bundle inputs
+                              <*> regEn 0 (isJust <$> ch')
+                                          (fromMaybe undefined <$> ch')

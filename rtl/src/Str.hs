@@ -2,11 +2,12 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE ViewPatterns #-}
 
 -- | Structural model for ICE40 synthesis.
 module Str where
 
-import Clash.Prelude hiding (Word)
+import Clash.Prelude hiding (Word, read)
 
 import Inst
 import Shifter
@@ -15,7 +16,7 @@ import CoreInterface
 
 -- | Combinational datapath for CFM core.
 datapath :: MS -> IS -> (MS, OS)
-datapath (MS dptr rptr pc t lf) (IS m n r) =
+datapath (MS dptr rptr pc t lf lastSpace) (IS m i n r) =
   let -- instruction decoding
       inst = unpack m
       tmux = case inst of
@@ -41,7 +42,7 @@ datapath (MS dptr rptr pc t lf) (IS m n r) =
             NotLit (JumpZ _)              -> (-1, Nothing)
             _                             -> (0, Nothing)
       (rptr', rdlt, rop) = stack rptr $ case inst of
-            NotLit (Call _)               -> (1, Just ((pc + 1) ++# 0))
+            NotLit (Call _)               -> (1, Just (low ++# (pc + 1) ++# low))
             NotLit (ALU _ _ _ tr _ _ d _) -> (d, if tr then Just t else Nothing)
             _                             -> (0, Nothing)
 
@@ -53,7 +54,7 @@ datapath (MS dptr rptr pc t lf) (IS m n r) =
             NotLit (Jump tgt)               -> zeroExtend tgt
             NotLit (Call tgt)               -> zeroExtend tgt
             NotLit (JumpZ tgt) | t == 0     -> zeroExtend tgt
-            NotLit (ALU True _ _ _ _ _ _ _) -> slice d15 d1 r
+            NotLit (ALU True _ _ _ _ _ _ _) -> slice d14 d1 r
             _                               -> pc + 1
 
       -- The ALU. Magnitude comparison is implemented in terms of subtraction.
@@ -83,18 +84,30 @@ datapath (MS dptr rptr pc t lf) (IS m n r) =
             Depth    -> zeroExtend dptr
             NULtT    -> signExtend lessThan
 
+      space = unpack $ msb t
+      write = Nothing `duringLoadElse` case inst of
+            NotLit (ALU _ _ _ _ True _ _ _) -> Just (space, slice d14 d1 t, n)
+            _                               -> Nothing
+      busReq = if lf'
+                  then case space of
+                    MSpace -> MReq (slice d14 d1 t) write
+                    ISpace -> IReq (slice d14 d1 t)
+                  else MReq pc' write
+
+      loadResult = case lastSpace of
+            MSpace -> m
+            ISpace -> i
+
   in ( MS { _msDPtr = dptr'
           , _msRPtr = rptr'
           , _msPC = pc'
           , _msLoadFlag = lf'
-          , _msT = m `duringLoadElse` case inst of
+          , _msLastSpace = space
+          , _msT = loadResult `duringLoadElse` case inst of
                 Lit v -> zeroExtend v
                 _     -> t'
           }
-     , OS { _osMWrite = Nothing `duringLoadElse` case inst of
-                NotLit (ALU _ _ _ _ True _ _ _) -> Just (slice d15 d1 t, n)
-                _                               -> Nothing
-          , _osMRead = if lf' then slice d15 d1 t else pc'
+     , OS { _osBusReq = busReq
           , _osDOp = (dptr', ddlt, dop)
           , _osROp = (rptr', rdlt, rop)
           }

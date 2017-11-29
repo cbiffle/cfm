@@ -3,6 +3,8 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE BinaryLiterals #-}
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE ViewPatterns #-}
+{-# LANGUAGE TypeFamilies #-}
 module Beh where
 
 import Clash.Prelude hiding (Word, cycle)
@@ -27,7 +29,10 @@ cycle = do
 
 finishLoad :: (MonadState MS m, MonadReader IS m) => m OS
 finishLoad = do
-  assign msT =<< view isMData
+  lastSpace <- use msLastSpace
+  assign msT =<< view (case lastSpace of
+                         ISpace -> isIData
+                         MSpace -> isMData)
   msLoadFlag .= False
   fetch
 
@@ -62,7 +67,7 @@ executeNormally = do
       msRPtr += 1  -- push return stack
       fetch
         <&> osROp . _2 .~ 1
-        <&> osROp . _3 .~ Just (pc' ++# 0)
+        <&> osROp . _3 .~ Just (low ++# pc' ++# low)
 
     NotLit (ALU rpc t' tn tr nm _ rd dd) -> do
       n <- view isDData
@@ -72,7 +77,7 @@ executeNormally = do
 
       -- Bit 12: R -> PC
       let pc' = if rpc
-                  then slice d15 d1 r
+                  then slice d14 d1 r
                   else pc + 1
 
       msPC .= pc'
@@ -87,15 +92,19 @@ executeNormally = do
                   then Just t
                   else Nothing
       -- Bit 5: N -> [T]
-      let mwrite = if nm
-                     then Just (slice d15 d1 t, n)
-                     else Nothing
+      let space = unpack (msb t)
+      let write = if nm
+                    then Just (space, slice d14 d1 t, n)
+                    else Nothing
 
-      let mread = if t' == MemAtT
-                    then slice d15 d1 t
-                    else pc'
+      let busReq = if t' == MemAtT
+                     then case space of
+                            MSpace -> MReq (slice d14 d1 t) write
+                            ISpace -> IReq (slice d14 d1 t)
+                     else MReq pc' write
 
       msLoadFlag .= (t' == MemAtT)
+      msLastSpace .= space
 
       depth <- use msDPtr
 
@@ -121,12 +130,11 @@ executeNormally = do
         NULtT    -> signExtend $ pack $ n < t
 
       outputs
-        <&> osMRead .~ mread
+        <&> osBusReq .~ busReq
         <&> osDOp . _2 .~ dd
         <&> osDOp . _3 .~ dop
         <&> osROp . _2 .~ rd
         <&> osROp . _3 .~ rop
-        <&> osMWrite .~ mwrite
 
 next :: (MonadState MS m) => m OS
 next = do
@@ -137,10 +145,10 @@ fetch :: (MonadState MS m) => m OS
 fetch = do
   pc <- use msPC
   outputs
-    <&> osMRead .~ pc ++# 0
+    <&> osBusReq .~ MReq pc Nothing
 
 outputs :: (MonadState MS m) => m OS
 outputs = do
   dsp <- use msDPtr
   rsp <- use msRPtr
-  pure $ OS Nothing 0 (dsp, 0, Nothing) (rsp, 0, Nothing)
+  pure $ OS (errorX "busreq undefined") (dsp, 0, Nothing) (rsp, 0, Nothing)

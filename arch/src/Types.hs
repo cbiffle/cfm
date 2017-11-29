@@ -12,6 +12,8 @@ type Width = 16
 type Word = BitVector Width
 -- | The address of a word. Words are byte-addressed, so the bottom bit is omitted.
 type WordAddr = BitVector (Width - 1)
+-- | The address of a word in either the memory or I/O space.
+type SAddr = BitVector (Width - 2)
 -- | A stack pointer.
 type SP = BitVector 8
 -- | A stack delta, as it appears in the ALU instructions.

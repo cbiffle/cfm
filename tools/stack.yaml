@@ -2,7 +2,8 @@ resolver: nightly-2017-08-15
 
 packages:
 - '.'
-- ../arch
+- location: ../arch
+  extra-dep: true
 - location:
     git: https://github.com/clash-lang/clash-prelude.git
     commit: 7fbf635210c184038ee8638cfde84c0ca4a0559a

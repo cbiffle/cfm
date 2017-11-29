@@ -18,23 +18,25 @@ newtype Fetch = Fetch MS deriving (Show)
 
 instance Arbitrary Fetch where
   arbitrary = Fetch <$> (MS <$> arbitrary <*> arbitrary <*> arbitrary
-                            <*> arbitrary <*> pure False)
+                            <*> arbitrary <*> pure False <*> arbitrary)
 
 newtype Load = Load MS deriving (Show)
 
 instance Arbitrary Load where
   arbitrary = Load <$> (MS <$> arbitrary <*> arbitrary <*> arbitrary
-                           <*> arbitrary <*> pure True)
+                           <*> arbitrary <*> pure True <*> arbitrary)
+
+isWrite :: BusReq -> Bool
+isWrite (MReq _ (Just _)) = True
+isWrite _ = False
 
 genspec :: (MS -> IS -> (MS, OS)) -> Spec
 genspec sf = do
   context "reset" $ do
     let u = errorX "inputs undefined at reset"
-        inputs = IS u u u
-    it "does not write" $ property $
-      isNothing $ sf def inputs ^. _2 . osMWrite
-    it "fetches first instruction" $ property $
-      sf def inputs ^. _2 . osMRead == 0
+        inputs = IS u u u u
+    it "fetches first instruction from memory, no write" $ property $
+      sf def inputs ^. _2 . osBusReq `shouldBe` MReq 0 Nothing
     it "starts out stack at 0" $ property $
       sf def inputs ^. _2 . osDOp == (0, 0, Nothing)
     it "starts out return stack at 0" $ property $
@@ -42,19 +44,18 @@ genspec sf = do
 
   context "load flag behavior" $ do
     let u = errorX "must not be used"
-        go s x = sf s (IS x u u)
-        test p l = \(Load s) -> p $ go s u ^. l
-    it "doesn't write Memory" $ property $ test isNothing (_2 . osMWrite)
+        go s x y = sf s (IS x y u u)
+        test p l = \(Load s) -> p $ go s u u ^. l
     it "doesn't write Return" $ property $ test isNothing (_2 . osROp . _3)
     it "doesn't write Data" $ property $ test isNothing (_2 . osDOp . _3)
     it "fetches current" $ property $ \(Load s) ->
-      go s u ^. _2 . osMRead == s ^. msPC
+      go s u u ^. _2 . osBusReq `shouldBe` MReq (s ^. msPC) Nothing
     it "addresses D" $ property $ \(Load s) ->
-      go s u ^. _2 . osDOp . _1 == s ^. msDPtr
+      go s u u ^. _2 . osDOp . _1 == s ^. msDPtr
     it "addresses R" $ property $ \(Load s) ->
-      go s u ^. _2 . osROp . _1 == s ^. msRPtr
+      go s u u ^. _2 . osROp . _1 == s ^. msRPtr
 
-    let stdelta f l = \(Load s) -> (go s u ^. _1 . l) == f (s ^. l)
+    let stdelta f l = \(Load s) -> (go s u u ^. _1 . l) == f (s ^. l)
 
     it "clears load flag" $ property $ stdelta (const False) msLoadFlag
     it "preserves DPtr" $ property $ stdelta id msDPtr
@@ -62,10 +63,10 @@ genspec sf = do
     it "preserves PC" $ property $ stdelta id msPC
 
     it "loads T" $ property $ \(Load s) v ->
-      go s v ^. _1 . msT == v
+      go s v v ^. _1 . msT == v
 
   context "universal instruction properties" $ do
-    let go s x d r = sf s (IS x d r)
+    let go s x d r = sf s (IS x x d r)
         u = errorX "must not be used in this test"
 
     it "addresses R using new RPtr" $ property $ \x (Fetch s) ->
@@ -74,16 +75,11 @@ genspec sf = do
     it "addresses D using new DPtr" $ property $ \x (Fetch s) ->
       let (s', o) = go s x u u
       in o ^. osDOp . _1 == s' ^. msDPtr
-    it "always produces a load or fetch" $ property $ \x (Fetch s) d r ->
-      let (s', o) = go s x d r
-      in o ^. osMRead == if s' ^. msLoadFlag
-                           then s ^. msT & slice d15 d1
-                           else s' ^. msPC
 
   context "literal push" $ do
     let mklit :: BitVector 15 -> BitVector 16
         mklit x = 1 ++# x
-        go s x = sf s (IS (mklit x) u u)
+        go s x = sf s (IS (mklit x) u u u)
         u = errorX "must not be used in this test"
 
     instDoesNotWriteM mklit
@@ -114,7 +110,7 @@ genspec sf = do
 
     it "preserves T" $ instPreserves mkjmp msT
 
-    let go s x = sf s (IS (mkjmp x) u u)
+    let go s x = sf s (IS (mkjmp x) u u u)
         u = errorX "must not be used in this test"
 
     it "always jumps" $ property $ \x (Fetch s) ->
@@ -132,7 +128,7 @@ genspec sf = do
 
     it "decrements DPtr" $ instChanges mkjmp msDPtr (+ 0xFFFF)
 
-    let go s x d = sf s (IS (mkjmp x) d u)
+    let go s x d = sf s (IS (mkjmp x) u d u)
         u = errorX "must not be used in this test"
         stdelta f l = \x (Fetch s) d -> (go s x d ^. _1 . l) == f (s ^. l)
 
@@ -156,13 +152,13 @@ genspec sf = do
     it "increments RPtr" $ instChanges mkcall msRPtr (+1)
     it "preserves T" $ instPreserves mkcall msT
 
-    let go s x = sf s (IS (mkcall x) u u)
+    let go s x = sf s (IS (mkcall x) u u u)
         u = errorX "must not be used in this test"
         test p l = \x (Fetch s) -> p $ go s x ^. l
         stdelta f l = \x (Fetch s) -> (go s x ^. _1 . l) == f (s ^. l)
 
     it "pushes return PC to R as byte address" $ property $ \x (Fetch s) ->
-      go s x ^. _2 . osROp . _3 == Just ((s ^. msPC + 1) ++# 0)
+      go s x ^. _2 . osROp . _3 == Just (low ++# (s ^. msPC + 1) ++# low)
 
     it "always jumps" $ property $ \x (Fetch s) ->
       go s x ^. _1 . msPC == zeroExtend x
@@ -170,13 +166,14 @@ genspec sf = do
   context "ALU" $ do
     let mkalu :: BitVector 13 -> BitVector 16
         mkalu x = 0b011 ++# x
-        go s x d r = sf s (IS (mkalu x) d r)
+        go s x d r = sf s (IS (mkalu x) u d r)
+        u = errorX "must not be used in this test"
 
-    it "PC <- I[12] ? R : PC+1" $ property $ \(Fetch s) x d r ->
+    it "PC <- I[12] ? R[14:1] : PC+1" $ property $ \(Fetch s) x d r ->
       go s x d r ^. _1 . msPC ==
         case slice d12 d12 x of
           0 -> s ^. msPC + 1
-          1 -> slice d15 d1 r
+          1 -> slice d14 d1 r
 
     it "I[7]: N <- T" $ property $ \(Fetch s) x d r ->
       go s x d r ^. _2 . osDOp . _3 ==
@@ -190,11 +187,13 @@ genspec sf = do
           0 -> Nothing
           1 -> Just (s ^. msT)
 
+    {- TODO
     it "I[5]: [T] <- N" $ property $ \(Fetch s) x d r ->
-      go s x d r ^. _2 . osMWrite ==
-        case slice d5 d5 x of
-          0 -> Nothing
-          1 -> Just (slice d15 d1 (s ^. msT), d)
+      case slice d5 d5 x of
+        0 -> not $ isWrite $ go s x d r ^. _2 . osBusReq
+        1 -> case msb (s ^. msT) of
+              0 -> 
+    -}
 
     context "I[3:2]: RPtr adjust" $ do
       it "updates RPtr" $ property $ \(Fetch s) x d r ->
@@ -214,7 +213,7 @@ genspec sf = do
       let mkalu' :: BitVector 4 -> BitVector 9 -> BitVector 16
           mkalu' op rest = 0b011 ++# slice d8 d8 rest ++# op ++#
                            slice d7 d0 rest
-          go' op s x d r = sf s (IS (mkalu' op x) d r)
+          go' op s x d r = sf s (IS (mkalu' op x) (errorX "IO") d r)
           t' op f = property $ \(Fetch s) x d r ->
                       go' op s x d r ^. _1 . msT == f s d r
           t'n op f = t' op $ \s n _ -> (s ^. msT) `f` n
@@ -235,7 +234,11 @@ genspec sf = do
 
       context "[T]" $ do
         it "triggers read of [T]" $ property $ \(Fetch s) x d r ->
-          go' 12 s x d r ^. _2 . osMRead == slice d15 d1 (s ^. msT)
+          (slice d5 d5 x == 0) ==> -- ignore simultaneous loads/stores
+            go' 12 s x d r ^. _2 . osBusReq `shouldBe`
+              case msb (s ^. msT) of
+                1 -> IReq $ slice d14 d1 (s ^. msT)
+                0 -> MReq (slice d14 d1 (s ^. msT)) Nothing
         it "sets load flag" $ property $ \(Fetch s) x d r ->
           go' 12 s x d r ^. _1 . msLoadFlag == True
 
@@ -245,23 +248,23 @@ genspec sf = do
 
   where
   instDoesNotWriteM mkinst = it "does not write memory" $ property $
-    \(Fetch s) x -> isNothing $ sf s (IS (mkinst x) u u) ^. _2 . osMWrite
+    \(Fetch s) x -> not $ isWrite $ sf s (IS (mkinst x) u u u) ^. _2 . osBusReq
       where u = errorX "must be unused"
 
   instDoesNotWriteR mkinst = it "does not write return" $ property $
-    \(Fetch s) x -> isNothing $ sf s (IS (mkinst x) u u) ^. _2 . osROp . _3
+    \(Fetch s) x -> isNothing $ sf s (IS (mkinst x) u u u) ^. _2 . osROp . _3
       where u = errorX "must be unused"
   
   instDoesNotWriteD mkinst = it "does not write return" $ property $
-    \(Fetch s) x -> isNothing $ sf s (IS (mkinst x) u u) ^. _2 . osDOp . _3
+    \(Fetch s) x -> isNothing $ sf s (IS (mkinst x) u u u) ^. _2 . osDOp . _3
       where u = errorX "must be unused"
   
   instLeavesLFClear mkinst = it "leaves load flag clear" $ property $
-    \(Fetch s) x -> not $ sf s (IS (mkinst x) u u) ^. _1 . msLoadFlag
+    \(Fetch s) x -> not $ sf s (IS (mkinst x) u u u) ^. _1 . msLoadFlag
       where u = errorX "must be unused"
   
   instChanges mkinst l f = property $
-    \(Fetch s) x -> sf s (IS (mkinst x) u u) ^. _1 . l == f (s ^. l)
+    \(Fetch s) x -> sf s (IS (mkinst x) u u u) ^. _1 . l == f (s ^. l)
       where u = errorX "must be unused"
   
   instPreserves mkinst l = instChanges mkinst l id
@@ -272,7 +275,7 @@ genspec sf = do
   -- Distinguishes an instruction fetch from a load.
   instFetches mkinst = it "fetches" $ property $
     \(Fetch s) x ->
-      let (s', o) = sf s (IS (mkinst x) u u)
-      in o ^. osMRead == s' ^. msPC
+      let (s', o) = sf s (IS (mkinst x) u u u)
+      in o ^. osBusReq `shouldBe` MReq (s' ^. msPC) Nothing
       where u = errorX "must be unused"
  

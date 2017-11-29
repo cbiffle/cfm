@@ -8,7 +8,6 @@ module CFMTop where
 
 import Clash.Prelude hiding (Word, readIO, read)
 import Control.Lens hiding ((:>))
-import Data.Maybe (fromMaybe)
 import Str
 import Types
 import CoreInterface
@@ -29,16 +28,14 @@ data StackType = Flops | RAMs
 coreWithStacks
   :: (HasClockReset dom gated synchronous)
   => StackType
-  -> Signal dom Word    -- ^ read response from bus
-  -> ( Signal dom WordAddr
-     , Signal dom (Maybe (WordAddr, Word))
-     ) -- ^ read and write outputs
-coreWithStacks stackType bresp = (bread, bwrite)
+  -> Signal dom Word    -- ^ read response from memory
+  -> Signal dom Word    -- ^ read response from I/O
+  -> Signal dom BusReq
+coreWithStacks stackType mresp ioresp = busReq
   where
-    coreOuts = core $ IS <$> bresp <*> n <*> r
+    coreOuts = core $ IS <$> mresp <*> ioresp <*> n <*> r
 
-    bread = coreOuts <&> (^. osMRead)
-    bwrite = coreOuts <&> (^. osMWrite)
+    busReq = coreOuts <&> (^. osBusReq)
 
     dop = coreOuts <&> (^. osDOp)
     rop = coreOuts <&> (^. osROp)
@@ -69,22 +66,32 @@ coreWithRAM
   => StackType          -- ^ Type of stack technology.
   -> SNat ramSize       -- ^ Size of RAM (need not be pow2).
   -> FilePath           -- ^ Synthesis-relative RAM initialization file path.
-  -> Signal dom (Maybe Word)  -- ^ I/O read response, valid when addressed.
-  -> Signal dom (Maybe (IOAddr, Maybe Word))  -- ^ I/O bus outputs
+  -> Signal dom Word    -- ^ I/O read response, valid when addressed.
+  -> Signal dom (Maybe (SAddr, Maybe Word))  -- ^ I/O bus outputs
 coreWithRAM stackType ramSize ramPath ioresp = ioreq
   where
-    (bread, bwrite) = coreWithStacks stackType bresp
+    busReq = coreWithStacks stackType mresp ioresp
 
-    -- The I/O response mux remembers whether an I/O read was issued last
-    -- cycle, and uses this information to assert its valid signal. Thus, we
-    -- can use its valid signal to control our mux between memory and I/O.
-    bresp = fromMaybe <$> m <*> ioresp
+    -- Memory reads on a blockRam do not have an enable line, i.e. a read
+    -- occurs every cycle whether we like it or not. Since the reads are not
+    -- effectful, that's okay, and we route the address bits to RAM independent
+    -- of the type of request to save hardware.
+    mread = busReq <&> \b -> case b of
+      MReq a _ -> a
+      IReq a   -> a
 
-    m = blockRamFile ramSize ramPath bread $ mux writeIsIO (pure Nothing) bwrite
+    -- Memory writes can only occur from an MReq against MSpace.
+    mwrite = busReq <&> \b -> case b of
+      MReq _ (Just (MSpace, a, v)) -> Just (a, v)
+      _                            -> Nothing
 
-    -- The I/O bridge generates the ioreq signal and the status signal we use
-    -- to suppress memory writes.
-    (ioreq, writeIsIO) = coreToIO bread bwrite
+    -- IO requests are either IReqs (reads) or MReqs against ISpace (writes).
+    ioreq = busReq <&> \b -> case b of
+      IReq a                       -> Just (a, Nothing)
+      MReq _ (Just (ISpace, a, v)) -> Just (a, Just v)
+      _                            -> Nothing
+
+    mresp = blockRamFile ramSize ramPath mread mwrite
 
 system :: (HasClockReset dom gated synchronous)
        => FilePath

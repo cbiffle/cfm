@@ -108,7 +108,7 @@
       dup tx
       [char] 0 -  9 over u< if 7 - then
       0xF over u< if
-        7 tx  8 tx
+        drop  7 tx  8 tx
       else
         swap 4 lshift or
         1 exit
