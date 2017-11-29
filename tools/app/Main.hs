@@ -9,6 +9,7 @@ import Clash.Class.BitPack
 import Text.Printf
 
 import Data.Bits
+import Data.Char (ord)
 import Data.Default
 import Data.Maybe (fromJust)
 import qualified Data.Map.Strict as M
@@ -186,12 +187,12 @@ run (Interp (Word s)) = do
     InlineLit x -> push x
     _ -> throwError ("word " ++ s ++ " cannot be used in interpreted code")
 
-run (Interp (Begin _ _)) = throwError "loops not permitted in interpreted code"
-run (Interp (If _ _)) = throwError "if-then not permitted in interpreted code"
+run (Interp _) = throwError "not permitted in interpreted code"
 
 compile' :: AsmFrag -> Asm ()
 compile' (Comment _) = pure ()
 compile' (Word w) = find w >>= compile
+compile' (CharLit c) = cComma $ Lit $ fromIntegral $ ord c
 compile' (Begin body end) = do
   begin <- here
   blockFusion

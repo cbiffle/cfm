@@ -43,6 +43,8 @@ data AsmFrag = Word String
                 -- ^ A word, including numbers.
              | Comment String
                 -- ^ A line or block comment.
+             | CharLit Char
+                -- ^ A @[CHAR]@ literal
              | Begin [AsmFrag] LoopEnd
                 -- ^ A begin-loop, consisting of a body and a loop-ending type.
              | If [AsmFrag] (Maybe [AsmFrag])
@@ -83,7 +85,7 @@ aluprim = sic "alu:" >> ALUPrim <$> lexeme
 
 interp = Interp <$> frag
 
-frag = comment <|> loop <|> ifThen <|> word
+frag = comment <|> loop <|> ifThen <|> charLit <|> word
 
 comment = Comment <$> (do sic "\\"
                           c <- many (noneOf "\n")
@@ -103,6 +105,8 @@ ifThen = uncurry If <$> (sic "if" *> frag `manyTill'` thenOrElse)
 
 thenOrElse = (sic "then" >> pure Nothing)
          <|> (sic "else" >> Just <$> frag `manyTill` sic "then")
+
+charLit = CharLit . head <$> (sic "[char]" *> lexeme)
 
 word = do
   w <- lexeme
