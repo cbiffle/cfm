@@ -46,22 +46,22 @@ data FlowOrALUInst = Jump (BitVector 13)
 
 -- | Enumerates the possible functions that can be used to compute the next
 -- value of T.
-data TMux = T         -- ^ Same value as this cycle.
-          | N         -- ^ Next cell on data stack.
-          | TPlusN    -- ^ Add N.
-          | TAndN     -- ^ Bitwise AND with N.
-          | TOrN      -- ^ Bitwise OR with N.
-          | TXorN     -- ^ Bitwise XOR with N.
-          | NotT      -- ^ Complement (bitwise negate) T.
-          | NEqT      -- ^ Set all bits if N = T, clear otherwise.
-          | NLtT      -- ^ Set all bits if N < T (signed), clear otherwise.
-          | NRshiftT  -- ^ N shifted right by T mod 16 positions.
-          | NMinusT   -- ^ N - T
-          | R         -- ^ Top of return stack.
-          | MemAtT    -- ^ Value loaded from memory at @[T]@.
-          | NLshiftT  -- ^ N shifted left by T mod 16 positions.
-          | Depth     -- ^ Current depth of data stack, zero-extended.
-          | NULtT     -- ^ Set all bits if N < T (unsigned), clear otherwise.
+data TMux = T         -- ^ 0: Same value as this cycle.
+          | N         -- ^ 1: Next cell on data stack.
+          | TPlusN    -- ^ 2: Add N.
+          | TAndN     -- ^ 3: Bitwise AND with N.
+          | TOrN      -- ^ 4: Bitwise OR with N.
+          | TXorN     -- ^ 5: Bitwise XOR with N.
+          | NotT      -- ^ 6: Complement (bitwise negate) T.
+          | NEqT      -- ^ 7: Set all bits if N = T, clear otherwise.
+          | NLtT      -- ^ 8: Set all bits if N < T (signed), clear otherwise.
+          | NRshiftT  -- ^ 9: N shifted right by T mod 16 positions.
+          | NMinusT   -- ^ A: N - T
+          | R         -- ^ B: Top of return stack.
+          | MemAtT    -- ^ C: Value loaded from memory at @[T]@.
+          | NLshiftT  -- ^ D: N shifted left by T mod 16 positions.
+          | Depth     -- ^ E: Current depth of data stack, zero-extended.
+          | NULtT     -- ^ F: Set all bits if N < T (unsigned), clear otherwise.
           deriving (Eq, Enum, Bounded, Show)
 
 newtype Reserved x = Res x deriving (Eq, Show, BitPack, Arbitrary)
