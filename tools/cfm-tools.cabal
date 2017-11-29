@@ -16,10 +16,12 @@ library
                        Parser
                        InstInfo
   build-depends:       base >= 4.7 && < 5
+                     , clash-prelude
                      , parsec
                      , data-default
                      , containers
                      , mtl
+                     , cfm-arch
   default-language:    Haskell2010
   ghc-options:        -Wall
 
@@ -29,12 +31,14 @@ executable cfm-as
   ghc-options:         -threaded -rtsopts -with-rtsopts=-N
                        -Wall
   build-depends:       base
+                     , clash-prelude
                      , cfm-tools
                      , parsec
                      , containers
                      , lens
                      , mtl
                      , data-default
+                     , cfm-arch
   default-language:    Haskell2010
 
 executable enumerator
@@ -49,6 +53,7 @@ executable enumerator
                      , lens
                      , mtl
                      , data-default
+                     , cfm-arch
   default-language:    Haskell2010
 
 test-suite cfm-tools-test
@@ -59,6 +64,6 @@ test-suite cfm-tools-test
                      , cfm-tools
                      , hspec
                      , QuickCheck
+                     , cfm-arch
   ghc-options:         -threaded -rtsopts -with-rtsopts=-N
   default-language:    Haskell2010
-  other-modules:       FusionSpec

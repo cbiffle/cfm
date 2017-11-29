@@ -9,6 +9,8 @@ module Inst
   ( Inst(..)
   , FlowOrALUInst(..)
   , TMux(..)
+  , Reserved(..)
+  , canonicalInst
   ) where
 
 import Clash.Prelude hiding (Word)
@@ -62,7 +64,12 @@ data TMux = T         -- ^ Same value as this cycle.
           | NULtT     -- ^ Set all bits if N < T (unsigned), clear otherwise.
           deriving (Eq, Enum, Bounded, Show)
 
-newtype Reserved x = Reserved x deriving (Eq, Show, BitPack, Arbitrary)
+newtype Reserved x = Res x deriving (Eq, Show, BitPack, Arbitrary)
+
+-- | Predicate for filtering out instructions with reserved bits set.
+canonicalInst :: Inst -> Bool
+canonicalInst (NotLit (ALU _ _ _ _ _ (Res 1) _ _)) = False
+canonicalInst _ = True
 
 -------------------------------------------------------------------------------------
 -- BitPack instances. These are carefully designed to exactly match Clash's
@@ -116,3 +123,17 @@ instance Arbitrary FlowOrALUInst where
                     ]
 
 instance Arbitrary TMux where arbitrary = arbitraryBoundedEnum
+
+-------------------------------------------------------------------------------------
+-- Useful typeclasses defined in terms of Inst's binary representation.
+
+instance Enum Inst where
+  toEnum = unpack . fromIntegral
+  fromEnum = fromIntegral . pack
+
+instance Bounded Inst where
+  minBound = unpack 0
+  maxBound = unpack (-1)
+
+instance Ord Inst where
+  a `compare` b = pack a `compare` pack b

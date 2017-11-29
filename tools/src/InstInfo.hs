@@ -1,14 +1,16 @@
 module InstInfo where
 
+import Clash.Class.BitPack
+
 import Data.Maybe (fromMaybe, mapMaybe)
 import Data.Monoid ((<>))
-import Data.List (intercalate)
-import Data.Bits
 
-import Control.Monad (forM_, when)
+import Control.Monad (forM_)
 import qualified Data.Map.Strict as M
 import qualified Data.Map.Lazy as LM
 import Text.Printf
+
+import Inst
 
 -- | Stack effect simulator. Given the SP delta, optional update, and the
 -- prior contents of the stack, produces a derived stack.
@@ -27,22 +29,22 @@ stack x y z = error $ "stack " ++ show x ++ " " ++ show y ++ " " ++ show z
 
 -- | Symbolic expression generator for the ALU mux.
 tmux v t n r = case v of
-  0 -> t
-  1 -> n
-  2 -> binaryC "+"
-  3 -> binaryC "&"
-  4 -> binaryC "|"
-  5 -> binaryC "^"
-  6 -> "~" <> t
-  7 -> binaryC "="
-  8 -> binary "<"
-  9 -> binary ">>"
-  10 -> binary "-"
-  11 -> r
-  12 -> "[" <> t <> "]"
-  13 -> binary "<<"
-  14 -> "depth"
-  15 -> binary "U<"
+  T        -> t
+  N        -> n
+  TPlusN   -> binaryC "+"
+  TAndN    -> binaryC "&"
+  TOrN     -> binaryC "|"
+  TXorN    -> binaryC "^"
+  NotT     -> "~" <> t
+  NEqT     -> binaryC "="
+  NLtT     -> binary "<"
+  NRshiftT -> binary ">>"
+  NMinusT  -> binary "-"
+  R        -> r
+  MemAtT   -> "[" <> t <> "]"
+  NLshiftT -> binary "<<"
+  Depth    -> "depth"
+  NULtT    -> binary "U<"
   where binary s = p n <> s <> p t  -- non-commutative
         binaryC s | n <= t = p n <> s <> p t  -- commutative
                   | otherwise = p t <> s <> p n
@@ -53,7 +55,7 @@ tmux v t n r = case v of
 effect xs ys = picture xs' <> " -- " <> picture ys'
   where
     (xs', ys') = normalize xs ys
-    picture ss = intercalate " " $ reverse ss
+    picture ss = unwords $ reverse ss
 
     normalize [] [] = ([], [])
     normalize xs [] = (xs, [])
@@ -65,25 +67,43 @@ effect xs ys = picture xs' <> " -- " <> picture ys'
 -- | Abstract-evaluates an instruction given data and return stacks. Produces
 -- the new data and return stacks, and any effect on PC and memory,
 -- respectively.
-eval :: [String] -> [String] -> Int -> ([String], [String], Maybe String, Maybe String)
+eval :: [String] -> [String] -> Inst
+     -> ([String], [String], Maybe String, Maybe String)
 eval (t : ds) (r : rs) inst =
-  let rp = inst .&. (1 `shiftL` 12) /= 0
-      tm = (inst `shiftR` 8) .&. 0xF
-      tn = inst .&. (1 `shiftL` 7) /= 0
-      tr = inst .&. (1 `shiftL` 6) /= 0
-      nm = inst .&. (1 `shiftL` 5) /= 0
-      radj = (inst `shiftR` 2) .&. 3
-      dadj = inst .&. 3
-
-      t' = tmux tm t (head ds) r
-      ds' = stack dadj (if tn then Just t else Nothing) ds
-      rs' = stack radj (if tr then Just t else Nothing) (r : rs)
-
-  in  ( t' : ds'
-      , rs'
-      , if rp then Just r else Nothing
-      , if nm then Just ("[" <> t <> "] <- " <> head ds) else Nothing
-     )
+  case inst of
+    Lit x ->
+      ( show x : t : ds
+      , r : rs
+      , Nothing
+      , Nothing
+      )
+    NotLit (Jump x) ->
+      ( t : ds
+      , r : rs
+      , Just (show x)
+      , Nothing
+      )
+    NotLit (JumpZ x) ->
+      ( ds
+      , r : rs
+      , Just ("(" ++ t ++ "=0 ? " ++ show x ++ " : PC+1)")
+      , Nothing
+      )
+    NotLit (Call x) ->
+      ( t : ds
+      , "PC+1" : r : rs
+      , Just (show x)
+      , Nothing
+      )
+    NotLit (ALU rp tm tn tr nm _ radj dadj) ->
+      let t' = tmux tm t (head ds) r
+          ds' = stack dadj (if tn then Just t else Nothing) ds
+          rs' = stack radj (if tr then Just t else Nothing) (r : rs)
+      in  ( t' : ds'
+          , rs'
+          , if rp then Just r else Nothing
+          , if nm then Just ("[" <> t <> "] <- " <> head ds) else Nothing
+          )
 
 -- | Evaluates a sequence of two instructions `i1` then `i2`, using the initial
 -- stacks `ds` and `rs`, and returns their compound effect in the same format
@@ -107,10 +127,12 @@ evalPair ds rs i1 i2 =
 lazyFusionMap =
   let ds = ["a", "b", "c", "d", "e", "f"]
       rs = ["r", "s", "t", "u", "v", "w"]
-      aluInsts = [i | i <- [0x6000 .. 0x7FEF], (i .&. 0x10) == 0]
+      aluInsts = [NotLit $ ALU False T False False False (Res 0) 0 0 ..
+                  NotLit $ ALU True NULtT True True True (Res 0) (-1) (-1)]
+      canAluInsts = [i | i <- aluInsts, canonicalInst i]
       m = M.fromList $
-          map (\i -> (eval ds rs i, i)) aluInsts
-      pairs = [(i1, i2) | i1 <- aluInsts, i2 <- aluInsts]
+          map (\i -> (eval ds rs i, i)) canAluInsts
+      pairs = [(i1, i2) | i1 <- canAluInsts, i2 <- canAluInsts]
   in LM.fromDistinctAscList $
      mapMaybe (\(i1, i2) -> do
           eff <- evalPair ds rs i1 i2
@@ -121,4 +143,8 @@ lazyFusionMap =
 -- | Prints fusion opportunities to stdout in human-readable format.
 showFusionPairs :: IO ()
 showFusionPairs = forM_ (M.toList lazyFusionMap) $ \((i1, i2), (eff, iF)) -> do
-  printf "Pair %04x %04x -> %04x -  effect %s\n" i1 i2 iF (show eff)
+  printf "Pair %04x %04x -> %04x -  effect %s\n"
+         (toInteger (pack i1))
+         (toInteger (pack i2))
+         (toInteger (pack iF))
+         (show eff)

@@ -4,6 +4,8 @@
 {-# LANGUAGE TupleSections #-}
 module Main where
 
+import Clash.Class.BitPack
+
 import Text.Printf
 
 import Data.Bits
@@ -19,6 +21,7 @@ import Control.Monad.Except
 
 import Parser
 import qualified InstInfo as II
+import Inst
 
 finally :: (MonadError e m) => m a -> m b -> m a
 finally body handler = (body <* handler) `catchError`
@@ -26,7 +29,7 @@ finally body handler = (body <* handler) `catchError`
 
 data Def = Compiled Int         -- ^ Callable address.
          | InlineLit Int        -- ^ 15-bit literal.
-         | RawInst Int          -- ^ Arbitrary 16-bit instruction
+         | RawInst Inst         -- ^ Arbitrary instruction
          | Immediate (Asm ())   -- ^ Action to be performed
 
 instance Show Def where
@@ -36,11 +39,11 @@ instance Show Def where
   show (Immediate _) = "Immediate ..."
 
 data Val = Data Int
-         | Inst Int
+         | I Inst
          deriving (Show, Eq)
 deval :: Val -> Int
 deval (Data x) = x
-deval (Inst x) = x
+deval (I x) = fromIntegral $ pack x
 
 data AS = AS
   { asDict :: M.Map String Def
@@ -115,33 +118,35 @@ comma :: Int -> Asm ()
 comma v | 0 <= v && v < 65536 = commaVal (Data v)
 comma _ = error "internal error: value passed to comma out of range"
 
-cComma :: Int -> Asm ()
-cComma v | 0 <= v && v < 65536 = do
+ret :: Inst
+ret = unpack 0x700C
+
+cComma :: Inst -> Asm ()
+cComma v = do
   canFuse <- gets asCanFuse
   allowFusion
   if not canFuse
-    then commaVal (Inst v)
+    then commaVal (I v)
     else do
       -- Inspect the most recently compiled instruction.
       end <- here
       lastInst <- gets $ M.lookup (end - 1) . asMem
       case lastInst of
-        Just (Inst i) -> case M.lookup (i, v) II.lazyFusionMap of
-          Just (_, iF) -> patch (Inst i) (Inst iF) (end - 1)
-          Nothing -> case (i .&. 0xE000, v) of
+        Just (I i) -> case M.lookup (i, v) II.lazyFusionMap of
+          Just (_, iF) -> patch (I i) (I iF) (end - 1)
+          Nothing -> case i of
             -- Call-Return: convert to jump (tail-call optimization)
-            (0x4000, 0x700C) -> patch (Inst i) (Inst (i .&. 0x1FFF)) (end - 1)
+            NotLit (Call t) | v == ret -> patch (I i) (I (NotLit (Jump t))) (end - 1)
             -- Jump-Return: elide return, e.g. "begin again ;"
-            (0x0000, 0x700C) -> pure ()
+            NotLit (Jump _) | v == ret -> pure ()
             -- Otherwise, compile it.
-            _ -> commaVal (Inst v)
+            _ -> commaVal (I v)
         -- No previous instruction? Must be after an org directive. Don't fuse.
-        _ -> commaVal (Inst v)
-cComma _ = error "internal error: value passed to cComma out of range"
+        _ -> commaVal (I v)
 
 exit :: Asm ()
 exit = do
-  cComma 0x700C
+  cComma ret
   blockFusion
 
 run :: AsmTop -> Asm ()
@@ -170,7 +175,7 @@ run OrgDirective = do
 run (ALUPrim name) = do
   bits <- pop
   if 0 <= bits && bits < 65536
-    then create name $ RawInst bits
+    then create name $ RawInst $ unpack $ fromIntegral bits
     else throwError "ALU primitive must fit in 16 bits"
 
 run (Interp (Comment _)) = pure ()
@@ -200,7 +205,7 @@ compile' (If trueBody melse) = do
       mark = here <* comma placeholder <* blockFusion
       resolve op loc = do
         dest <- here
-        patch (Data placeholder) (Inst (op .|. dest)) loc
+        patch (Data placeholder) (I (op dest)) loc
         blockFusion
 
   if_ <- mark
@@ -209,39 +214,37 @@ compile' (If trueBody melse) = do
   case melse of
     Just falseBody -> do
       else_ <- mark
-      resolve 0x2000 if_
+      resolve (NotLit . JumpZ . fromIntegral) if_
       mapM_ compile' falseBody
-      resolve 0x0000 else_
+      resolve (NotLit . Jump . fromIntegral) else_
 
-    Nothing -> resolve 0x2000 if_
+    Nothing -> resolve (NotLit . JumpZ . fromIntegral) if_
 
 compile :: Def -> Asm()
 compile (Compiled a)
-  | a < 8192 = cComma (0x4000 .|. a)
+  | a < 8192 = cComma $ NotLit $ Call $ fromIntegral a
   | otherwise = error "internal error: colon def out of range"
 
 compile (InlineLit x)
-  | 0 <= x && x < 32768 = cComma (x .|. 0x8000)
+  | 0 <= x && x < 32768 = cComma $ Lit $ fromIntegral x
   | otherwise = error "internal error: literal out of range"
 
-compile (RawInst i)
-  | 0 <= i && i < 65536 = cComma i
-  | otherwise = error "internal error: instruction doesn't fit in 16 bits"
+compile (RawInst i) = cComma i
 
 compile (Immediate f) = f
 
 jmp, jmp0 :: Int -> Asm ()
-jmp a | a < 8192 = cComma a
+jmp a | a < 8192 = cComma $ NotLit $ Jump $ fromIntegral a
       | otherwise = error "internal error: jump destination out of range"
 
-jmp0 a | a < 8192 = cComma $ 0x2000 .|. a
+jmp0 a | a < 8192 = cComma $ NotLit $ JumpZ $ fromIntegral a
        | otherwise = error "internal error: jump destination out of range"
 
 macroBang :: Asm ()
 macroBang = compileOnly $ do
-  cComma 0x6020   -- non-destructive store
-  cComma 0x6103   -- drop
-  cComma 0x6103   -- drop
+  cComma $ NotLit $ ALU False T False False True (Res 0) 0 0 -- non-destructive store
+  cComma $ NotLit $ ALU False N False False False (Res 0) 0 (-1)  -- drop
+  cComma $ NotLit $ ALU False N False False False (Res 0) 0 (-1)  -- drop
 
 compileOnly :: Asm () -> Asm ()
 compileOnly x = do
