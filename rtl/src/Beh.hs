@@ -12,6 +12,7 @@ import Control.Lens
 import Control.Monad.State
 import Control.Monad.Reader
 
+import Inst
 import Types
 
 datapath :: MS -> IS -> (MS, OS)
@@ -63,7 +64,7 @@ executeNormally = do
         <&> osROp . _2 .~ 1
         <&> osROp . _3 .~ Just (pc' ++# 0)
 
-    NotLit (ALU rpc t' tn tr nm rd dd) -> do
+    NotLit (ALU rpc t' tn tr nm _ rd dd) -> do
       n <- view isDData
       r <- view isRData
       t <- use msT
@@ -98,8 +99,8 @@ executeNormally = do
 
       depth <- use msDPtr
 
-      msDPtr += signExtend dd
-      msRPtr += signExtend rd
+      msDPtr += pack (signExtend dd)
+      msRPtr += pack (signExtend rd)
 
       msT .= case t' of
         T        -> t
@@ -121,9 +122,9 @@ executeNormally = do
 
       outputs
         <&> osMRead .~ mread
-        <&> osDOp . _2 .~ unpack dd
+        <&> osDOp . _2 .~ dd
         <&> osDOp . _3 .~ dop
-        <&> osROp . _2 .~ unpack rd
+        <&> osROp . _2 .~ rd
         <&> osROp . _3 .~ rop
         <&> osMWrite .~ mwrite
 

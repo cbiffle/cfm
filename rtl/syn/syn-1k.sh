@@ -11,6 +11,7 @@ VERILOG="${OUT}/verilog/CFMTop/cfm_demo_top"
 rm -rf "${OUT}"
 
 "${ROOT}/clash" -i"${ROOT}/src" \
+                -i"${ROOT}/../arch/src" \
                 -outputdir "${OUT}" \
                 --verilog \
                 "${ROOT}/src/CFMTop.hs"
