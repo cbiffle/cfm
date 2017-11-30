@@ -51,7 +51,7 @@
 \ right.
 : bit>  ( c -- c' )
   1 2dup/and          ( c 1 lsb )
-  if ~outport-set else ~outport-clr then invert over swap !  ( c 1 )
+  if ~outport-set else ~outport-clr then invert 2dup/! drop  ( c 1 )
   rshift              ( c' )
   bit-delay ;
 
