@@ -8,6 +8,7 @@ module top(
   input RX,
   input dtr_n,
   output dcd_n,
+  output cts_n,
   output [4:0] led);
 
 wire clk_core;
@@ -76,7 +77,7 @@ wire dtr = ~dtr_n;
         );
 
         assign led = {dtr, out2[3:0]};
-        assign TX = out1[0];
+        assign {cts_n, TX} = out1[1:0];
         assign in = {15'b0, RX};
         assign dcd_n = ~core_reset_n;
 endmodule

@@ -35,7 +35,9 @@
 \ I/O port addresses are defined as their complements, so they can be loaded by
 \ a literal instruction and inverted before use. TODO - the assembler should
 \ probably do this for us.
-0x7FFF constant ~outport ( 8000 )
+0x7FFF constant ~outport     ( 8000 )
+0x7FFD constant ~outport-set ( 8002 )
+0x7FFB constant ~outport-clr ( 8004 )
 0x5FFF constant ~inport  ( A000 )
 
 \ For 19200 bps, one bit = 52083.333 ns
@@ -49,7 +51,7 @@
 \ right.
 : bit>  ( c -- c' )
   1 2dup/and          ( c 1 lsb )
-  ~outport invert !   ( c 1 )
+  if ~outport-set else ~outport-clr then invert over swap !  ( c 1 )
   rshift              ( c' )
   bit-delay ;
 
@@ -76,15 +78,23 @@
   rx? or
   bit-delay ;
 
+: CTSon 2 ~outport-clr invert ! ;
+: CTSoff 2 ~outport-set invert ! ;
+
 \ Receives a byte from the RX pin and returns both the bits received, and a success
 \ flag. The receive may be unsuccessful if there was a framing error.
+\ This manages an outgoing clear-to-send flow control signal on port 0 bit 1. This
+\ is unfortunately not quite enough to prevent transmit overruns by an FTDI chip,
+\ which can take up to four bytes to acknowledge it.
 : rx  ( -- c ? )
+  CTSon                     \ Turn on flow control.
   ...start half-bit-delay   \ Delay until halfway into the suspected start bit.
   0 >bit                    \ Record the start bit level.
   0 >bit >bit >bit >bit
     >bit >bit >bit >bit     \ Record the data bits
     8 rshift                \ and shift
   swap >bit  14 rshift      \ Record the stop bit with the start bit and shift.
+  CTSoff                    \ Turn off flow control during the stop bit.
   2 = \ Stop bit high, start bit low => binary 10 => 2
   ;
 
@@ -211,6 +221,7 @@
   cr ;
 
 : chatty
+  CTSoff
   1 bit> drop           \ Ensure TX is high for a bit time before beginning.
   hello
   begin cmd again ;
