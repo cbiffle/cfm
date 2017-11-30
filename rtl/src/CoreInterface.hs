@@ -74,5 +74,6 @@ data OS = OS
   { _osBusReq :: BusReq
   , _osDOp :: (SP, SDelta, Maybe Word)
   , _osROp :: (SP, SDelta, Maybe Word)
+  , _osFetch :: Bool
   } deriving (Show, Generic, ShowX, NFData)
 makeLenses ''OS

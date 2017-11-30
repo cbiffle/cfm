@@ -50,6 +50,8 @@ genspec sf = do
     it "doesn't write Data" $ property $ test isNothing (_2 . osDOp . _3)
     it "fetches current" $ property $ \(Load s) ->
       go s u u ^. _2 . osBusReq `shouldBe` MReq (s ^. msPC) Nothing
+    it "does not assert fetch" $ property $ \(Load s) ->
+      go s u u ^. _2 . osFetch `shouldBe` False
     it "addresses D" $ property $ \(Load s) ->
       go s u u ^. _2 . osDOp . _1 == s ^. msDPtr
     it "addresses R" $ property $ \(Load s) ->
@@ -273,9 +275,14 @@ genspec sf = do
   instPreservesRPtr mkinst = it "preserves RPtr" $ instPreserves mkinst msRPtr
   
   -- Distinguishes an instruction fetch from a load.
-  instFetches mkinst = it "fetches" $ property $
-    \(Fetch s) x ->
-      let (s', o) = sf s (IS (mkinst x) u u u)
-      in o ^. osBusReq `shouldBe` MReq (s' ^. msPC) Nothing
-      where u = errorX "must be unused"
+  instFetches mkinst = context "fetches" $ do
+    it "right address" $ property $
+      \(Fetch s) x ->
+        let (s', o) = sf s (IS (mkinst x) u u u)
+        in o ^. osBusReq `shouldBe` MReq (s' ^. msPC) Nothing
+    it "asserts fetch" $ property $
+      \(Fetch s) x ->
+        let (s', o) = sf s (IS (mkinst x) u u u)
+        in o ^. osFetch `shouldBe` True
+    where u = errorX "must be unused"
  

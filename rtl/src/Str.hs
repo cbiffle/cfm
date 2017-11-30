@@ -2,7 +2,6 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE ViewPatterns #-}
 
 -- | Structural model for ICE40 synthesis.
 module Str where
@@ -108,5 +107,6 @@ datapath (MS dptr rptr pc t lf lastSpace) (IS m i n r) =
                   else MReq pc' write
           , _osDOp = (dptr', ddlt, dop)
           , _osROp = (rptr', rdlt, rop)
+          , _osFetch = not lf
           }
      )

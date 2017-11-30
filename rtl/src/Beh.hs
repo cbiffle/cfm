@@ -35,6 +35,7 @@ finishLoad = do
                          MSpace -> isMData)
   msLoadFlag .= False
   fetch
+    <&> osFetch .~ False
 
 executeNormally :: (MonadState MS m, MonadReader IS m) => m OS
 executeNormally = do
@@ -135,6 +136,7 @@ executeNormally = do
         <&> osDOp . _3 .~ dop
         <&> osROp . _2 .~ rd
         <&> osROp . _3 .~ rop
+        <&> osFetch .~ True
 
 next :: (MonadState MS m) => m OS
 next = do
@@ -146,9 +148,13 @@ fetch = do
   pc <- use msPC
   outputs
     <&> osBusReq .~ MReq pc Nothing
+    <&> osFetch .~ True
 
 outputs :: (MonadState MS m) => m OS
 outputs = do
   dsp <- use msDPtr
   rsp <- use msRPtr
-  pure $ OS (errorX "busreq undefined") (dsp, 0, Nothing) (rsp, 0, Nothing)
+  pure $ OS (errorX "busreq undefined")
+            (dsp, 0, Nothing)
+            (rsp, 0, Nothing)
+            (errorX "fetch undefined")
