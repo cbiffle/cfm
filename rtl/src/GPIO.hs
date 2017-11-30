@@ -34,7 +34,13 @@ outport cmd = (resp, outs)
 inport :: (HasClockReset d g s)
        => Signal d Word
        -> Signal d (Maybe (BitVector n, Maybe Word))
-       -> Signal d Word
-inport port _ = resp
+       -> ( Signal d Word
+          , Signal d Bool
+          )
+inport port cmd = (resp, irq)
   where
     resp = register 0 port
+    negedge = unpack <$> ((.&.) <$> (lsb <$> resp) <*> (complement . lsb <$> port))
+    irq = register False $ update <$> negedge <*> cmd
+    update _ (Just (_, Just _)) = False
+    update x _ = x

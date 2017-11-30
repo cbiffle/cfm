@@ -1,0 +1,127 @@
+Detailed Interrupts Design
+==========================
+
+Interrupt Signals
+-----------------
+
+An interrupt signal is a level-sensitive synchronous signal. When high, it
+indicates that something needs servicing. It remains high until servicing is
+complete.
+
+Example: a UART would continue generating the "receive data register full"
+interrupt until the register is unloaded.
+
+(I decided against edge-sensitive interrupts because it seems to require more
+logic in general.)
+
+(I decided to move acknowledge out to the peripherals in accordance with the
+end-to-end principle. Anything else seems error-prone.)
+
+
+Interrupt Controller
+--------------------
+
+The interrupt controller is responsible for
+- Detecting interrupt signals,
+- Maintaining interrupt disabled/enabled state,
+- Putting vector call instructions on the memory bus.
+
+When an interrupt is asserted, and that interrupt is enabled, and interrupts are
+not globally disabled, the interrupt controller...
+
+- Waits for the CPU to next assert its `fetch` output and replaces the data read
+  from RAM with a vector call instruction. This causes the CPU to stack the PC+1
+  and begin executing at the vector.
+- Disables further interrupts.
+
+(Note that an instruction gets skipped. ISRs are responsible for fixing this.
+See below.)
+
+The interrupt controller must expose a write-sensitive I/O location that
+re-enables interrupts. ISRs will use this to signal completion of the interrupt
+handler.
+
+A simple interrupt controller might support a single input, a single
+enable/disable flag, and a single vector address.
+
+A more complex interrupt controller might support multiple, prioritized inputs,
+per-interrupt enable flags, a separate global enable bit, and configurable
+vector addresses.
+
+
+Changes to the CPU
+------------------
+
+The only change required is to expose a `fetch` signal so the interrupt
+controller can synchronize with instruction fetch.
+
+
+Interrupt Service Routine Implementation
+----------------------------------------
+
+ISRs are merely functions, but they are called with interrupts disabled. In
+general, an ISR will want to re-enable interrupts eventually.
+
+For a simple ISR, the right time to do this is on return. Fortunately, CFM
+supports a way to do this atomically with the return instruction.
+
+Assume that the word `irqen` pushes the address of the interrupt controller's
+enable interrupts trigger port. Then the sequence
+
+    irqen 2dup/! drop ;
+
+will write an arbitrary value (whatever is on the stack) to the trigger port and
+return atomically. (This pattern could be extracted into a word.)
+
+(This design is intended to support nested interrupts for systems with multiple
+prioritized interrupts. In that case, the ISR should enable interrupts early in
+its execution. The interrupt controller will ensure it only gets interrupted by
+higher-priority events. In the case of a single-interrupt controller, it's not
+clear that nested interrupts would make sense, but nothing prevents it.)
+
+
+Prototype Implementation
+------------------------
+
+I've implemented a simple single-interrupt "controller" circuit. Now I need
+something to generate interrupts.
+
+Adding a pin-fall detector to the GPIO inport is an obvious candidate. I could
+use this to detect the start bit of an incoming byte.
+
+Does it need to be a negedge detector, or would a level detector suffice? For
+receiving well-formed UART traffic, they are basically equivalent: detect the
+start bit, read in the rest of the bits, and by the time you're done the line is
+either high (stop bit) or soon to fall low again (in which case another
+interrupt is appropriate).
+
+However, in the case of a BREAK, this falls down. We'd get repeated framing
+errors and take interrupts constantly. We don't really want to get woken up
+until the *end* of the BREAK. That argues for a negedge detector.
+
+On the other hand, we could detect a BREAK as two consecutive zero frames with
+low-stop-bit framing errors, and e.g. switch the sense polarity to find out when
+it goes back high.
+
+
+UART support
+------------
+
+To do a mostly-software UART that can receive and transmit simultaneously, I
+need two things:
+
+1. A pin-fall detector (negedge detector) to notice start bits.
+2. A timer interrupt, so I can be doing other things between sampling RX or
+   transitions of TX.
+
+Let's optimistically plan in terms of an aggressive clock rate (60MHz) and a
+languid bit rate (9600 bps). That's 6250 cycles/bit. So any timer-counter I
+implemented would need to be able to count that high, to avoid further software
+intervention. A 13-bit counter would suffice.
+
+To do both TX and RX interrupt-driven, I would either need two such counters
+with interrupt-on-overflow, or one counter and two match registers (since TX and
+RX are conveniently on the same period), preferably generating two separate
+interrupts.
+
+I suspect that two counters would be cheaper. But I can easily try 'em both.

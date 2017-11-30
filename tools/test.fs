@@ -20,6 +20,7 @@
 0x6181 alu: over          ( a b -- a b a )
 0x6e81 alu: depth         ( a b -- a b a )
 0x6147 alu: >r            ( a --  R: -- a )
+0x6b8d alu: r>            ( -- a  R: a -- )
 
 4 org
 
@@ -219,6 +220,14 @@
   [char] o tx
   [char] ! tx
   cr ;
+
+\ This is intended as an example ISR that shows visible evidence of having run.
+: ledon
+  \ Turn all the icestick LEDs on.
+  0xF 0x3FFF invert !
+  \ Adjust the return address.
+  \ Note that we're not re-enabling interrupts; this is one-shot.
+  r> 2 - >r ;
 
 : chatty
   CTSoff

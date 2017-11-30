@@ -18,6 +18,7 @@ library
                        FlopStack
                        IOBus
                        GPIO
+                       IRQ
                        Beh
                        Str
                        CFMTop

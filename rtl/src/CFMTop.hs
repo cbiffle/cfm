@@ -7,11 +7,12 @@
 module CFMTop where
 
 import Clash.Prelude hiding (Word, readIO, read)
-import Control.Lens hiding ((:>))
+import Control.Lens hiding ((:>), (:<))
 import Str
 import Types
 import CoreInterface
 import IOBus
+import IRQ
 import GPIO
 import FlopStack
 
@@ -30,12 +31,15 @@ coreWithStacks
   => StackType
   -> Signal dom Word    -- ^ read response from memory
   -> Signal dom Word    -- ^ read response from I/O
-  -> Signal dom BusReq
-coreWithStacks stackType mresp ioresp = busReq
+  -> ( Signal dom BusReq
+     , Signal dom Bool
+     )  -- ^ Bus request and fetch signal, respectively.
+coreWithStacks stackType mresp ioresp = (busReq, fetch)
   where
     coreOuts = core $ IS <$> mresp <*> ioresp <*> n <*> r
 
     busReq = coreOuts <&> (^. osBusReq)
+    fetch = coreOuts <&> (^. osFetch)
 
     dop = coreOuts <&> (^. osDOp)
     rop = coreOuts <&> (^. osROp)
@@ -65,10 +69,12 @@ coreWithRAM
   -> (Signal dom SAddr -> Signal dom (Maybe (SAddr, Word)) -> Signal dom Word)
     -- ^ RAM constructor
   -> Signal dom Word    -- ^ I/O read response, valid when addressed.
-  -> Signal dom (Maybe (SAddr, Maybe Word))  -- ^ I/O bus outputs
-coreWithRAM stackType ram ioresp = ioreq
+  -> ( Signal dom (Maybe (SAddr, Maybe Word))
+     , Signal dom Bool
+     ) -- ^ I/O bus outputs and fetch signal, respectively.
+coreWithRAM stackType ram ioresp = (ioreq, fetch)
   where
-    busReq = coreWithStacks stackType mresp ioresp
+    (busReq, fetch) = coreWithStacks stackType mresp ioresp
 
     -- Memory reads on a blockRam do not have an enable line, i.e. a read
     -- occurs every cycle whether we like it or not. Since the reads are not
@@ -91,6 +97,48 @@ coreWithRAM stackType ram ioresp = ioreq
 
     mresp = ram mread mwrite
 
+coreWithRAMAndIRQ
+  :: ( HasClockReset dom gated synchronous
+     , KnownNat m
+     , KnownNat n
+     , CmpNat m 0 ~ 'GT
+     , (m + n) ~ 14
+     , (n + m) ~ 14
+     )
+  => StackType          -- ^ Type of stack technology.
+  -> (Signal dom SAddr -> Signal dom (Maybe (SAddr, Word)) -> Signal dom Word)
+    -- ^ RAM constructor
+  -> Signal dom Bool
+  -> Vec ((2 ^ m) - 1) (Signal dom Word)
+  -> Vec ((2 ^ m) - 1) (Signal dom (Maybe (BitVector n, Maybe Word)))
+coreWithRAMAndIRQ stackType ram irq ioresps = ioreqs
+  where
+    (busReq, fetch) = coreWithStacks stackType mresp' ioresp
+
+    -- Memory reads on a blockRam do not have an enable line, i.e. a read
+    -- occurs every cycle whether we like it or not. Since the reads are not
+    -- effectful, that's okay, and we route the address bits to RAM independent
+    -- of the type of request to save hardware.
+    mread = busReq <&> \b -> case b of
+      MReq a _ -> a
+      IReq a   -> a
+
+    -- Memory writes can only occur from an MReq against MSpace.
+    mwrite = busReq <&> \b -> case b of
+      MReq _ (Just (MSpace, a, v)) -> Just (a, v)
+      _                            -> Nothing
+
+    -- IO requests are either IReqs (reads) or MReqs against ISpace (writes).
+    ioreq = busReq <&> \b -> case b of
+      IReq a                       -> Just (a, Nothing)
+      MReq _ (Just (ISpace, a, v)) -> Just (a, Just v)
+      _                            -> Nothing
+
+    mresp = ram mread mwrite
+    (ioreqs :< irqreq, ioch) = ioDecoder ioreq
+    ioresp = responseMux (ioresps :< irqresp) ioch
+    (mresp', irqresp) = singleIrqController irq fetch mresp irqreq
+
 system :: (HasClockReset dom gated synchronous)
        => FilePath
        -> StackType
@@ -98,13 +146,14 @@ system :: (HasClockReset dom gated synchronous)
        -> (Signal dom Word, Signal dom Word)
 system raminit stackType ins = (outs, outs2)
   where
-    ioreq = coreWithRAM stackType (blockRamFile (SNat @2048) raminit) ioresp
-    (ioreq0 :> ioreq1 :> ioreq2 :> _ :> Nil, ioch) = ioDecoder @2 ioreq
-    ioresp = responseMux (ioresp0 :> ioresp1 :> ioresp2 :> pure 0 :> Nil) ioch
+    ram = blockRamFile (SNat @2048) raminit
+    ioreq0 :> ioreq1 :> ioreq2 :> Nil = ioreqs
+    ioreqs = coreWithRAMAndIRQ stackType ram irq ioresps
+    ioresps = ioresp0 :> ioresp1 :> ioresp2 :> Nil
 
     -- I/O devices
     (ioresp0, outs) = outport ioreq0
-    ioresp1 = inport ins ioreq1
+    (ioresp1, irq) = inport ins ioreq1
     (ioresp2, outs2) = outport ioreq2
 
 {-# ANN topEntity (defTop { t_name = "cfm_demo_top"
