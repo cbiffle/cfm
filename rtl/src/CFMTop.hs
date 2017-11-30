@@ -57,18 +57,16 @@ coreWithStacks stackType mresp ioresp = busReq
     repackStack (_, _, Nothing) = Nothing
     repackStack (a, _, Just v) = Just (unpack a, v)
 
--- | Combines 'coreWithStacks' with the requested amount of local-bus RAM and
--- an I/O bridge, exposing the I/O bus. The RAM is initialized from a file a la
--- @$readmemb@, which is intended to be used to load a random seed file from
--- @icebram@.
+-- | Combines 'coreWithStacks' with a RAM built from the given constructor, and
+-- an I/O bridge, exposing the I/O bus.
 coreWithRAM
-  :: (KnownNat ramSize, HasClockReset dom gated synchronous)
+  :: (HasClockReset dom gated synchronous)
   => StackType          -- ^ Type of stack technology.
-  -> SNat ramSize       -- ^ Size of RAM (need not be pow2).
-  -> FilePath           -- ^ Synthesis-relative RAM initialization file path.
+  -> (Signal dom SAddr -> Signal dom (Maybe (SAddr, Word)) -> Signal dom Word)
+    -- ^ RAM constructor
   -> Signal dom Word    -- ^ I/O read response, valid when addressed.
   -> Signal dom (Maybe (SAddr, Maybe Word))  -- ^ I/O bus outputs
-coreWithRAM stackType ramSize ramPath ioresp = ioreq
+coreWithRAM stackType ram ioresp = ioreq
   where
     busReq = coreWithStacks stackType mresp ioresp
 
@@ -91,7 +89,7 @@ coreWithRAM stackType ramSize ramPath ioresp = ioreq
       MReq _ (Just (ISpace, a, v)) -> Just (a, Just v)
       _                            -> Nothing
 
-    mresp = blockRamFile ramSize ramPath mread mwrite
+    mresp = ram mread mwrite
 
 system :: (HasClockReset dom gated synchronous)
        => FilePath
@@ -100,7 +98,7 @@ system :: (HasClockReset dom gated synchronous)
        -> (Signal dom Word, Signal dom Word)
 system raminit stackType ins = (outs, outs2)
   where
-    ioreq = coreWithRAM stackType (SNat @2048) raminit ioresp
+    ioreq = coreWithRAM stackType (blockRamFile (SNat @2048) raminit) ioresp
     (ioreq0 :> ioreq1 :> ioreq2 :> _ :> Nil, ioch) = ioDecoder @2 ioreq
     ioresp = responseMux (ioresp0 :> ioresp1 :> ioresp2 :> pure 0 :> Nil) ioch
 
