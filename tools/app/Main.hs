@@ -164,7 +164,7 @@ run (Constant name) = do
 
 run (Variable name) = do
   p <- here
-  create name $ InlineLit p
+  create name $ InlineLit (2 * p)
   comma 0
 
 run OrgDirective = do
