@@ -21,26 +21,42 @@ outport :: (HasClockReset d g s)
         -> ( Signal d Word
            , Signal d Word
            )
-outport cmd = (resp, outs)
+outport = unbundle . moore outportT outportO 0
   where
-    update o (Just (a, Just v)) = case slice d1 d0 a of
-      0 -> v
-      1 -> o .|. v
-      _ -> o .&. complement v
-    update o _ = o
-    outs = register 0 $ update <$> outs <*> cmd
-    resp = outs
+    outportT :: Word -> Maybe (BitVector 2, Maybe Word) -> Word
+    -- Writes
+    outportT v (Just (a, Just v')) = case a of
+      0 -> v'
+      1 -> v .|. v'
+      2 -> v .&. complement v'
+      _ -> v `xor` v'
+    -- Reads or unselected
+    outportT v _ = v
 
+    outportO :: Word -> (Word, Word)
+    outportO v = (v, v)
+
+-- | An input port. This is currently rather specialized.
+--
+-- It reads a full word of input signals, which are registered and provided in
+-- response to any read.
+--
+-- It also produces an interrupt on negative edges of bit 0. The interrupt
+-- condition can be cleared by any write to the port's address space.
 inport :: (HasClockReset d g s)
        => Signal d Word
        -> Signal d (Maybe (t, Maybe Word))
        -> ( Signal d Word
           , Signal d Bool
           )
-inport port cmd = (resp, irq)
+inport = curry $ mooreB inportT id (0, False)
   where
-    resp = register 0 port
-    negedge = unpack <$> ((.&.) <$> (lsb <$> resp) <*> (complement . lsb <$> port))
-    irq = register False $ update <$> negedge <*> cmd
-    update _ (Just (_, Just _)) = False
-    update x _ = x
+    inportT :: (Word, Bool) -> (Word, Maybe (t, Maybe Word)) -> (Word, Bool)
+    inportT (reg, irq) (port, req) = (port, irq')
+      where
+        irq' = case req of
+          -- Clear the IRQ flag on any write.
+          Just (_, Just _) -> False
+          -- Otherwise, OR in the negative edge detector.
+          _                -> irq || negedge
+        negedge = unpack (lsb reg .&. complement (lsb port))
