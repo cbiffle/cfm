@@ -7,7 +7,6 @@
 module IRQ where
 
 import Clash.Prelude hiding (Word)
-import Data.Maybe (isJust)
 
 import Types
 import Inst
@@ -56,26 +55,27 @@ singleIrqController
   :: (HasClockReset d g s)
   => Signal d Bool    -- ^ Interrupt input, active high, level-sensitive.
   -> Signal d Bool    -- ^ CPU fetch signal, active high.
-  -> Signal d (Maybe (BitVector a, Maybe Word))   -- ^ I/O bus request.
+  -> Signal d (Maybe (t, Maybe w))   -- ^ I/O bus request.
   -> ( Signal d Word -> Signal d Word
      , Signal d Word
      )  -- ^ Memory-to-CPU alteration constructor and I/O response,
         -- respectively.
-singleIrqController irq fetch ioreq = (memCtor, ioresp)
+singleIrqController irqS fetchS reqS = (memCtor, respS)
   where
-    -- Interrupt entry happens on any fetch cycle where we're enabled and irq
-    -- is asserted.
-    entry = foldl1 (liftA2 (&&)) (irq :> fetch :> enabled :> Nil)
+    (entryS, respS) = mealyB datapath False (irqS, fetchS, reqS)
+
     -- Normally, pass mem. When entering the ISR, intervene in the next fetch
     -- cycle.
-    memCtor = mux entry (pure $ pack $ NotLit $ Call 1)
-    -- The enabled bit is initially clear at reset, gets set in response to a
-    -- trigger write, and gets cleared on interrupt entry.
-    enabled = register False $ mux entry (pure False) $
-                               mux trigger (pure True)
-                               enabled
+    memCtor = mux entryS (pure $ pack $ NotLit $ Call 1)
 
-    -- Currently any write will enable interrupts.
-    trigger = isJust . (>>= snd) <$> ioreq
-    -- Any read will give the interrupt enable status.
-    ioresp = zeroExtend . pack <$> enabled
+    datapath :: Bool -> (Bool, Bool, Maybe (a, Maybe w)) -> (Bool, (Bool, Word))
+    datapath en (irq, fetch, ioreq) = (en', (entry, zeroExtend (pack en)))
+      where
+        -- Interrupt entry happens on any fetch cycle where we're enabled and
+        -- irq is asserted.
+        entry = fetch && en && irq
+        -- Set enable when we're written. Clear it on entry.
+        en' = not entry && (written || en)
+        written = case ioreq of
+          Just (_, Just _) -> True
+          _                -> False
