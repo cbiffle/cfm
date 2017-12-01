@@ -56,19 +56,18 @@ singleIrqController
   :: (HasClockReset d g s)
   => Signal d Bool    -- ^ Interrupt input, active high, level-sensitive.
   -> Signal d Bool    -- ^ CPU fetch signal, active high.
-  -> Signal d Word    -- ^ Memory-to-CPU bus
   -> Signal d (Maybe (BitVector a, Maybe Word))   -- ^ I/O bus request.
-  -> ( Signal d Word
+  -> ( Signal d Word -> Signal d Word
      , Signal d Word
-     )  -- ^ Altered memory-to-CPU signal and IOresp, respectively.
-singleIrqController irq fetch mem ioreq = (mem', ioresp)
+     )  -- ^ Memory-to-CPU alteration constructor and I/O response, respectively.
+singleIrqController irq fetch ioreq = (memCtor, ioresp)
   where
     -- Interrupt entry happens on any fetch cycle where we're enabled and irq
     -- is asserted.
     entry = foldl1 (liftA2 (&&)) (irq :> fetch :> enabled :> Nil)
     -- Normally, pass mem. When entering the ISR, intervene in the next fetch
     -- cycle.
-    mem' = mux entry (pure $ pack $ NotLit $ Call 1) mem
+    memCtor = mux entry (pure $ pack $ NotLit $ Call 1)
     -- The enabled bit is initially clear at reset, gets set in response to a
     -- trigger write, and gets cleared on interrupt entry.
     enabled = register False $ mux entry (pure False) $
@@ -79,4 +78,3 @@ singleIrqController irq fetch mem ioreq = (mem', ioresp)
     trigger = isJust . (>>= snd) <$> ioreq
     -- Any read will give the interrupt enable status.
     ioresp = zeroExtend . pack <$> enabled
-

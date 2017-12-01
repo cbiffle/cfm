@@ -97,48 +97,6 @@ coreWithRAM stackType ram ioresp = (ioreq, fetch)
 
     mresp = ram mread mwrite
 
-coreWithRAMAndIRQ
-  :: ( HasClockReset dom gated synchronous
-     , KnownNat m
-     , KnownNat n
-     , CmpNat m 0 ~ 'GT
-     , (m + n) ~ 14
-     , (n + m) ~ 14
-     )
-  => StackType          -- ^ Type of stack technology.
-  -> (Signal dom SAddr -> Signal dom (Maybe (SAddr, Word)) -> Signal dom Word)
-    -- ^ RAM constructor
-  -> Signal dom Bool
-  -> Vec ((2 ^ m) - 1) (Signal dom Word)
-  -> Vec ((2 ^ m) - 1) (Signal dom (Maybe (BitVector n, Maybe Word)))
-coreWithRAMAndIRQ stackType ram irq ioresps = ioreqs
-  where
-    (busReq, fetch) = coreWithStacks stackType mresp' ioresp
-
-    -- Memory reads on a blockRam do not have an enable line, i.e. a read
-    -- occurs every cycle whether we like it or not. Since the reads are not
-    -- effectful, that's okay, and we route the address bits to RAM independent
-    -- of the type of request to save hardware.
-    mread = busReq <&> \b -> case b of
-      MReq a _ -> a
-      IReq a   -> a
-
-    -- Memory writes can only occur from an MReq against MSpace.
-    mwrite = busReq <&> \b -> case b of
-      MReq _ (Just (MSpace, a, v)) -> Just (a, v)
-      _                            -> Nothing
-
-    -- IO requests are either IReqs (reads) or MReqs against ISpace (writes).
-    ioreq = busReq <&> \b -> case b of
-      IReq a                       -> Just (a, Nothing)
-      MReq _ (Just (ISpace, a, v)) -> Just (a, Just v)
-      _                            -> Nothing
-
-    mresp = ram mread mwrite
-    (ioreqs :< irqreq, ioch) = ioDecoder ioreq
-    ioresp = responseMux (ioresps :< irqresp) ioch
-    (mresp', irqresp) = singleIrqController irq fetch mresp irqreq
-
 system :: (HasClockReset dom gated synchronous)
        => FilePath
        -> StackType
@@ -146,10 +104,14 @@ system :: (HasClockReset dom gated synchronous)
        -> (Signal dom Word, Signal dom Word)
 system raminit stackType ins = (outs, outs2)
   where
-    ram = blockRamFile (SNat @2048) raminit
-    ioreq0 :> ioreq1 :> ioreq2 :> Nil = ioreqs
-    ioreqs = coreWithRAMAndIRQ stackType ram irq ioresps
-    ioresps = ioresp0 :> ioresp1 :> ioresp2 :> Nil
+    (ioreq, fetch) = coreWithRAM stackType ram ioresp
+
+    (ioreq0 :> ioreq1 :> ioreq2 :> ioreq3 :> Nil, ioch) = ioDecoder @2 ioreq
+    ioresp = responseMux (ioresp0 :> ioresp1 :> ioresp2 :> ioresp3 :> Nil) ioch
+
+    (ramRewrite, ioresp3) = singleIrqController irq fetch ioreq3
+
+    ram r w = ramRewrite $ blockRamFile (SNat @2048) raminit r w
 
     -- I/O devices
     (ioresp0, outs) = outport ioreq0
