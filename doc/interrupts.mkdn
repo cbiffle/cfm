@@ -1,0 +1,83 @@
+Interrupts
+==========
+
+Interrupts are optional. They are implemented outside the CPU. This document
+describes the default interrupt schemes implemented by the `IRQ` module.
+
+
+Interrupt Signaling Protocol
+----------------------------
+
+Interrupt signals are level-sensitive and active-high.
+
+To signal an event to the CPU, a device should keep its interrupt output
+asserted until the event is no longer relevant. There is no interrupt
+acknowledge signal. Typically an ISR on the CPU will need to interact with the
+device to clear the interrupt condition -- for example, by taking a byte from a
+FIFO, or resetting a flag.
+
+Some events might go away on their own, in which case a device *may* deassert
+its interrupt signal without CPU interaction. This carries the risk that the CPU
+missed the interrupt event entirely, for example, if software had disabled
+interrupts for an extended period.
+
+
+Interrupt Controller Interface
+------------------------------
+
+Interrupt controllers interface to the CPU in three ways:
+
+1. They sense the CPU's fetch output.
+2. They present themselves as a memory-mapped I/O device.
+3. They *intercede* in the CPU's memory fetch bus.
+
+When an interrupt controller determines that an interrupt event is occurring, it
+waits for the CPU to assert fetch, and then *replaces* the next fetched
+instruction with a call to an interrupt handler. At all other times, the
+interrupt controller passes the fetched instruction through unmodified.
+
+For example, a simple interrupt controller might specify a single interrupt
+handler starting at address 2. To interrupt the CPU, it would wait for fetch,
+and then replace the next fetched instruction with a call to address 2 (0x4001).
+The CPU responds by stacking the PC and starting execution of the interrupt
+handler.
+
+Interrupt controllers are expected to mask an interrupt (or all interrupts) on
+ISR entry to prevent recurrence while the interrupt signal is high. To support
+an efficient and atomic return-from-interrupt sequence (see below), interrupt
+controllers should provide a *write-sensitive* register that re-enables the
+current (or all) interrupt on write, regardless of the value written. The
+precise location of this register is not specified here.
+
+
+Interrupt Service Routine ABI
+-----------------------------
+
+The CPU has no idea that an interrupt has occurred. Because the call-vector
+instruction replaces one instruction in the interrupted code, the PC that gets
+stacked actually points two bytes *after* the resume address. Interrupt service
+routines need to account for this by adjusting the address before return, e.g.
+
+    r> 2 - >r
+
+Typically an ISR will wish to re-enable interrupts atomically at return. This is
+conventionally done by a dedicated "return-from-interrupt" instruction. CFM does
+it differently.
+
+Interrupt controllers are expected to provide a write-sensitive trigger register
+that re-enables interrupts (see above for discussion). This enables the
+following pattern:
+
+    trigger-address 2dup/! drop ;
+
+This sequence stores an arbitrary value (the previous top-of-stack) into the
+trigger register, drops the trigger register address, and returns; the latter
+three instructions fuse into a single atomic operation.
+
+These two sequences can be combined into a return-from-interrupt word, which
+(because it messes with the return stack) can only safely be used in tail
+position:
+
+    : reti  r> 2 - >r  trigger-address 2dup/! drop ;
+
+(The value of `trigger-address` is up to the system implementer.)

@@ -50,8 +50,8 @@ genspec sf = do
     it "doesn't write Data" $ property $ test isNothing (_2 . osDOp . _3)
     it "fetches current" $ property $ \(Load s) ->
       go s u u ^. _2 . osBusReq `shouldBe` MReq (s ^. msPC) Nothing
-    it "does not assert fetch" $ property $ \(Load s) ->
-      go s u u ^. _2 . osFetch `shouldBe` False
+    it "asserts fetch" $ property $ \(Load s) ->
+      go s u u ^. _2 . osFetch `shouldBe` True
     it "addresses D" $ property $ \(Load s) ->
       go s u u ^. _2 . osDOp . _1 == s ^. msDPtr
     it "addresses R" $ property $ \(Load s) ->
@@ -243,6 +243,8 @@ genspec sf = do
                 0 -> MReq (slice d14 d1 (s ^. msT)) Nothing
         it "sets load flag" $ property $ \(Fetch s) x d r ->
           go' 12 s x d r ^. _1 . msLoadFlag == True
+        it "does not assert fetch" $ property $ \(Fetch s) x d r ->
+          go' 12 s x d r ^. _2 . osFetch `shouldBe` False
 
       it "N << T" $ t'n 13 $ \t n -> n `shiftL` fromIntegral (slice d3 d0 t)
       it "depth"  $ t'  14 $ \s _ _ -> zeroExtend (s ^. msDPtr)

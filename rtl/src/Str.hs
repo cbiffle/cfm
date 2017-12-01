@@ -107,6 +107,6 @@ datapath (MS dptr rptr pc t lf lastSpace) (IS m i n r) =
                   else MReq pc' write
           , _osDOp = (dptr', ddlt, dop)
           , _osROp = (rptr', rdlt, rop)
-          , _osFetch = not lf
+          , _osFetch = not lf'
           }
      )

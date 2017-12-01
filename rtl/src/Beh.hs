@@ -35,7 +35,7 @@ finishLoad = do
                          MSpace -> isMData)
   msLoadFlag .= False
   fetch
-    <&> osFetch .~ False
+    <&> osFetch .~ True
 
 executeNormally :: (MonadState MS m, MonadReader IS m) => m OS
 executeNormally = do
@@ -136,7 +136,7 @@ executeNormally = do
         <&> osDOp . _3 .~ dop
         <&> osROp . _2 .~ rd
         <&> osROp . _3 .~ rop
-        <&> osFetch .~ True
+        <&> osFetch .~ (t' /= MemAtT)
 
 next :: (MonadState MS m) => m OS
 next = do
