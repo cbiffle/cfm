@@ -16,8 +16,8 @@ import Types
 -- - +4: NAND output pins. 1 bits will clear pins, 0 bits have no effect.
 --
 -- Reading from any address gets the current pin status.
-outport :: (KnownNat n, HasClockReset d g s)
-        => Signal d (Maybe (BitVector (2 + n), Maybe Word))
+outport :: (HasClockReset d g s)
+        => Signal d (Maybe (BitVector 2, Maybe Word))
         -> ( Signal d Word
            , Signal d Word
            )
@@ -33,7 +33,7 @@ outport cmd = (resp, outs)
 
 inport :: (HasClockReset d g s)
        => Signal d Word
-       -> Signal d (Maybe (BitVector n, Maybe Word))
+       -> Signal d (Maybe (t, Maybe Word))
        -> ( Signal d Word
           , Signal d Bool
           )

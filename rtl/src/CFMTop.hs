@@ -114,9 +114,9 @@ system raminit stackType ins = (outs, outs2)
     ram r w = ramRewrite $ blockRamFile (SNat @2048) raminit r w
 
     -- I/O devices
-    (ioresp0, outs) = outport ioreq0
+    (ioresp0, outs) = outport $ partialDecode ioreq0
     (ioresp1, irq) = inport ins ioreq1
-    (ioresp2, outs2) = outport ioreq2
+    (ioresp2, outs2) = outport $ partialDecode ioreq2
 
 {-# ANN topEntity (defTop { t_name = "cfm_demo_top"
                           , t_inputs = [ PortName "clk_core"

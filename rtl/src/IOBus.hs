@@ -82,3 +82,11 @@ responseMux :: forall m t d g s. (KnownNat m, HasClockReset d g s)
 responseMux inputs ch' = (!!) <$> bundle inputs
                               <*> regEn 0 (isJust <$> ch')
                                           (fromMaybe undefined <$> ch')
+
+-- | Applies a partial decode of an @m + n@ bit IO request down to an @n@ bit
+-- request. This has the effect of making the device that consumes the @n@ bit
+-- request appear repeated @2^m@ times through the address space.
+partialDecode :: (KnownNat n)
+              => Signal d (Maybe (BitVector (m + n), Maybe t))
+              -> Signal d (Maybe (BitVector n, Maybe t))
+partialDecode = fmap truncateAddr
