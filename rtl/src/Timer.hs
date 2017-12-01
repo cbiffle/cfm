@@ -6,6 +6,7 @@
 module Timer where
 
 import Clash.Prelude hiding (Word)
+import Control.Arrow (first)
 
 import Types
 
@@ -32,10 +33,10 @@ type Ctr = BitVector CtrWidth
 -- The match bits in the status register are also exposed as IRQs.
 timer :: (HasClockReset d g s)
       => Signal d (Maybe (Addr, Maybe Word))
-      -> ( Signal d (Vec MatchCount Bool)
+      -> ( Vec MatchCount (Signal d Bool)
          , Signal d Word
          )
-timer = unbundle . moore timerT timerO (0, repeat False, repeat 0, 0)
+timer = first unbundle . unbundle . moore timerT timerO (0, repeat False, repeat 0, 0)
 
 -- | Transition function for timer state.
 timerT :: (Ctr, Vec MatchCount Bool, Vec MatchCount Ctr, Addr)

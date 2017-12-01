@@ -45,7 +45,10 @@
 0x3FFD constant ~timer-flags  ( C002 )
 0x3FFB constant ~timer-m0     ( C004 )
 0x3FF9 constant ~timer-m1     ( C006 )
-0      constant ~irqcon       ( FFFF )
+0x0FFF constant ~irqcon-st    ( F000 )
+0x0FFD constant ~irqcon-en    ( F002 )
+0x0FFB constant ~irqcon-se    ( F004 )
+0x0FF9 constant ~irqcon-ce    ( F006 )
 
 \ For 19200 bps, one bit = 52083.333 ns
 \ At 48MHz core clock, 1 cycle = 20.833 ns
@@ -235,16 +238,19 @@
   \ Adjust the return address.
   r> 2 - >r
   \ Re-enable interrupts
-  ~irqcon invert 2dup/! drop ;
+  ~irqcon-st invert 2dup/! drop ;
+
+variable isr-count
 
 : generic-isr
   \ Clear timer match interrupts
   3 ~timer-flags invert !
-  \ Toggle the LEDs
-  ledtog
-  reti ;
+  \ Clear pin change interrupt
+  0 ~inport invert !
 
-  
+  isr-count @ 1 + isr-count !
+  isr-count @ 0xF and 4 lshift ~outport-tog invert !
+  reti ;
 
 : chatty
   CTSoff

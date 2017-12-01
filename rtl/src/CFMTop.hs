@@ -114,10 +114,10 @@ system raminit stackType ins = outs
 
     -- I/O devices
     (ioresp0, outs) = outport $ partialDecode ioreq0
-    (ioresp1, irq1) = inport ins ioreq1
-    (irqs2, ioresp2) = timer $ partialDecode @2 ioreq2
-    irq = foldl1 (liftA2 (||)) $ {-irq1 :>-} unbundle irqs2
-    (ramRewrite, ioresp3) = singleIrqController irq fetch ioreq3
+    (ioresp1, irq0) = inport ins ioreq1
+    (irq1 :> irq2 :> Nil, ioresp2) = timer $ partialDecode @2 ioreq2
+    (ramRewrite, ioresp3) = multiIrqController irqs fetch $ partialDecode ioreq3
+    irqs = irq0 :> irq1 :> irq2 :> repeat (pure False)
 
 {-# ANN topEntity (defTop { t_name = "cfm_demo_top"
                           , t_inputs = [ PortName "clk_core"
