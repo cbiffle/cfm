@@ -36,10 +36,16 @@
 \ I/O port addresses are defined as their complements, so they can be loaded by
 \ a literal instruction and inverted before use. TODO - the assembler should
 \ probably do this for us.
-0x7FFF constant ~outport     ( 8000 )
-0x7FFD constant ~outport-set ( 8002 )
-0x7FFB constant ~outport-clr ( 8004 )
-0x5FFF constant ~inport  ( A000 )
+0x7FFF constant ~outport      ( 8000 )
+0x7FFD constant ~outport-set  ( 8002 )
+0x7FFB constant ~outport-clr  ( 8004 )
+0x7FF9 constant ~outport-tog  ( 8006 )
+0x5FFF constant ~inport       ( A000 )
+0x3FFF constant ~timer-ctr    ( C000 )
+0x3FFD constant ~timer-flags  ( C002 )
+0x3FFB constant ~timer-m0     ( C004 )
+0x3FF9 constant ~timer-m1     ( C006 )
+0      constant ~irqcon       ( FFFF )
 
 \ For 19200 bps, one bit = 52083.333 ns
 \ At 48MHz core clock, 1 cycle = 20.833 ns
@@ -222,12 +228,23 @@
   cr ;
 
 \ This is intended as an example ISR that shows visible evidence of having run.
-: ledon
-  \ Turn all the icestick LEDs on.
-  0xF 0x3FFF invert !
+: ledtog 0xF0 ~outport-tog invert ! ;
+
+\ Return from an interrupt handler. Must be called from tail position.
+: reti
   \ Adjust the return address.
-  \ Note that we're not re-enabling interrupts; this is one-shot.
-  r> 2 - >r ;
+  r> 2 - >r
+  \ Re-enable interrupts
+  ~irqcon invert 2dup/! drop ;
+
+: generic-isr
+  \ Clear timer match interrupts
+  3 ~timer-flags invert !
+  \ Toggle the LEDs
+  ledtog
+  reti ;
+
+  
 
 : chatty
   CTSoff
@@ -237,3 +254,4 @@
 
 0 org
 : main chatty ;
+: vechack generic-isr ;

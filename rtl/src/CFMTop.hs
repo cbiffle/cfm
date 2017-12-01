@@ -14,6 +14,7 @@ import CoreInterface
 import IOBus
 import IRQ
 import GPIO
+import Timer
 import FlopStack
 
 -- | Registered version of the core datapath.
@@ -101,35 +102,33 @@ system :: (HasClockReset dom gated synchronous)
        => FilePath
        -> StackType
        -> Signal dom Word
-       -> (Signal dom Word, Signal dom Word)
-system raminit stackType ins = (outs, outs2)
+       -> Signal dom Word
+system raminit stackType ins = outs
   where
     (ioreq, fetch) = coreWithRAM stackType ram ioresp
 
     (ioreq0 :> ioreq1 :> ioreq2 :> ioreq3 :> Nil, ioch) = ioDecoder @2 ioreq
     ioresp = responseMux (ioresp0 :> ioresp1 :> ioresp2 :> ioresp3 :> Nil) ioch
 
-    (ramRewrite, ioresp3) = singleIrqController irq fetch ioreq3
-
     ram r w = ramRewrite $ blockRamFile (SNat @2048) raminit r w
 
     -- I/O devices
     (ioresp0, outs) = outport $ partialDecode ioreq0
-    (ioresp1, irq) = inport ins ioreq1
-    (ioresp2, outs2) = outport $ partialDecode ioreq2
+    (ioresp1, irq1) = inport ins ioreq1
+    (irqs2, ioresp2) = timer $ partialDecode @2 ioreq2
+    irq = foldl1 (liftA2 (||)) $ {-irq1 :>-} unbundle irqs2
+    (ramRewrite, ioresp3) = singleIrqController irq fetch ioreq3
 
 {-# ANN topEntity (defTop { t_name = "cfm_demo_top"
                           , t_inputs = [ PortName "clk_core"
                                        , PortName "reset"
                                        , PortName "inport"
                                        ]
-                          , t_output = PortField "" [ PortName "out1"
-                                                    , PortName "out2"
-                                                    ]
+                          , t_output = PortName "out1"
                           }) #-}
 topEntity :: Clock System 'Source
           -> Reset System 'Asynchronous
           -> Signal System Word
-          -> (Signal System Word, Signal System Word)
+          -> Signal System Word
 topEntity c r = withClockReset @System @'Source @'Asynchronous c r $
   system "random-2k.readmemb" RAMs

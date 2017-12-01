@@ -65,18 +65,16 @@ wire dtr = ~dtr_n;
           end
 
         wire [15:0] out1;
-        wire [15:0] out2;
         wire [15:0] in;
 
         cfm_demo_top _inst(
           .clk_core(clk_core),
           .reset(~core_reset_n),
           .out1(out1),
-          .out2(out2),
           .inport(in),
         );
 
-        assign led = {dtr, out2[3:0]};
+        assign led = {dtr, out1[7:4]};
         assign {cts_n, TX} = out1[1:0];
         assign in = {15'b0, RX};
         assign dcd_n = ~core_reset_n;
