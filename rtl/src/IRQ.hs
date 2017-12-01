@@ -59,7 +59,8 @@ singleIrqController
   -> Signal d (Maybe (BitVector a, Maybe Word))   -- ^ I/O bus request.
   -> ( Signal d Word -> Signal d Word
      , Signal d Word
-     )  -- ^ Memory-to-CPU alteration constructor and I/O response, respectively.
+     )  -- ^ Memory-to-CPU alteration constructor and I/O response,
+        -- respectively.
 singleIrqController irq fetch ioreq = (memCtor, ioresp)
   where
     -- Interrupt entry happens on any fetch cycle where we're enabled and irq
