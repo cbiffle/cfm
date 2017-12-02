@@ -308,6 +308,7 @@ variable uart-rx-count  \ Number of bits left to receive
 
 : chatty
   uart-tx-init
+  uart-rx-init
   enable-interrupts
   0xFF tx   \ Ensure TX has been high for a while
   hello
