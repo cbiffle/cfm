@@ -228,6 +228,9 @@ compile (Compiled a)
 
 compile (InlineLit x)
   | 0 <= x && x < 32768 = cComma $ Lit $ fromIntegral x
+  | 32768 <= x && x < 65536 = do
+    cComma $ Lit $ complement $ fromIntegral x
+    cComma $ NotLit $ ALU False NotT False False False (Res 0) 0 0  -- invert
   | otherwise = error "internal error: literal out of range"
 
 compile (RawInst i) = cComma i

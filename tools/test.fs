@@ -27,26 +27,24 @@
 
 : execute  ( i*x xt -- j*x ) >r ;
 
-\ I/O port addresses are defined as their complements, so they can be loaded by
-\ a literal instruction and inverted before use. TODO - the assembler should
-\ probably do this for us.
-0x7FFF constant ~outport      ( 8000 )
-0x7FFD constant ~outport-set  ( 8002 )
-0x7FFB constant ~outport-clr  ( 8004 )
-0x7FF9 constant ~outport-tog  ( 8006 )
-0x5FFF constant ~inport       ( A000 )
-0x3FFF constant ~timer-ctr    ( C000 )
-0x3FFD constant ~timer-flags  ( C002 )
-0x3FFB constant ~timer-m0     ( C004 )
-0x3FF9 constant ~timer-m1     ( C006 )
-0x0FFF constant ~irqcon-st    ( F000 )
-0x0FFD constant ~irqcon-en    ( F002 )
-0x0FFB constant ~irqcon-se    ( F004 )
-0x0FF9 constant ~irqcon-ce    ( F006 )
+\ I/O port addresses.
+0x8000 constant outport
+0x8002 constant outport-set
+0x8004 constant outport-clr
+0x8006 constant outport-tog
+0xA000 constant inport
+0xC000 constant timer-ctr
+0xC002 constant timer-flags
+0xC004 constant timer-m0
+0xC006 constant timer-m1
+0xF000 constant irqcon-st
+0xF002 constant irqcon-en
+0xF004 constant irqcon-se
+0xF006 constant irqcon-ce
 
-: ledon  4 +  1 swap lshift  ~outport-set invert ! ;
-: ledoff 4 +  1 swap lshift  ~outport-clr invert ! ;
-: ledtog 0xF0 ~outport-tog invert ! ;
+: ledon  4 +  1 swap lshift  outport-set ! ;
+: ledoff 4 +  1 swap lshift  outport-clr ! ;
+: ledtog 0xF0 outport-tog ! ;
 
 
 \ UART support.
@@ -64,19 +62,19 @@ variable uart-tx-count  \ Number of bits left to transmit
 
 \ Invoked by the timer when we need to transmit the next bit.
 : tx-isr
-  1 ~timer-flags invert !       \ acknowledge interrupt
+  1 timer-flags !       \ acknowledge interrupt
   uart-tx-bits @                ( bits )
   1 over and                    ( bits lsb )
-  if ~outport-set else ~outport-clr then invert ( bits regaddr )
+  if outport-set else outport-clr then ( bits regaddr )
   1 swap !                      ( bits )
   1 rshift uart-tx-bits !       ( )
 
   uart-tx-count @  1 -  dup  uart-tx-count !
   if
-    ~timer-ctr invert @  cycles/bit +  ~timer-m1 invert !
+    timer-ctr @  cycles/bit +  timer-m1 !
   else
     \ disable interrupt
-    0x2000 ~irqcon-ce invert !
+    0x2000 irqcon-ce !
   then ;
 
 : tx
@@ -88,7 +86,7 @@ variable uart-tx-count  \ Number of bits left to transmit
   uart-tx-bits !        \ stash it where the ISR can find it
   10 uart-tx-count !    \ prepare to transmit 10 bits
   \ enable interrupt
-  0x2000 ~irqcon-se invert ! ;
+  0x2000 irqcon-se ! ;
 
 variable uart-rx-bits   \ Used to hold bits as they're shifted in
 variable uart-rx-count  \ Number of bits left to receive
@@ -100,32 +98,32 @@ variable uart-rx-count  \ Number of bits left to receive
 : rx-negedge-isr
   \ We don't need to clear the IRQ condition, because we won't be re-enabling
   \ it any time soon. Mask our interrupt.
-  0x7FFF invert ~irqcon-ce invert !
+  0x8000 irqcon-ce !
 
   \ Set up the timer to interrupt us again halfway into the start bit.
   \ First, the timer may have rolled over while we were waiting for a new
   \ frame, so clear its pending interrupt status.
-  2 ~timer-flags invert !
+  2 timer-flags !
   \ Next set the match register to the point in time we want.
-  ~timer-ctr invert @  cycles/bit/2 +  ~timer-m0 invert !
+  timer-ctr @  cycles/bit/2 +  timer-m0 !
   \ Now enable its interrupt.
-  0x4000 ~irqcon-se invert ! ;
+  0x4000 irqcon-se ! ;
 
 \ Triggered at each sampling point during an RX frame.
 : rx-timer-isr
   \ Sample the input port into the high bit of a word.
-  ~inport invert @  15 lshift
+  inport @  15 lshift
   \ Load this into the frame shift register.
   uart-rx-bits @  1 rshift  or  uart-rx-bits !
   \ Decrement the bit count, keeping the result around.
   uart-rx-count @ 1 -  dup  uart-rx-count !
   if  \ we have more bits to receive
     \ Clear the interrupt condition.
-    2 ~timer-flags invert !
+    2 timer-flags !
     \ Reset the timer for the next sample point.
-    ~timer-ctr invert @  cycles/bit +  ~timer-m0 invert !
+    timer-ctr @  cycles/bit +  timer-m0 !
   else  \ we're done, disable interrupt
-    0x4000 ~irqcon-ce invert !
+    0x4000 irqcon-ce !
   then ;
 
 \ Receives a byte from RX, returning the bits and a valid flag. The valid flag may
@@ -135,9 +133,9 @@ variable uart-rx-count  \ Number of bits left to receive
   10 uart-rx-count !
 
   \ Clear any pending negedge condition
-  0 ~inport invert !
+  0 inport !
   \ Enable the initial negedge ISR to detect the start bit.
-  0x7FFF invert ~irqcon-se invert !
+  0x8000 irqcon-se !
 
   \ Spin until the frame is complete.
   begin  uart-rx-count @ 0 =  until
@@ -278,16 +276,16 @@ variable uart-rx-count  \ Number of bits left to receive
   \ Adjust the return address.
   r> 2 - >r
   \ Re-enable interrupts
-  ~irqcon-st invert 2dup/! drop ;
+  irqcon-st 2dup/! drop ;
 
 variable isr-count
 
 : generic-isr
-  ~irqcon-st invert @
+  irqcon-st @
   0x4000 over and if
     rx-timer-isr
   then
-  0x7FFF invert over and if
+  0x8000 over and if
     rx-negedge-isr
   then
   0x2000 over and if
@@ -298,7 +296,7 @@ variable isr-count
 
 : chatty
   uart-tx-init
-  0 ~irqcon-st invert ! \ Enable interrupts
+  0 irqcon-st ! \ Enable interrupts
   0xFF tx   \ Ensure TX has been high for a while
   hello
   begin cmd again ;
