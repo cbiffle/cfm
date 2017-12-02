@@ -65,7 +65,7 @@ variable uart-tx-count  \ Number of bits left to transmit
   1 timer-flags !       \ acknowledge interrupt
   uart-tx-bits @                ( bits )
   1 over and                    ( bits lsb )
-  if outport-set else outport-clr then ( bits regaddr )
+  if outport-set invert else outport-clr invert then invert ( bits regaddr )
   1 swap !                      ( bits )
   1 rshift uart-tx-bits !       ( )
 

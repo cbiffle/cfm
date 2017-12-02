@@ -35,7 +35,9 @@ tmux v t n r = case v of
   TAndN    -> binaryC "&"
   TOrN     -> binaryC "|"
   TXorN    -> binaryC "^"
-  NotT     -> "~" <> t
+  NotT     -> case t of
+                '~' : rest -> rest
+                _ -> "~" <> t
   NEqT     -> binaryC "="
   NLtT     -> binary "<"
   NRshiftT -> binary ">>"

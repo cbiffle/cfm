@@ -119,8 +119,9 @@ comma :: Int -> Asm ()
 comma v | 0 <= v && v < 65536 = commaVal (Data v)
 comma _ = error "internal error: value passed to comma out of range"
 
-ret :: Inst
+ret, nop :: Inst
 ret = unpack 0x700C
+nop = unpack 0x6000
 
 cComma :: Inst -> Asm ()
 cComma v = do
@@ -134,6 +135,11 @@ cComma v = do
       lastInst <- gets $ M.lookup (end - 1) . asMem
       case lastInst of
         Just (I i) -> case M.lookup (i, v) II.lazyFusionMap of
+          Just (_, iF) | iF == nop ->
+            -- Un-compile the last instruction.
+            modify $ \s -> s { asMem = M.delete (end - 1) (asMem s)
+                             , asPos = asPos s - 1
+                             }
           Just (_, iF) -> patch (I i) (I iF) (end - 1)
           Nothing -> case i of
             -- Call-Return: convert to jump (tail-call optimization)
