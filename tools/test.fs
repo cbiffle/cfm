@@ -26,13 +26,6 @@
 
 : execute  ( i*x xt -- j*x ) >r ;
 
-\ Delays for u iterations, which in practice means 5u + 2 cycles.
-: delay   ( u -- )
-  begin
-    1 -   ( u' )
-    0 over =
-  until drop ;
-
 \ I/O port addresses are defined as their complements, so they can be loaded by
 \ a literal instruction and inverted before use. TODO - the assembler should
 \ probably do this for us.
@@ -50,12 +43,40 @@
 0x0FFB constant ~irqcon-se    ( F004 )
 0x0FF9 constant ~irqcon-ce    ( F006 )
 
+variable t0delay-elapsed
+
+\ Delays for u cycles, plus a smidge of overhead, using timer match channel 0.
+: t0delay  ( u -- )
+  \ Clear flag
+  0 t0delay-elapsed !
+  \ Read counter
+  ~timer-ctr invert @
+  \ Compute target M0 value
+  +
+  \ Set M0
+  ~timer-m0 invert !
+  \ Enable interrupt
+  0x4000 ~irqcon-se invert !
+  \ Spin
+  begin
+    t0delay-elapsed @
+  until ;
+
+: t0delay-isr
+  \ Set flag
+  1 t0delay-elapsed !
+  \ Disable interrupt
+  0x4000 ~irqcon-ce invert !
+  \ Acknowledge interrupt at source
+  3 ~timer-flags invert ! \ TODO: check bit ordering and only clear 0
+  ;
+
 \ For 19200 bps, one bit = 52083.333 ns
 \ At 48MHz core clock, 1 cycle = 20.833 ns
 \ Thus: 2500.04 cycles / bit
 \ The 'delay' word delays for 5u+2 cycles, so we need to hand it...
-: bit-delay 500 delay ;
-: half-bit-delay 250 delay ;
+: bit-delay 2500 t0delay ;
+: half-bit-delay 1250 t0delay ;
 
 \ Treating 'c' as a shift register, transmits its LSB and shifts it to the
 \ right.
@@ -243,16 +264,15 @@
 variable isr-count
 
 : generic-isr
-  \ Clear timer match interrupts
-  3 ~timer-flags invert !
-  \ Clear pin change interrupt
-  0 ~inport invert !
-
-  isr-count @ 1 + isr-count !
-  isr-count @ 0xF and 4 lshift ~outport-tog invert !
+  ~irqcon-st invert @
+  0x4000 over and if
+    t0delay-isr
+  then
+  drop
   reti ;
 
 : chatty
+  0 ~irqcon-st invert ! \ Enable interrupts
   CTSoff
   1 bit> drop           \ Ensure TX is high for a bit time before beginning.
   hello
