@@ -74,9 +74,7 @@
 
 \ UART support.
 
-\ For 19200 bps, one bit = 52083.333 ns
-\ At 48MHz core clock, 1 cycle = 20.833 ns
-\ Thus: 2500.04 cycles / bit
+\ (48e6 cycle / sec) / (19200 bit / sec) = 2500 cycle / bit
 2500 constant cycles/bit
 1250 constant cycles/bit/2
 
