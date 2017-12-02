@@ -101,7 +101,7 @@ multiIrqController irqS fetchS reqS = (memCtor, respS)
               -- Anything else leaves matters unchanged.
               _                -> misEn s
 
-          , misStatus = irqs
+          , misStatus = maskedIrqs
           , misIEn = case req of
               Just (2, Just v) -> zipWith (||) (misIEn s) (unpack v)
               Just (3, Just v) -> zipWith (&&) (misIEn s) (map not (unpack v))
@@ -112,7 +112,8 @@ multiIrqController irqS fetchS reqS = (memCtor, respS)
           , misEnter = entry'
           }
 
-        entry' = fetch && misEn s && foldl1 (||) (zipWith (&&) irqs (misIEn s))
+        maskedIrqs = zipWith (&&) irqs $ misIEn s
+        entry' = fetch && misEn s && foldl1 (||) maskedIrqs
 
     datapathO s = (misEnter s, resp)
       where

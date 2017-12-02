@@ -47,11 +47,10 @@ timerT (ctr, irqs, matches, lastAddr) req = (ctr', irqs', matches', lastAddr')
     ctr' = case req of
       Just (0, Just v) -> truncateB v
       _                -> ctr + 1
-    irqs' = zipWith (\v c -> v && not c)
-                    (zipWith (||) irqs $ map (== ctr) matches)
-                    (case req of
-                      Just (1, Just v) -> unpack $ slice d1 d0 v
-                      _                -> repeat False)
+    irqs' = case req of
+      Just (1, Just v) -> zipWith (&&) irqs
+                                       (unpack $ complement $ slice d1 d0 v)
+      _                -> zipWith (||) irqs $ map (== ctr) matches
     matches' = flip map indicesI $ \i -> case req of
       Just (n, Just v) | n == fromIntegral i + 2 -> truncateB v
       _                                          -> matches !! i

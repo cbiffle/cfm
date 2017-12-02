@@ -55,6 +55,8 @@ variable t0delay-elapsed
   +
   \ Set M0
   ~timer-m0 invert !
+  \ Clear any existing pending interrupt on M0
+  2 ~timer-flags invert !
   \ Enable interrupt
   0x4000 ~irqcon-se invert !
   \ Spin
@@ -68,7 +70,7 @@ variable t0delay-elapsed
   \ Disable interrupt
   0x4000 ~irqcon-ce invert !
   \ Acknowledge interrupt at source
-  3 ~timer-flags invert ! \ TODO: check bit ordering and only clear 0
+  2 ~timer-flags invert !
   ;
 
 \ For 19200 bps, one bit = 52083.333 ns
