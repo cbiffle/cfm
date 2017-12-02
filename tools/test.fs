@@ -22,6 +22,7 @@
 0x6147 alu: >r            ( a --  R: -- a )
 0x6b8d alu: r>            ( -- a  R: a -- )
 
+\ Skip over the reset and interrupt vectors before compiling actual code.
 4 org
 
 : execute  ( i*x xt -- j*x ) >r ;
@@ -43,35 +44,12 @@
 0x0FFB constant ~irqcon-se    ( F004 )
 0x0FF9 constant ~irqcon-ce    ( F006 )
 
-variable t0delay-elapsed
+: ledon  4 +  1 swap lshift  ~outport-set invert ! ;
+: ledoff 4 +  1 swap lshift  ~outport-clr invert ! ;
+: ledtog 0xF0 ~outport-tog invert ! ;
 
-\ Delays for u cycles, plus a smidge of overhead, using timer match channel 0.
-: t0delay  ( u -- )
-  \ Clear flag
-  0 t0delay-elapsed !
-  \ Read counter
-  ~timer-ctr invert @
-  \ Compute target M0 value
-  +
-  \ Set M0
-  ~timer-m0 invert !
-  \ Clear any existing pending interrupt on M0
-  2 ~timer-flags invert !
-  \ Enable interrupt
-  0x4000 ~irqcon-se invert !
-  \ Spin
-  begin
-    t0delay-elapsed @
-  until ;
 
-: t0delay-isr
-  \ Set flag
-  1 t0delay-elapsed !
-  \ Disable interrupt
-  0x4000 ~irqcon-ce invert !
-  \ Acknowledge interrupt at source
-  2 ~timer-flags invert !
-  ;
+\ UART support.
 
 \ For 19200 bps, one bit = 52083.333 ns
 \ At 48MHz core clock, 1 cycle = 20.833 ns
@@ -79,11 +57,12 @@ variable t0delay-elapsed
 2500 constant cycles/bit
 1250 constant cycles/bit/2
 
-variable uart-tx-bits
-variable uart-tx-count
+variable uart-tx-bits   \ Used to hold bits as they're shifted out
+variable uart-tx-count  \ Number of bits left to transmit
 : uart-tx-init
   0 uart-tx-count ! ;
 
+\ Invoked by the timer when we need to transmit the next bit.
 : tx-isr
   1 ~timer-flags invert !       \ acknowledge interrupt
   uart-tx-bits @                ( bits )
@@ -111,65 +90,65 @@ variable uart-tx-count
   \ enable interrupt
   0x2000 ~irqcon-se invert ! ;
 
+variable uart-rx-bits   \ Used to hold bits as they're shifted in
+variable uart-rx-count  \ Number of bits left to receive
 
+: uart-rx-init
+  0 uart-rx-count ! ;
 
-: bit-delay cycles/bit t0delay ;
-: half-bit-delay cycles/bit/2 t0delay ;
+\ Triggered when we're between frames and RX drops.
+: rx-negedge-isr
+  \ We don't need to clear the IRQ condition, because we won't be re-enabling
+  \ it any time soon. Mask our interrupt.
+  0x7FFF invert ~irqcon-ce invert !
 
-\ Treating 'c' as a shift register, transmits its LSB and shifts it to the
-\ right.
-: bit>  ( c -- c' )
-  1 2dup/and          ( c 1 lsb )
-  if ~outport-set else ~outport-clr then invert 2dup/! drop  ( c 1 )
-  rshift              ( c' )
-  bit-delay ;
+  \ Set up the timer to interrupt us again halfway into the start bit.
+  \ First, the timer may have rolled over while we were waiting for a new
+  \ frame, so clear its pending interrupt status.
+  2 ~timer-flags invert !
+  \ Next set the match register to the point in time we want.
+  ~timer-ctr invert @  cycles/bit/2 +  ~timer-m0 invert !
+  \ Now enable its interrupt.
+  0x4000 ~irqcon-se invert ! ;
 
-\ Transmits a byte with no parity, one stop bit.
-: tx  ( c -- )
-  1 lshift      \ evacuate start bit
-  0x200 or      \ set stop bit
-  bit>          \ start bit
-  bit> bit> bit> bit>
-  bit> bit> bit> bit> \ data bits
-  bit>          \ stop bit
-  drop ;
+\ Triggered at each sampling point during an RX frame.
+: rx-timer-isr
+  \ Sample the input port into the high bit of a word.
+  ~inport invert @  15 lshift
+  \ Load this into the frame shift register.
+  uart-rx-bits @  1 rshift  or  uart-rx-bits !
+  \ Decrement the bit count, keeping the result around.
+  uart-rx-count @ 1 -  dup  uart-rx-count !
+  if  \ we have more bits to receive
+    \ Clear the interrupt condition.
+    2 ~timer-flags invert !
+    \ Reset the timer for the next sample point.
+    ~timer-ctr invert @  cycles/bit +  ~timer-m0 invert !
+  else  \ we're done, disable interrupt
+    0x4000 ~irqcon-ce invert !
+  then ;
 
-\ Samples the status of the RX pin into bit 15.
-: rx?  ( -- ? ) ~inport invert @ 15 lshift ;
-
-\ Spins until observing a high-to-low transition on RX.
-: ...start
-  begin rx?     until
-  begin rx? 0 = until ;
-
-: >bit  ( x -- x' )
-  1 rshift
-  rx? or
-  bit-delay ;
-
-: CTSon 2 ~outport-clr invert ! ;
-: CTSoff 2 ~outport-set invert ! ;
-
-\ Receives a byte from the RX pin and returns both the bits received, and a success
-\ flag. The receive may be unsuccessful if there was a framing error.
-\ This manages an outgoing clear-to-send flow control signal on port 0 bit 1. This
-\ is unfortunately not quite enough to prevent transmit overruns by an FTDI chip,
-\ which can take up to four bytes to acknowledge it.
+\ Receives a byte from RX, returning the bits and a valid flag. The valid flag may
+\ be false in the event of a framing error.
 : rx  ( -- c ? )
-  CTSon                     \ Turn on flow control.
-  ...start half-bit-delay   \ Delay until halfway into the suspected start bit.
-  0 >bit                    \ Record the start bit level.
-  0 >bit >bit >bit >bit
-    >bit >bit >bit >bit     \ Record the data bits
-    8 rshift                \ and shift
-  swap >bit  14 rshift      \ Record the stop bit with the start bit and shift.
-  CTSoff                    \ Turn off flow control during the stop bit.
-  2 = \ Stop bit high, start bit low => binary 10 => 2
-  ;
+  \ Prepare the receive state machine.
+  10 uart-rx-count !
 
-: rx!
-  rx if exit then
-  rx! ;
+  \ Clear any pending negedge condition
+  0 ~inport invert !
+  \ Enable the initial negedge ISR to detect the start bit.
+  0x7FFF invert ~irqcon-se invert !
+
+  \ Spin until the frame is complete.
+  begin  uart-rx-count @ 0 =  until
+
+  \ Dissect the frame and check for framing error. The frame is in the
+  \ upper bits of the word.
+  uart-rx-bits @  6 rshift
+  dup 1 rshift 0xFF and   \ extract the data bits
+  swap 0x201 and          \ extract the start/stop bits.
+  0x200 = ;               \ check for valid framing
+
 
 \ Simple monitor
 : cr 0x0d tx 0x0a tx ;
@@ -182,6 +161,10 @@ variable uart-tx-count
   4 lshift ;
 
 : .hex .nib .nib .nib .nib space drop ;
+
+: rx!
+  rx if exit then
+  rx! ;
 
 : >nib  ( x -- x' ? )
   begin
@@ -289,8 +272,6 @@ variable uart-tx-count
   [char] ! tx
   cr ;
 
-\ This is intended as an example ISR that shows visible evidence of having run.
-: ledtog 0xF0 ~outport-tog invert ! ;
 
 \ Return from an interrupt handler. Must be called from tail position.
 : reti
@@ -304,7 +285,10 @@ variable isr-count
 : generic-isr
   ~irqcon-st invert @
   0x4000 over and if
-    t0delay-isr
+    rx-timer-isr
+  then
+  0x7FFF invert over and if
+    rx-negedge-isr
   then
   0x2000 over and if
     tx-isr
@@ -315,8 +299,7 @@ variable isr-count
 : chatty
   uart-tx-init
   0 ~irqcon-st invert ! \ Enable interrupts
-  CTSoff
-  1 bit> drop           \ Ensure TX is high for a bit time before beginning.
+  0xFF tx   \ Ensure TX has been high for a while
   hello
   begin cmd again ;
 
