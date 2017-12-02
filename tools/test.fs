@@ -122,6 +122,9 @@ variable uart-rx-buf3
 variable uart-rx-hd
 variable uart-rx-tl
 
+: CTSon  2 outport-clr ! ;
+: CTSoff 2 outport-set ! ;
+
 : rxq-empty? uart-rx-hd @ uart-rx-tl @ = ;
 : rxq-full? uart-rx-hd @ uart-rx-tl @ - 4 = ;
 \ Inserts a cell into the receive queue. This is intended to be called from
@@ -183,6 +186,8 @@ variable uart-rx-tl
     0 inport !
     \ Enable the initial negedge ISR to detect the start bit.
     irq-inport-negedge enable-irq
+    \ Conservatively deassert CTS to try and stop sender.
+    CTSoff
   then ;
 
 \ Receives a byte from RX, returning the bits and a valid flag. The valid flag may
@@ -195,7 +200,8 @@ variable uart-rx-tl
   6 rshift
   dup 1 rshift 0xFF and   \ extract the data bits
   swap 0x201 and          \ extract the start/stop bits.
-  0x200 = ;               \ check for valid framing
+  0x200 =                 \ check for valid framing
+  rxq-empty? if CTSon then ;  \ allow sender to resume if we've emptied the queue.
 
 
 \ Simple monitor
