@@ -26,6 +26,8 @@
 4 org
 
 : execute  ( i*x xt -- j*x ) >r ;
+: 0= 0 = ;
+: +!  ( x addr -- )  swap over @ + swap ! ;
 
 \ I/O port addresses.
 0x8000 constant outport
@@ -70,7 +72,7 @@
 
 
 \ Polls a variable until it contains zero.
-: poll0  ( addr -- )  begin dup @ 0 = until drop ;
+: poll0  ( addr -- )  begin dup @ 0= until drop ;
 
 \ UART support.
 
@@ -110,16 +112,47 @@ variable uart-tx-count  \ Number of bits left to transmit
   irq-timer-m1 enable-irq ;
 
 variable uart-rx-bits   \ Used to hold bits as they're shifted in
-variable uart-rx-count  \ Number of bits left to receive
+variable uart-rx-bitcount  \ Number of bits left to receive
+
+variable uart-rx-buf
+variable uart-rx-buf1 \ HACK use create and allot once I have 'em
+variable uart-rx-buf2
+variable uart-rx-buf3
+
+variable uart-rx-hd
+variable uart-rx-tl
+
+: rxq-empty? uart-rx-hd @ uart-rx-tl @ = ;
+: rxq-full? uart-rx-hd @ uart-rx-tl @ - 4 = ;
+\ Inserts a cell into the receive queue. This is intended to be called from
+\ interrupt context, so if it encounters a queue overrun, it simply drops data.
+: >rxq
+  rxq-full? if
+    drop
+  else
+    uart-rx-buf  uart-rx-hd @ 6 and +  !
+    2 uart-rx-hd +!
+  then ;
+\ Takes a cell from the receive queue. If the queue is empty, spin.
+: rxq>
+  begin rxq-empty? 0= until
+  uart-rx-buf  uart-rx-tl @ 6 and +  @
+  2 uart-rx-tl +! ;
 
 : uart-rx-init
-  0 uart-rx-count ! ;
+  \ Clear any pending negedge condition
+  0 inport !
+  \ Enable the initial negedge ISR to detect the start bit.
+  irq-inport-negedge enable-irq ;
 
 \ Triggered when we're between frames and RX drops.
 : rx-negedge-isr
   \ We don't need to clear the IRQ condition, because we won't be re-enabling
   \ it any time soon. Mask our interrupt.
   irq-inport-negedge disable-irq
+
+  \ Prepare to receive a ten bit frame.
+  10 uart-rx-bitcount !
 
   \ Set up the timer to interrupt us again halfway into the start bit.
   \ First, the timer may have rolled over while we were waiting for a new
@@ -137,32 +170,29 @@ variable uart-rx-count  \ Number of bits left to receive
   \ Load this into the frame shift register.
   uart-rx-bits @  1 rshift  or  uart-rx-bits !
   \ Decrement the bit count.
-  uart-rx-count -counter if \ we have more bits to receive
+  uart-rx-bitcount -counter if \ we have more bits to receive
     \ Clear the interrupt condition.
     2 timer-flags !
     \ Reset the timer for the next sample point.
     timer-ctr @  cycles/bit +  timer-m0 !
-  else  \ we're done, disable interrupt
+  else  \ we're done, disable timer interrupt
     irq-timer-m0 disable-irq
+    \ Enqueue the received frame
+    uart-rx-bits @ >rxq
+    \ Clear any pending negedge condition
+    0 inport !
+    \ Enable the initial negedge ISR to detect the start bit.
+    irq-inport-negedge enable-irq
   then ;
 
 \ Receives a byte from RX, returning the bits and a valid flag. The valid flag may
 \ be false in the event of a framing error.
 : rx  ( -- c ? )
-  \ Prepare the receive state machine.
-  10 uart-rx-count !
-
-  \ Clear any pending negedge condition
-  0 inport !
-  \ Enable the initial negedge ISR to detect the start bit.
-  irq-inport-negedge enable-irq
-
-  \ Spin until the frame is complete.
-  uart-rx-count poll0
+  rxq>
 
   \ Dissect the frame and check for framing error. The frame is in the
   \ upper bits of the word.
-  uart-rx-bits @  6 rshift
+  6 rshift
   dup 1 rshift 0xFF and   \ extract the data bits
   swap 0x201 and          \ extract the start/stop bits.
   0x200 = ;               \ check for valid framing
