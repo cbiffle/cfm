@@ -15,6 +15,7 @@ import Data.Maybe (fromJust)
 import qualified Data.Map.Strict as M
 import qualified Data.Set as S
 import System.Environment (getArgs)
+import System.Exit (exitWith, ExitCode(..))
 import System.IO (openFile, IOMode(WriteMode), hClose)
 
 import Control.Monad.State
@@ -275,11 +276,15 @@ main = do
   pr <- parseSourceFile source
 
   case pr of
-    Left e -> print e
+    Left e -> do
+      print e
+      exitWith (ExitFailure 1)
     Right tops -> do
       let (r, s) = runState (runExceptT $ runAsm $ asm tops) def
       case r of
-        Left str -> putStrLn $ "Error: " ++ str
+        Left str -> do
+          putStrLn $ "Error: " ++ str
+          exitWith (ExitFailure 1)
         Right () -> do
           let maxAddr = fromJust $ S.lookupMax $ M.keysSet $ asMem s
 
