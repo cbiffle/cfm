@@ -42,10 +42,35 @@
 0xF004 constant irqcon-se
 0xF006 constant irqcon-ce
 
-: ledon  4 +  1 swap lshift  outport-set ! ;
-: ledoff 4 +  1 swap lshift  outport-clr ! ;
+13 constant irq-timer-m1
+14 constant irq-timer-m0
+15 constant irq-inport-negedge
+
+: #bit  ( u -- x )  1 swap lshift ;
+
+: ledon  4 +  #bit  outport-set ! ;
+: ledoff 4 +  #bit  outport-clr ! ;
 : ledtog 0xF0 outport-tog ! ;
 
+\ Decrements a counter variable and leaves the decremented value on the stack.
+: -counter  ( addr -- u )
+  dup @ 1 - swap 2dup/! drop ;
+
+: disable-irq  ( u -- )  #bit irqcon-ce ! ;
+: enable-irq   ( u -- )  #bit irqcon-se ! ;
+
+: enable-interrupts  irqcon-st 2dup/! drop ;
+
+\ Return from an interrupt handler. Must be called from tail position.
+: reti
+  \ Adjust the return address.
+  r> 2 - >r
+  \ Re-enable interrupts
+  enable-interrupts ;
+
+
+\ Polls a variable until it contains zero.
+: poll0  ( addr -- )  begin dup @ 0 = until drop ;
 
 \ UART support.
 
@@ -69,24 +94,22 @@ variable uart-tx-count  \ Number of bits left to transmit
   1 swap !                      ( bits )
   1 rshift uart-tx-bits !       ( )
 
-  uart-tx-count @  1 -  dup  uart-tx-count !
-  if
+  uart-tx-count -counter if
     timer-ctr @  cycles/bit +  timer-m1 !
   else
-    \ disable interrupt
-    0x2000 irqcon-ce !
+    irq-timer-m1 disable-irq
   then ;
 
 : tx
   \ Wait for the transmitter to be free
-  begin uart-tx-count @ 0 = until
+  uart-tx-count poll0
   \ Frame the byte
   1 lshift              \ add a start bit
   0x200 or              \ add a stop bit
   uart-tx-bits !        \ stash it where the ISR can find it
   10 uart-tx-count !    \ prepare to transmit 10 bits
   \ enable interrupt
-  0x2000 irqcon-se ! ;
+  irq-timer-m1 enable-irq ;
 
 variable uart-rx-bits   \ Used to hold bits as they're shifted in
 variable uart-rx-count  \ Number of bits left to receive
@@ -98,7 +121,7 @@ variable uart-rx-count  \ Number of bits left to receive
 : rx-negedge-isr
   \ We don't need to clear the IRQ condition, because we won't be re-enabling
   \ it any time soon. Mask our interrupt.
-  0x8000 irqcon-ce !
+  irq-inport-negedge disable-irq
 
   \ Set up the timer to interrupt us again halfway into the start bit.
   \ First, the timer may have rolled over while we were waiting for a new
@@ -107,7 +130,7 @@ variable uart-rx-count  \ Number of bits left to receive
   \ Next set the match register to the point in time we want.
   timer-ctr @  cycles/bit/2 +  timer-m0 !
   \ Now enable its interrupt.
-  0x4000 irqcon-se ! ;
+  irq-timer-m0 enable-irq ;
 
 \ Triggered at each sampling point during an RX frame.
 : rx-timer-isr
@@ -115,15 +138,14 @@ variable uart-rx-count  \ Number of bits left to receive
   inport @  15 lshift
   \ Load this into the frame shift register.
   uart-rx-bits @  1 rshift  or  uart-rx-bits !
-  \ Decrement the bit count, keeping the result around.
-  uart-rx-count @ 1 -  dup  uart-rx-count !
-  if  \ we have more bits to receive
+  \ Decrement the bit count.
+  uart-rx-count -counter if \ we have more bits to receive
     \ Clear the interrupt condition.
     2 timer-flags !
     \ Reset the timer for the next sample point.
     timer-ctr @  cycles/bit +  timer-m0 !
   else  \ we're done, disable interrupt
-    0x4000 irqcon-ce !
+    irq-timer-m0 disable-irq
   then ;
 
 \ Receives a byte from RX, returning the bits and a valid flag. The valid flag may
@@ -135,10 +157,10 @@ variable uart-rx-count  \ Number of bits left to receive
   \ Clear any pending negedge condition
   0 inport !
   \ Enable the initial negedge ISR to detect the start bit.
-  0x8000 irqcon-se !
+  irq-inport-negedge enable-irq
 
   \ Spin until the frame is complete.
-  begin  uart-rx-count @ 0 =  until
+  uart-rx-count poll0
 
   \ Dissect the frame and check for framing error. The frame is in the
   \ upper bits of the word.
@@ -270,16 +292,6 @@ variable uart-rx-count  \ Number of bits left to receive
   [char] ! tx
   cr ;
 
-
-\ Return from an interrupt handler. Must be called from tail position.
-: reti
-  \ Adjust the return address.
-  r> 2 - >r
-  \ Re-enable interrupts
-  irqcon-st 2dup/! drop ;
-
-variable isr-count
-
 : generic-isr
   irqcon-st @
   0x4000 over and if
@@ -296,7 +308,7 @@ variable isr-count
 
 : chatty
   uart-tx-init
-  0 irqcon-st ! \ Enable interrupts
+  enable-interrupts
   0xFF tx   \ Ensure TX has been high for a while
   hello
   begin cmd again ;
