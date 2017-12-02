@@ -76,9 +76,45 @@ variable t0delay-elapsed
 \ For 19200 bps, one bit = 52083.333 ns
 \ At 48MHz core clock, 1 cycle = 20.833 ns
 \ Thus: 2500.04 cycles / bit
-\ The 'delay' word delays for 5u+2 cycles, so we need to hand it...
-: bit-delay 2500 t0delay ;
-: half-bit-delay 1250 t0delay ;
+2500 constant cycles/bit
+1250 constant cycles/bit/2
+
+variable uart-tx-bits
+variable uart-tx-count
+: uart-tx-init
+  0 uart-tx-count ! ;
+
+: tx-isr
+  1 ~timer-flags invert !       \ acknowledge interrupt
+  uart-tx-bits @                ( bits )
+  1 over and                    ( bits lsb )
+  if ~outport-set else ~outport-clr then invert ( bits regaddr )
+  1 swap !                      ( bits )
+  1 rshift uart-tx-bits !       ( )
+
+  uart-tx-count @  1 -  dup  uart-tx-count !
+  if
+    ~timer-ctr invert @  cycles/bit +  ~timer-m1 invert !
+  else
+    \ disable interrupt
+    0x2000 ~irqcon-ce invert !
+  then ;
+
+: tx
+  \ Wait for the transmitter to be free
+  begin uart-tx-count @ 0 = until
+  \ Frame the byte
+  1 lshift              \ add a start bit
+  0x200 or              \ add a stop bit
+  uart-tx-bits !        \ stash it where the ISR can find it
+  10 uart-tx-count !    \ prepare to transmit 10 bits
+  \ enable interrupt
+  0x2000 ~irqcon-se invert ! ;
+
+
+
+: bit-delay cycles/bit t0delay ;
+: half-bit-delay cycles/bit/2 t0delay ;
 
 \ Treating 'c' as a shift register, transmits its LSB and shifts it to the
 \ right.
@@ -270,10 +306,14 @@ variable isr-count
   0x4000 over and if
     t0delay-isr
   then
+  0x2000 over and if
+    tx-isr
+  then
   drop
   reti ;
 
 : chatty
+  uart-tx-init
   0 ~irqcon-st invert ! \ Enable interrupts
   CTSoff
   1 bit> drop           \ Ensure TX is high for a bit time before beginning.
