@@ -14,7 +14,7 @@ import Control.Lens
 import Control.Monad.State
 import Control.Monad.Reader
 
-import Inst
+import CFM.Inst
 import CoreInterface
 
 datapath :: MS -> IS -> (MS, OS)

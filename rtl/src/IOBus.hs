@@ -14,7 +14,7 @@ import Clash.Prelude hiding (Word, read)
 import Control.Monad (join)
 import Control.Arrow (first)
 import Data.Maybe (fromMaybe, isJust)
-import Types
+import CFM.Types
 
 -- | Addresses with the top bit set are I/O addresses, leaving 14 bits of space
 -- for I/O devices.

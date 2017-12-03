@@ -9,7 +9,7 @@ module Shifter where
 
 import Clash.Prelude hiding (Word)
 
-import Types
+import CFM.Types
 
 leftShift :: Word -> BitVector 4 -> Word
 leftShift input d = revbits $ rightShift (revbits input) d

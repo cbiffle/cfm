@@ -23,7 +23,7 @@ import Control.Monad.Except
 
 import Parser
 import qualified InstInfo as II
-import Inst
+import CFM.Inst
 
 finally :: (MonadError e m) => m a -> m b -> m a
 finally body handler = (body <* handler) `catchError`

@@ -2,7 +2,7 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
-module Types where
+module CFM.Types where
 
 import Clash.Prelude hiding (Word, cycle)
 

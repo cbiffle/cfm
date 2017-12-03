@@ -8,7 +8,7 @@ module GPIO where
 
 import Clash.Prelude hiding (Word)
 
-import Types
+import CFM.Types
 
 -- | A fixed-direction output port. Supports the following registers:
 -- - +0: set output pins.

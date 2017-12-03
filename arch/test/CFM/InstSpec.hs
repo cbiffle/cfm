@@ -1,12 +1,13 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE TypeApplications #-}
-module InstSpec where
+module CFM.InstSpec where
 
 import Clash.Prelude
-import Inst
 import Test.Hspec
 import Test.QuickCheck
+
+import CFM.Inst
 
 spec = do
   it "has a correct BitPack instance 1" $ property $ \inst ->

@@ -13,7 +13,7 @@ import Control.DeepSeq (NFData)
 import Control.Lens hiding ((:>))
 import Test.QuickCheck
 
-import Types
+import CFM.Types
 
 data Space = MSpace | ISpace
              deriving (Eq, Show, Enum, Bounded, Generic, ShowX, NFData)

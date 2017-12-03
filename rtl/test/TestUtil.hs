@@ -11,7 +11,7 @@ import Control.Lens
 import Test.Hspec
 import Test.QuickCheck hiding ((.&.))
 
-import Types
+import CFM.Types
 import CoreInterface
 
 newtype Fetch = Fetch MS deriving (Show)

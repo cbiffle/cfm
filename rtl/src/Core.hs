@@ -8,7 +8,7 @@ module Core where
 import Clash.Prelude hiding (Word, readIO, read)
 import Control.Lens hiding ((:>), (:<), op)
 import Str
-import Types
+import CFM.Types
 import CoreInterface
 
 -- | Registered version of the core datapath.

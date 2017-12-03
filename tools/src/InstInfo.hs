@@ -12,8 +12,8 @@ import Control.Monad (forM_)
 import qualified Data.Map.Strict as M
 import Text.Printf
 
-import Inst
-import Types
+import CFM.Inst
+import CFM.Types
 
 data Expr = V !Int
           | L !Word

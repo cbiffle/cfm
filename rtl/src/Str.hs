@@ -8,9 +8,9 @@ module Str where
 
 import Clash.Prelude hiding (Word, read)
 
-import Inst
+import CFM.Inst
 import Shifter
-import Types
+import CFM.Types
 import CoreInterface
 
 -- | Combinational datapath for CFM core.

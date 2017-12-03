@@ -2,7 +2,7 @@ module Target where
 
 import Prelude hiding (Word)
 
-import Types
+import CFM.Types
 
 -- | Class of monads that describe a CFM target machine.
 --

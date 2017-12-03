@@ -8,8 +8,8 @@ module IRQ where
 
 import Clash.Prelude hiding (Word)
 
-import Types
-import Inst
+import CFM.Types
+import CFM.Inst
 
 -- | A simple interrupt controller supporting a single, active-high interrupt
 -- input.

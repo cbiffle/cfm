@@ -8,7 +8,7 @@ module Timer where
 import Clash.Prelude hiding (Word)
 import Control.Arrow (first)
 
-import Types
+import CFM.Types
 
 type MatchCount = 2
 type CtrWidth = 13

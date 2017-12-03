@@ -5,7 +5,7 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE ViewPatterns #-}
-module Inst
+module CFM.Inst
   ( Inst(..)
   , FlowOrALUInst(..)
   , TMux(..)

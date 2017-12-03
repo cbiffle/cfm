@@ -11,7 +11,7 @@ import qualified Data.List as L
 import Test.Hspec
 import Test.QuickCheck
 
-import Types
+import CFM.Types
 import IOBus
 
 spec = do

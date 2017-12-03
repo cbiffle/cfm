@@ -7,7 +7,7 @@
 module IcestickTop where
 
 import Clash.Prelude hiding (Word, readIO, read)
-import Types
+import CFM.Types
 import IOBus
 import IRQ
 import GPIO
