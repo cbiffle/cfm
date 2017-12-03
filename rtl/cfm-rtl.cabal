@@ -22,7 +22,8 @@ library
                        Timer
                        Beh
                        Str
-                       CFMTop
+                       Core
+                       IcestickTop
   build-depends:       base >= 4.7 && < 5
                      , cfm-arch
                      , ghc-typelits-extra

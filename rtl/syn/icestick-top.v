@@ -67,7 +67,7 @@ wire dtr = ~dtr_n;
         wire [15:0] out1;
         wire [15:0] in;
 
-        cfm_demo_top _inst(
+        icestick_soc _inst(
           .clk_core(clk_core),
           .reset(~core_reset_n),
           .out1(out1),
