@@ -6,7 +6,7 @@
 module Core where
 
 import Clash.Prelude hiding (Word, readIO, read)
-import Control.Lens hiding ((:>), (:<))
+import Control.Lens hiding ((:>), (:<), op)
 import Str
 import Types
 import CoreInterface
@@ -32,17 +32,15 @@ coreWithStacks mresp ioresp = (busReq, fetch)
     busReq = coreOuts <&> (^. osBusReq)
     fetch = coreOuts <&> (^. osFetch)
 
-    dop = coreOuts <&> (^. osDOp)
-    rop = coreOuts <&> (^. osROp)
+    n = stack "D" $ coreOuts <&> (^. osDOp)
+    r = stack "R" $ coreOuts <&> (^. osROp)
 
-    n = readNew (blockRamPow2 (repeat $ errorX "D"))
-                (dop <&> (^. _1) <&> unpack)
-                (dop <&> repackStack)
-
-    r = readNew (blockRamPow2 (repeat $ errorX "R"))
-                (rop <&> (^. _1) <&> unpack)
-                (rop <&> repackStack)
-
+stack :: (HasClockReset d g s)
+      => String -> Signal d (SP, SDelta, Maybe Word) -> Signal d Word
+stack name op = readNew (blockRamPow2 (repeat $ errorX name))
+                        (op <&> (^. _1) <&> unpack)
+                        (op <&> repackStack)
+  where
     repackStack (_, _, Nothing) = Nothing
     repackStack (a, _, Just v) = Just (unpack a, v)
 

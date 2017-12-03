@@ -45,5 +45,4 @@ topEntity :: Clock System 'Source
           -> Reset System 'Asynchronous
           -> Signal System Word
           -> Signal System Word
-topEntity c r = withClockReset @System @'Source @'Asynchronous c r $
-  system "random-2k.readmemb"
+topEntity c r = withClockReset c r $ system "random-2k.readmemb"
