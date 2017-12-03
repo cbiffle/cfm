@@ -1,6 +1,9 @@
 module InstInfo where
 
+import Prelude hiding (Word)
+
 import Clash.Class.BitPack
+import Clash.Class.Resize (zeroExtend)
 
 import Data.Maybe (fromMaybe, mapMaybe)
 import Data.Monoid ((<>))
@@ -10,12 +13,40 @@ import qualified Data.Map.Strict as M
 import Text.Printf
 
 import Inst
+import Types
 
-type Expr = String
+data Expr = V !Int
+          | L !Word
+          | Bin !Expr !BOp !Expr
+          | Un !UOp !Expr
+          | CondZ !Expr !Expr !Expr
+          | PCPlus !Int
+          | Dep
+          | Undef
+          deriving (Eq, Show, Ord)
+
+data UOp = NotOp | DerefOp
+         deriving (Eq, Show, Ord)
+
+data BOp = AddOp
+         | AndOp
+         | OrOp
+         | XorOp
+         | EqOp
+         | SignedLessOp
+         | RShiftOp
+         | MinusOp
+         | LShiftOp
+         | UnsignedLessOp
+         deriving (Eq, Show, Ord)
 
 type Stack = [Expr]
 
 type Effect = (Stack, Stack, Maybe Expr, Maybe (Expr, Expr))
+
+simpl1 :: Expr -> Expr
+simpl1 (Un NotOp (Un NotOp x)) = x
+simpl1 x = x
 
 -- | Stack effect simulator. Given the SP delta, optional update, and the
 -- prior contents of the stack, produces a derived stack.
@@ -24,7 +55,7 @@ type Effect = (Stack, Stack, Maybe Expr, Maybe (Expr, Expr))
 -- three elements.
 stack 0 up (x : xs) = fromMaybe x up : xs
 
-stack 1 up xs = fromMaybe "???" up : xs
+stack 1 up xs = fromMaybe Undef up : xs
 
 stack 3 up (_ : x : xs) = fromMaybe x up : xs
 
@@ -33,29 +64,26 @@ stack 2 up (_ : _ : x : xs) = fromMaybe x up : xs
 stack x y z = error $ "stack " ++ show x ++ " " ++ show y ++ " " ++ show z
 
 -- | Symbolic expression generator for the ALU mux.
-tmux v t n r = case v of
+tmux v t n r = simpl1 $ case v of
   T        -> t
   N        -> n
-  TPlusN   -> binaryC "+"
-  TAndN    -> binaryC "&"
-  TOrN     -> binaryC "|"
-  TXorN    -> binaryC "^"
-  NotT     -> case t of
-                '~' : rest -> rest
-                _ -> "~" <> t
-  NEqT     -> binaryC "="
-  NLtT     -> binary "<"
-  NRshiftT -> binary ">>"
-  NMinusT  -> binary "-"
+  TPlusN   -> binaryC AddOp
+  TAndN    -> binaryC AndOp
+  TOrN     -> binaryC OrOp
+  TXorN    -> binaryC XorOp
+  NotT     -> Un NotOp t
+  NEqT     -> binaryC EqOp
+  NLtT     -> binary SignedLessOp
+  NRshiftT -> binary RShiftOp
+  NMinusT  -> binary MinusOp
   R        -> r
-  MemAtT   -> "[" <> t <> "]"
-  NLshiftT -> binary "<<"
-  Depth    -> "depth"
-  NULtT    -> binary "U<"
-  where binary s = p n <> s <> p t  -- non-commutative
-        binaryC s | n <= t = p n <> s <> p t  -- commutative
-                  | otherwise = p t <> s <> p n
-        p s = "(" <> s <> ")"
+  MemAtT   -> Un DerefOp t
+  NLshiftT -> binary LShiftOp
+  Depth    -> Dep
+  NULtT    -> binary UnsignedLessOp
+  where binary s = Bin n s t -- non-commutative
+        binaryC s | n <= t = Bin n s t  -- commutative
+                  | otherwise = Bin t s n
 
 -- | Abstract-evaluates an instruction given data and return stacks. Produces
 -- the new data and return stacks, and any effect on PC and memory,
@@ -64,7 +92,7 @@ eval :: Stack -> Stack -> Int -> Inst -> Effect
 eval (t : ds) (r : rs) pc inst =
   case inst of
     Lit x ->
-      ( show x : t : ds
+      ( L (zeroExtend x) : t : ds
       , r : rs
       , Nothing
       , Nothing
@@ -72,19 +100,19 @@ eval (t : ds) (r : rs) pc inst =
     NotLit (Jump x) ->
       ( t : ds
       , r : rs
-      , Just (show x)
+      , Just $ L $ zeroExtend x
       , Nothing
       )
     NotLit (JumpZ x) ->
       ( ds
       , r : rs
-      , Just ("(" ++ t ++ "=0 ? " ++ show x ++ " : PC+" ++ show (pc+1) ++ ")")
+      , Just $ simpl1 $ CondZ t (L (zeroExtend x)) (PCPlus (pc+1))
       , Nothing
       )
     NotLit (Call x) ->
       ( t : ds
-      , ("PC+" ++ show (pc+1)) : r : rs
-      , Just (show x)
+      , PCPlus (pc+1) : r : rs
+      , Just $ L $ zeroExtend x
       , Nothing
       )
     NotLit (ALU rp tm tn tr nm _ radj dadj) ->
@@ -116,8 +144,8 @@ evalPair ds rs i1 i2 =
     maybe (Just (ds'', rs'', pc', mmem)) (const Nothing) pc
 
 cds, crs :: Stack
-cds = ["a", "b", "c", "d", "e", "f"]
-crs = ["r", "s", "t", "u", "v", "w"]
+cds = map V [0 .. 5]
+crs = map V [6 .. 11]
 
 ceval :: Int -> Inst -> Effect
 ceval = eval cds crs
