@@ -2,7 +2,7 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE TypeApplications #-}
-module TestUtil where
+module RTL.TestUtil where
 
 import Clash.Prelude
 
@@ -12,7 +12,7 @@ import Test.Hspec
 import Test.QuickCheck hiding ((.&.))
 
 import CFM.Types
-import CoreInterface
+import RTL.CoreInterface
 
 newtype Fetch = Fetch MS deriving (Show)
 

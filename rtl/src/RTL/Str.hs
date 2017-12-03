@@ -4,14 +4,14 @@
 {-# LANGUAGE FlexibleContexts #-}
 
 -- | Structural model for ICE40 synthesis.
-module Str where
+module RTL.Str where
 
 import Clash.Prelude hiding (Word, read)
 
 import CFM.Inst
-import Shifter
 import CFM.Types
-import CoreInterface
+import RTL.Shifter
+import RTL.CoreInterface
 
 -- | Combinational datapath for CFM core.
 datapath :: MS -> IS -> (MS, OS)

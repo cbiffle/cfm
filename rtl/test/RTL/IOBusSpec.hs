@@ -4,7 +4,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE TypeFamilies #-}
-module IOBusSpec where
+module RTL.IOBusSpec where
 
 import Clash.Prelude
 import qualified Data.List as L
@@ -12,7 +12,7 @@ import Test.Hspec
 import Test.QuickCheck
 
 import CFM.Types
-import IOBus
+import RTL.IOBus
 
 spec = do
   context "ioDecoder' at various type indices" $ do

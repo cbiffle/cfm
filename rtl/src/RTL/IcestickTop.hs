@@ -4,15 +4,15 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE BinaryLiterals #-}
-module IcestickTop where
+module RTL.IcestickTop where
 
 import Clash.Prelude hiding (Word, readIO, read)
 import CFM.Types
-import IOBus
-import IRQ
-import GPIO
-import Timer
-import Core
+import RTL.IOBus
+import RTL.IRQ
+import RTL.GPIO
+import RTL.Timer
+import RTL.Core
 
 system :: (HasClockReset dom gated synchronous)
        => FilePath

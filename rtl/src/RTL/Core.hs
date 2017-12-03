@@ -3,13 +3,13 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE BinaryLiterals #-}
-module Core where
+module RTL.Core where
 
 import Clash.Prelude hiding (Word, readIO, read)
 import Control.Lens hiding ((:>), (:<), op)
-import Str
 import CFM.Types
-import CoreInterface
+import RTL.Str
+import RTL.CoreInterface
 
 -- | Registered version of the core datapath.
 core :: HasClockReset dom gated synchronous

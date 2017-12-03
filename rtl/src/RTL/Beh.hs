@@ -5,7 +5,7 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE TypeFamilies #-}
-module Beh where
+module RTL.Beh where
 
 import Clash.Prelude hiding (Word, cycle)
 
@@ -15,7 +15,7 @@ import Control.Monad.State
 import Control.Monad.Reader
 
 import CFM.Inst
-import CoreInterface
+import RTL.CoreInterface
 
 datapath :: MS -> IS -> (MS, OS)
 datapath m = swap . runReader (runStateT cycle m)

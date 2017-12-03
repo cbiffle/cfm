@@ -5,7 +5,7 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE ViewPatterns #-}
 
-module Shifter where
+module RTL.Shifter where
 
 import Clash.Prelude hiding (Word)
 

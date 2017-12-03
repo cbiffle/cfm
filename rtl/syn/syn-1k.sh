@@ -6,7 +6,7 @@ cd "$(dirname "$0")"
 SYN="."
 ROOT=".."
 OUT="out"
-VERILOG="${OUT}/verilog/IcestickTop/icestick_soc"
+VERILOG="${OUT}/verilog/RTL/icestick_soc"
 
 rm -rf "${OUT}"
 
@@ -14,7 +14,7 @@ rm -rf "${OUT}"
                 -i"${ROOT}/../arch/src" \
                 -outputdir "${OUT}" \
                 --verilog \
-                "${ROOT}/src/IcestickTop.hs"
+                "${ROOT}/src/RTL/IcestickTop.hs"
 
 rm -rf "${VERILOG}"/*testbench*v
 rm -rf "${VERILOG}"/*outputVerifier*v

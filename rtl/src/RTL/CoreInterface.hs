@@ -4,7 +4,7 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies #-}
-module CoreInterface where
+module RTL.CoreInterface where
 
 import Clash.Prelude hiding (Word, cycle)
 import GHC.Generics

@@ -7,7 +7,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 
 -- | IO bus support and interfacing
-module IOBus where
+module RTL.IOBus where
 
 import Clash.Prelude hiding (Word, read)
 

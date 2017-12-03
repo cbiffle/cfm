@@ -4,7 +4,7 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE TypeFamilies #-}
 
-module GPIO where
+module RTL.GPIO where
 
 import Clash.Prelude hiding (Word)
 

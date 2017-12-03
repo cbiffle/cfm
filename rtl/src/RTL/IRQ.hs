@@ -4,7 +4,7 @@
 {-# LANGUAGE TypeOperators #-}
 
 -- | Interrupt support.
-module IRQ where
+module RTL.IRQ where
 
 import Clash.Prelude hiding (Word)
 

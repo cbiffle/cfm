@@ -3,7 +3,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeOperators #-}
 
-module Timer where
+module RTL.Timer where
 
 import Clash.Prelude hiding (Word)
 import Control.Arrow (first)

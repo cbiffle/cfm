@@ -1,8 +1,8 @@
 {-# LANGUAGE NoImplicitPrelude #-}
-module BehSpec where
+module RTL.StrSpec where
 
 import Clash.Prelude
-import Beh
-import TestUtil
+import RTL.Str
+import RTL.TestUtil
 
 spec = genspec datapath
