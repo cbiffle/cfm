@@ -10,10 +10,9 @@ program: build/icestick-2k-prog.bin
 
 build/test.hex: tools/test.fs
 	mkdir -p build
-	cd tools && \
-	  stack --silent setup && \
+	stack --silent setup && \
 	  stack --silent build && \
-	  stack --silent exec cfm-as test.fs ../build/test.hex
+	  stack --silent exec cfm-as tools/test.fs build/test.hex
 
 %.readmemb: %.hex
 	ruby -e 'STDIN.each_line { |line| printf("%016b\n", line.to_i(16)) }' \
@@ -22,8 +21,7 @@ build/test.hex: tools/test.fs
 
 build/icestick-2k.asc:
 	mkdir -p build
-	cd rtl && \
-	  stack --silent setup && \
+	stack --silent setup && \
 	  stack --silent build --only-dependencies
 	rtl/syn/syn-1k.sh
 	cp rtl/syn/out/syn1k.asc build/icestick-2k.asc
