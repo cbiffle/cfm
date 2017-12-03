@@ -60,8 +60,8 @@ tmux v t n r = case v of
 -- | Abstract-evaluates an instruction given data and return stacks. Produces
 -- the new data and return stacks, and any effect on PC and memory,
 -- respectively.
-eval :: Stack -> Stack -> Inst -> Effect
-eval (t : ds) (r : rs) inst =
+eval :: Stack -> Stack -> Int -> Inst -> Effect
+eval (t : ds) (r : rs) pc inst =
   case inst of
     Lit x ->
       ( show x : t : ds
@@ -78,12 +78,12 @@ eval (t : ds) (r : rs) inst =
     NotLit (JumpZ x) ->
       ( ds
       , r : rs
-      , Just ("(" ++ t ++ "=0 ? " ++ show x ++ " : PC+1)")
+      , Just ("(" ++ t ++ "=0 ? " ++ show x ++ " : PC+" ++ show (pc+1) ++ ")")
       , Nothing
       )
     NotLit (Call x) ->
       ( t : ds
-      , "PC+1" : r : rs
+      , ("PC+" ++ show (pc+1)) : r : rs
       , Just (show x)
       , Nothing
       )
@@ -102,8 +102,8 @@ eval (t : ds) (r : rs) inst =
 -- as 'eval' if such an effect can be described. (If both instructions store to
 -- memory, or the first returns, the compound effect can't be described.)
 evalPair ds rs i1 i2 =
-  let (ds', rs', pc, mem) = eval ds rs i1
-      (ds'', rs'', pc', mem') = eval ds' rs' i2
+  let (ds', rs', pc, mem) = eval ds rs 0 i1
+      (ds'', rs'', pc', mem') = eval ds' rs' 1 i2
       merge (Just _) (Just _) = Nothing
       merge a Nothing = Just a
       merge Nothing a = Just a
@@ -119,7 +119,7 @@ cds, crs :: Stack
 cds = ["a", "b", "c", "d", "e", "f"]
 crs = ["r", "s", "t", "u", "v", "w"]
 
-ceval :: Inst -> Effect
+ceval :: Int -> Inst -> Effect
 ceval = eval cds crs
 
 cevalPair = evalPair cds crs
@@ -131,7 +131,7 @@ canAluInsts =
   in [i | i <- aluInsts, canonicalInst i]
 
 instructionsByEffect :: M.Map Effect Inst
-instructionsByEffect = M.fromList $ map (\i -> (ceval i, i)) canAluInsts
+instructionsByEffect = M.fromList $ map (\i -> (ceval 0 i, i)) canAluInsts
 
 fuse :: Inst -> Inst -> Maybe Inst
 fuse i1 i2 = do
