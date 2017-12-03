@@ -7,10 +7,11 @@ import Data.Monoid ((<>))
 
 import Control.Monad (forM_)
 import qualified Data.Map.Strict as M
-import qualified Data.Map.Lazy as LM
 import Text.Printf
 
 import Inst
+
+type Stack = [String]
 
 -- | Stack effect simulator. Given the SP delta, optional update, and the
 -- prior contents of the stack, produces a derived stack.
@@ -69,8 +70,7 @@ effect xs ys = picture xs' <> " -- " <> picture ys'
 -- | Abstract-evaluates an instruction given data and return stacks. Produces
 -- the new data and return stacks, and any effect on PC and memory,
 -- respectively.
-eval :: [String] -> [String] -> Inst
-     -> ([String], [String], Maybe String, Maybe String)
+eval :: Stack -> Stack -> Inst -> (Stack, Stack, Maybe String, Maybe String)
 eval (t : ds) (r : rs) inst =
   case inst of
     Lit x ->
@@ -125,28 +125,37 @@ evalPair ds rs i1 i2 =
     -- Only produce a result if the first instruction did *not* return.
     maybe (Just (ds'', rs'', pc', mmem)) (const Nothing) pc
 
--- | Produces a lazy map of instruction pairs to their fused equivalents.
-lazyFusionMap =
-  let ds = ["a", "b", "c", "d", "e", "f"]
-      rs = ["r", "s", "t", "u", "v", "w"]
-      aluInsts = [NotLit $ ALU False T False False False (Res 0) 0 0 ..
+cds, crs :: Stack
+cds = ["a", "b", "c", "d", "e", "f"]
+crs = ["r", "s", "t", "u", "v", "w"]
+
+ceval :: Inst -> (Stack, Stack, Maybe String, Maybe String)
+ceval = eval cds crs
+
+cevalPair = evalPair cds crs
+
+canAluInsts :: [Inst]
+canAluInsts =
+  let aluInsts = [NotLit $ ALU False T False False False (Res 0) 0 0 ..
                   NotLit $ ALU True NULtT True True True (Res 0) (-1) (-1)]
-      canAluInsts = [i | i <- aluInsts, canonicalInst i]
-      m = M.fromList $
-          map (\i -> (eval ds rs i, i)) canAluInsts
-      pairs = [(i1, i2) | i1 <- canAluInsts, i2 <- canAluInsts]
-  in LM.fromDistinctAscList $
-     mapMaybe (\(i1, i2) -> do
-          eff <- evalPair ds rs i1 i2
-          iF <- M.lookup eff m
-          pure ((i1, i2), (eff, iF)))
-        pairs
+  in [i | i <- aluInsts, canonicalInst i]
+
+instructionsByEffect :: M.Map (Stack, Stack, Maybe String, Maybe String) Inst
+instructionsByEffect = M.fromList $ map (\i -> (ceval i, i)) canAluInsts
+
+fuse :: Inst -> Inst -> Maybe Inst
+fuse i1 i2 = do
+  eff <- cevalPair i1 i2
+  M.lookup eff instructionsByEffect
 
 -- | Prints fusion opportunities to stdout in human-readable format.
 showFusionPairs :: IO ()
-showFusionPairs = forM_ (M.toList lazyFusionMap) $ \((i1, i2), (eff, iF)) -> do
-  printf "Pair %04x %04x -> %04x -  effect %s\n"
+showFusionPairs =
+  forM_ [(i1, i2) | i1 <- canAluInsts, i2 <- canAluInsts] $ \(i1, i2) -> do
+    case fuse i1 i2 of
+      Nothing -> pure ()
+      Just iF -> printf "Pair %04x %04x -> %04x -  effect %s\n"
          (toInteger (pack i1))
          (toInteger (pack i2))
          (toInteger (pack iF))
-         (show eff)
+         (show (cevalPair i1 i2))

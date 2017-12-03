@@ -135,13 +135,13 @@ cComma v = do
       end <- here
       lastInst <- gets $ M.lookup (end - 1) . asMem
       case lastInst of
-        Just (I i) -> case M.lookup (i, v) II.lazyFusionMap of
-          Just (_, iF) | iF == nop ->
+        Just (I i) -> case II.fuse i v of
+          Just iF | iF == nop ->
             -- Un-compile the last instruction.
             modify $ \s -> s { asMem = M.delete (end - 1) (asMem s)
                              , asPos = asPos s - 1
                              }
-          Just (_, iF) -> patch (I i) (I iF) (end - 1)
+          Just iF -> patch (I i) (I iF) (end - 1)
           Nothing -> case i of
             -- Call-Return: convert to jump (tail-call optimization)
             NotLit (Call t) | v == ret -> patch (I i) (I (NotLit (Jump t))) (end - 1)
