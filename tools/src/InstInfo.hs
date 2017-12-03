@@ -11,7 +11,11 @@ import Text.Printf
 
 import Inst
 
-type Stack = [String]
+type Expr = String
+
+type Stack = [Expr]
+
+type Effect = (Stack, Stack, Maybe Expr, Maybe (Expr, Expr))
 
 -- | Stack effect simulator. Given the SP delta, optional update, and the
 -- prior contents of the stack, produces a derived stack.
@@ -53,24 +57,10 @@ tmux v t n r = case v of
                   | otherwise = p t <> s <> p n
         p s = "(" <> s <> ")"
 
--- | Produces a Forth-style stack effect diagram given before and after stacks.
--- Any common suffix will be hidden.
-effect xs ys = picture xs' <> " -- " <> picture ys'
-  where
-    (xs', ys') = normalize xs ys
-    picture ss = unwords $ reverse ss
-
-    normalize [] [] = ([], [])
-    normalize xs [] = (xs, [])
-    normalize [] ys = ([], ys)
-    normalize (x : xs) (y : ys) = case normalize xs ys of
-      ([], []) | x == y -> ([], [])
-      (xs', ys') -> (x : xs', y : ys')
-
 -- | Abstract-evaluates an instruction given data and return stacks. Produces
 -- the new data and return stacks, and any effect on PC and memory,
 -- respectively.
-eval :: Stack -> Stack -> Inst -> (Stack, Stack, Maybe String, Maybe String)
+eval :: Stack -> Stack -> Inst -> Effect
 eval (t : ds) (r : rs) inst =
   case inst of
     Lit x ->
@@ -104,7 +94,7 @@ eval (t : ds) (r : rs) inst =
       in  ( t' : ds'
           , rs'
           , if rp then Just r else Nothing
-          , if nm then Just ("[" <> t <> "] <- " <> head ds) else Nothing
+          , if nm then Just (t, head ds) else Nothing
           )
 
 -- | Evaluates a sequence of two instructions `i1` then `i2`, using the initial
@@ -129,7 +119,7 @@ cds, crs :: Stack
 cds = ["a", "b", "c", "d", "e", "f"]
 crs = ["r", "s", "t", "u", "v", "w"]
 
-ceval :: Inst -> (Stack, Stack, Maybe String, Maybe String)
+ceval :: Inst -> Effect
 ceval = eval cds crs
 
 cevalPair = evalPair cds crs
@@ -140,7 +130,7 @@ canAluInsts =
                   NotLit $ ALU True NULtT True True True (Res 0) (-1) (-1)]
   in [i | i <- aluInsts, canonicalInst i]
 
-instructionsByEffect :: M.Map (Stack, Stack, Maybe String, Maybe String) Inst
+instructionsByEffect :: M.Map Effect Inst
 instructionsByEffect = M.fromList $ map (\i -> (ceval i, i)) canAluInsts
 
 fuse :: Inst -> Inst -> Maybe Inst
@@ -151,7 +141,7 @@ fuse i1 i2 = do
 -- | Prints fusion opportunities to stdout in human-readable format.
 showFusionPairs :: IO ()
 showFusionPairs =
-  forM_ [(i1, i2) | i1 <- canAluInsts, i2 <- canAluInsts] $ \(i1, i2) -> do
+  forM_ [(i1, i2) | i1 <- canAluInsts, i2 <- canAluInsts] $ \(i1, i2) ->
     case fuse i1 i2 of
       Nothing -> pure ()
       Just iF -> printf "Pair %04x %04x -> %04x -  effect %s\n"
