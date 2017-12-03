@@ -16,12 +16,11 @@ import Core
 
 system :: (HasClockReset dom gated synchronous)
        => FilePath
-       -> StackType
        -> Signal dom Word
        -> Signal dom Word
-system raminit stackType ins = outs
+system raminit ins = outs
   where
-    (ioreq, fetch) = coreWithRAM stackType ram ioresp
+    (ioreq, fetch) = coreWithRAM ram ioresp
 
     (ioreq0 :> ioreq1 :> ioreq2 :> ioreq3 :> Nil, ioch) = ioDecoder @2 ioreq
     ioresp = responseMux (ioresp0 :> ioresp1 :> ioresp2 :> ioresp3 :> Nil) ioch
@@ -47,4 +46,4 @@ topEntity :: Clock System 'Source
           -> Signal System Word
           -> Signal System Word
 topEntity c r = withClockReset @System @'Source @'Asynchronous c r $
-  system "random-2k.readmemb" RAMs
+  system "random-2k.readmemb"
