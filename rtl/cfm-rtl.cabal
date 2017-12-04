@@ -22,6 +22,7 @@ library
                        RTL.Str
                        RTL.Core
                        RTL.IcestickTop
+                       RTL.TargetTop
   build-depends:       base >= 4.7 && < 5
                      , cfm-arch
                      , ghc-typelits-extra

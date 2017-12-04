@@ -11,19 +11,19 @@ import CFM.Types
 -- stacks are not in addressable memory.
 class (Monad m) => MonadTarget m where
   -- | Load a word from memory or I/O.
-  load :: WordAddr -> m Word
+  tload :: WordAddr -> m Word
   -- | Store a word to memory or I/O.
-  store :: WordAddr -> Word -> m ()
+  tstore :: WordAddr -> Word -> m ()
 
   -- | Push a word onto the parameter stack.
-  push :: Word -> m ()
+  tpush :: Word -> m ()
   -- | Pop a word from the parameter stack
-  pop :: m Word
+  tpop :: m Word
 
   -- | Push a word onto the return stack.
-  pushR :: Word -> m ()
+  tpushR :: Word -> m ()
   -- | Pop a word from the return stack.
-  popR :: m Word
+  tpopR :: m Word
 
   -- | Call a subroutine at the given address for its side effects.
-  call :: WordAddr -> m ()
+  tcall :: WordAddr -> m ()

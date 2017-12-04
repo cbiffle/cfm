@@ -16,13 +16,16 @@ library
                        Parser
                        InstInfo
                        Target
+                       Target.RTL
   build-depends:       base >= 4.7 && < 5
                      , clash-prelude
                      , parsec
                      , data-default
                      , containers
                      , mtl
+                     , monad-coroutine
                      , cfm-arch
+                     , cfm-rtl
   default-language:    Haskell2010
   ghc-options:        -Wall
 
