@@ -1,6 +1,8 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE TypeSynonymInstances #-}
+{-# LANGUAGE FlexibleInstances #-}
 -- | A target that runs the actual processor RTL in an isolated context.
 module Target.RTL where
 
@@ -21,23 +23,25 @@ import CFM.Types
 import Target
 import qualified RTL.TargetTop as R
 
-newtype RTL x = RTL (Coroutine (Request (Maybe Word, Bool) (Maybe Word, Bool))
-                               Identity
-                               x)
-                deriving (Functor, Applicative, Monad)
+newtype SigT i o m x = SigT (Coroutine (Request i o) m x)
+  deriving (Functor, Applicative, Monad)
+
+type RTLT = SigT (Maybe Word, Bool) (Maybe Word, Bool)
+
+type RTL x = RTLT Identity x
 
 -- | Advances the clock, providing inputs and returning outputs.
-tick :: (Maybe Word, Bool) -> RTL (Maybe Word, Bool)
-tick x = RTL (request x)
+tick :: (Monad m) => i -> SigT i o m o
+tick x = SigT (request x)
 
 -- | Transmits a word to the target system via the H2T buffer.
-put :: Word -> RTL ()
+put :: (Monad m) => Word -> RTLT m ()
 put w = do
   _ <- tick (Just w, False)
   awaitTake
 
 -- | Blocks until the H2T buffer is empty.
-awaitTake :: RTL ()
+awaitTake :: (Monad m) => RTLT m ()
 awaitTake = do
   (_, te) <- tick (Nothing, False)
   if te
@@ -46,7 +50,7 @@ awaitTake = do
 
 -- | Receives a word from the target via the T2H buffer, spinning until one is
 -- available.
-get :: RTL Word
+get :: (Monad m) => RTLT m Word
 get = do
   (t2h, _) <- tick (Nothing, True)
   case t2h of
@@ -56,14 +60,14 @@ get = do
 -- | Implementation factor of debug protocol commands: checks for the
 -- conventional 0 success code, and executes @action@ only if the command
 -- succeeded.
-checkResponse :: RTL x -> RTL x
+checkResponse :: (Monad m) => RTLT m x -> RTLT m x
 checkResponse action = do
   r <- get
   if r == 0
     then action
     else error "target command failed"
 
-instance MonadTarget RTL where
+instance (Monad m) => MonadTarget (RTLT m) where
   tload addr = do
     put 0
     put (addr ++# 0)
@@ -101,7 +105,7 @@ instance MonadTarget RTL where
 -- | Runs an 'RTL' action against a fresh instance of the system with the debug
 -- stub loaded.
 sim :: RTL x -> x
-sim (RTL c) = fromJust $ join $ find isJust resp
+sim (SigT c) = fromJust $ join $ find isJust resp
   where
     t2h = target debugStub h2t
     (h2t, resp) = unzip $ go c t2h
@@ -114,7 +118,8 @@ target :: (KnownNat n)
        => Vec n Word
        -> [(Maybe Word, Bool)]
        -> [(Maybe Word, Bool)]
-target img = C.simulateB_lazy $ R.targetTop img C.systemClockGen C.systemResetGen
+target img = C.simulateB_lazy $
+             R.targetTop img C.systemClockGen C.systemResetGen
 
 debugStub :: Vec 8192 Word
 debugStub = V.replace (0 :: Int) 0x1f56 $
