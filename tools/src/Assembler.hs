@@ -19,6 +19,8 @@ import Control.Monad.State
 import Control.Monad.Except
 
 import Text.Parsec (parse)
+import Language.Haskell.TH
+import Language.Haskell.TH.Quote
 
 import Parser
 import qualified InstInfo as II
@@ -288,3 +290,14 @@ asmString input = result
             case M.lookup a (asMem st) of
               Just v -> fromIntegral $ deval v
               Nothing -> 0xDEAD
+
+asmQQ :: QuasiQuoter
+asmQQ = QuasiQuoter
+  { quoteExp = \text -> case asmString text of
+        Left m -> fail m
+        Right words -> pure $ ListE $ map (LitE . IntegerL . fromIntegral) words
+  , quotePat = \_ -> fail "illegal"
+  , quoteType = \_ -> fail "illegal"
+  , quoteDec = \_ -> fail "illegal"
+  }
+

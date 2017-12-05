@@ -19,10 +19,8 @@ import Control.Concurrent.Chan
 
 import CFM.Types
 import Target
-import Assembler (asmString)
+import Assembler (asmQQ)
 import qualified RTL.TargetTop as R
-
-import Text.RawString.QQ (r)
 
 -- We'll use a 'Chan' to incrementally create a lazy list of stimuli, and stash
 -- that in the environment as a Reader.
@@ -140,8 +138,7 @@ debugStub = V.replace (0 :: Int) 0x1f58 $
             foldl' (\v (a, i) -> V.replace a i v)
                    (V.repeat 0xDEAD) $
             zip [0 :: Int ..] $
-            either error id $
-            asmString $ [r|
+            [asmQQ|
             ( Primitive ALU instruction definitions )
             0x6180 alu: swap          ( a b -- b a )
             0x6020 alu: 2dup/!        ( a b -- a b )
