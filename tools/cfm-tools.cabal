@@ -26,6 +26,7 @@ library
                      , monad-coroutine
                      , cfm-arch
                      , cfm-rtl
+                     , raw-strings-qq
   default-language:    Haskell2010
   ghc-options:        -Wall
 
