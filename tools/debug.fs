@@ -43,40 +43,41 @@
     host>
     0 >host   ( command valid )
     @ >host   ( result of load )
-    debug-loop
+    debug-loop exit
   then
   1 over = if drop  ( poke )
     host> host>
     0 >host   ( command valid )
     !
-    debug-loop
+    debug-loop exit
   then
   2 over = if drop  ( push )
     host>
     0 >host
-    debug-loop
+    debug-loop exit
   then
   3 over = if drop  ( pop )
     0 >host
     >host
-    debug-loop
+    debug-loop exit
   then
   4 over = if drop  ( >r )
     host>
     0 >host
     >r
-    debug-loop
+    debug-loop exit
   then
   5 over = if drop  ( r> )
     0 >host
     r> >host
-    debug-loop
+    debug-loop exit
   then
   6 over = if drop  ( execute )
     host>
     0 >host
     execute
-    debug-loop
+    0 >host
+    debug-loop exit
   then
 
   drop
