@@ -4,18 +4,25 @@
 {-# LANGUAGE TupleSections #-}
 module Assembler where
 
+import Prelude hiding (Word)
+
 import Clash.Class.BitPack
 
 import Data.Bits
 import Data.Char (ord)
+import Data.Maybe (fromMaybe)
 import Data.Default
 import qualified Data.Map.Strict as M
+import qualified Data.Set as S
 
 import Control.Monad.State
 import Control.Monad.Except
 
+import Text.Parsec (parse)
+
 import Parser
 import qualified InstInfo as II
+import CFM.Types
 import CFM.Inst
 
 finally :: (MonadError e m) => m a -> m b -> m a
@@ -262,3 +269,22 @@ asm tops = do
   create "exit" $ Immediate $ compileOnly exit
   create "!" $ Immediate macroBang
   forM_ tops run
+
+asmString :: String -> Either String [Word]
+asmString input = result
+  where
+    pr = parse sourceFile "(string literal)" input
+    (asmOut, st) = case pr of
+      Left e -> (Left $ show e, def)
+      Right tops -> runState (runExceptT $ runAsm $ asm tops) def
+
+    result = case asmOut of
+      Left m -> Left m
+      Right _
+        | M.null (asMem st) -> Right []
+        | otherwise ->
+          let maxAddr = fromMaybe 0 $ S.lookupMax $ M.keysSet $ asMem st
+          in Right $ flip map [0 .. maxAddr] $ \a ->
+            case M.lookup a (asMem st) of
+              Just v -> fromIntegral $ deval v
+              Nothing -> 0xDEAD
