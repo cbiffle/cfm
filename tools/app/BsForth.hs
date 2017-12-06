@@ -75,7 +75,6 @@ data ForthState = Interpreting | Compiling
 
 data FS = FS
   { fsInput :: String
-  , fsState :: ForthState
   }
 
 data ForthErr = WordExpected
@@ -95,21 +94,17 @@ bootstrap (BsT a) source = do
   where
     s = FS
       { fsInput = source
-      , fsState = Interpreting
       }
 
--- | Sets up the basic memory contents we expect in the target system:
---
--- - Placeholder reset vector
--- - Placeholder interrupt vector
--- - Vocabulary root cell
--- - Dictionary pointer cell
+-- | Sets up the basic memory contents we expect in the target system.
 initializeTarget :: (MonadTarget m) => m ()
 initializeTarget = do
   tstore 0 0  -- reset vector
   tstore 1 0  -- interrupt vector
   tstore 2 0  -- vocabulary root
-  tstore 3 8  -- dictionary pointer
+  tstore 3 12 -- dictionary pointer
+  tstore 4 0x1FF0 -- user area base
+  tstore 5 0  -- STATE
 
 -- | Reads the vocabulary head cell, giving the LFA of the latest definition.
 readLatest :: (MonadTarget m) => m WordAddr
@@ -126,6 +121,18 @@ readHere = tload 3
 -- | Writes the dictionary pointer cell.
 writeHere :: (MonadTarget m) => Word -> m ()
 writeHere = tstore 3
+
+readState :: (MonadTarget m) => m ForthState
+readState = do
+  f <- tload 5
+  if f /= 0
+    then pure Compiling
+    else pure Interpreting
+
+writeState :: (MonadTarget m) => ForthState -> m ()
+writeState s = tstore 5 $ case s of
+  Interpreting -> 0
+  Compiling -> -1
 
 -- | Searches for a word in the target dictionary. Returns its code field
 -- address and flags word if found.
@@ -186,13 +193,13 @@ takeWord = do
   modify $ \s -> s { fsInput = if null rest then [] else tail rest }
   pure w
 
-interpretationOnly, compileOnly :: (Monad m) => String -> BsT m ()
+interpretationOnly, compileOnly :: (MonadTarget m) => String -> BsT m ()
 interpretationOnly name = do
-  s <- gets fsState
+  s <- readState
   when (s /= Interpreting) (throwError (BadState s Interpreting name))
 
 compileOnly name = do
-  s <- gets fsState
+  s <- readState
   when (s /= Compiling) (throwError (BadState s Compiling name))
 
 fallback :: (MonadTarget m) => String -> BsT m ()
@@ -200,12 +207,12 @@ fallback ":" = do
   interpretationOnly ":"
   w <- nameFromString <$> takeWord
   createHeader w 0
-  modify $ \s -> s { fsState = Compiling }
+  writeState Compiling
 
 fallback ";" = do
   compileOnly ";"
   inst ret
-  modify $ \s -> s { fsState = Interpreting }
+  writeState Interpreting
 
 fallback "constant" = do
   interpretationOnly "constant"
@@ -222,11 +229,11 @@ fallback "," = do
 
 fallback "[" = do
   compileOnly "["
-  modify $ \s -> s { fsState = Interpreting }
+  writeState Interpreting
 
 fallback "]" = do
   interpretationOnly "]"
-  modify $ \s -> s { fsState = Compiling }
+  writeState Compiling
 
 fallback "(" = modify $ \s -> s { fsInput = dropWhile' (/= ')') (fsInput s) }
 fallback "\\" = modify $ \s -> s { fsInput = dropWhile' (/= '\n') (fsInput s) }
@@ -254,13 +261,13 @@ fallback "until" = do
   inst $ NotLit $ JumpZ $ truncateB $ word2wa a
 
 fallback ('$' : hnum) | all isHexDigit hnum = do
-  s <- gets fsState
+  s <- readState
   case s of
     Interpreting -> tpush $ parseHex hnum
     Compiling -> literal $ parseHex hnum
 
 fallback num | all isDigit num = do
-  s <- gets fsState
+  s <- readState
   case s of
     Interpreting -> tpush $ fromIntegral (read num :: Integer)
     Compiling -> literal $ fromIntegral (read num :: Integer)
@@ -284,7 +291,7 @@ interpreter = do
     me <- lookupWord (nameFromString w)
     case me of
       Just (cfa, flags) -> do
-        s <- gets fsState
+        s <- readState
         case s of
           Interpreting -> if flags == 0
                             then tcall cfa
