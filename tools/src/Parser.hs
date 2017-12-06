@@ -50,6 +50,9 @@ data AsmFrag = Word String
                 -- ^ A begin-loop, consisting of a body and a loop-ending type.
              | If [AsmFrag] (Maybe [AsmFrag])
                 -- ^ An if-then with optional else clause.
+             | FusionBreak
+                -- ^ Explicitly prevents fusion of two adjacent instructions.
+                -- Useful mostly for nefarious purposes.
              deriving (Show)
 
 -- | A loop ending.
@@ -86,7 +89,7 @@ aluprim = sic "alu:" >> ALUPrim <$> lexeme
 
 interp = Interp <$> frag
 
-frag = comment <|> loop <|> ifThen <|> charLit <|> word
+frag = comment <|> loop <|> ifThen <|> charLit <|> fusionBreak <|> word
 
 comment = Comment <$> (do sic "\\"
                           c <- many (noneOf "\n")
@@ -108,6 +111,8 @@ thenOrElse = (sic "then" >> pure Nothing)
          <|> (sic "else" >> Just <$> frag `manyTill` sic "then")
 
 charLit = CharLit . head <$> (sic "[char]" *> lexeme)
+
+fusionBreak = sic "|" >> pure FusionBreak
 
 word = do
   w <- lexeme

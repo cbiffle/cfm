@@ -202,6 +202,7 @@ compile' :: AsmFrag -> Asm ()
 compile' (Comment _) = pure ()
 compile' (Word w) = find w >>= compile
 compile' (CharLit c) = cComma $ Lit $ fromIntegral $ ord c
+compile' FusionBreak = blockFusion
 compile' (Begin body end) = do
   begin <- here
   blockFusion
