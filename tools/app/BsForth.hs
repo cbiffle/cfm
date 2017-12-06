@@ -29,7 +29,7 @@ main = do
     Left e -> do
       print e
       exitWith (ExitFailure 1)
-    Right img -> forM_ (zip [0 :: Int ..] img) $ \(a, v) -> do
+    Right img -> forM_ (zip [0 :: Int ..] img) $ \(a, v) ->
       printf "%04x  %04x\n" (2*a) (fromIntegral v :: Int)
 
 type Name = [Word]
