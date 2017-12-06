@@ -325,10 +325,16 @@ endOfInput = gets $ null . fsInput
 
 rescan :: (MonadTarget m) => BsT m ()
 rescan = do
-  mx <- lookupWord (nameFromString ",")
-  case mx of
-    Nothing -> pure ()
-    Just (cfa, _) -> modify $ \s -> s { fsCommaXT = Just cfa }
+  do
+    mx <- lookupWord ","
+    case mx of
+      Nothing -> pure ()
+      Just (cfa, _) -> modify $ \s -> s { fsCommaXT = Just cfa }
+  do
+    mx <- lookupWord "compile,"
+    case mx of
+      Nothing -> pure ()
+      Just (cfa, _) -> modify $ \s -> s { fsCompileCommaXT = Just cfa }
 
 interpreter :: (MonadTarget m) => BsT m ()
 interpreter = do
