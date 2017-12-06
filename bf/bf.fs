@@ -19,6 +19,9 @@
 : >r     [ $6147 , ] ;
 : @      [ $6c00 , ] ;
 : or     [ $6403 , ] ;
+: and    [ $6303 , ] ;
+: r>     [ $6b8d , ] ;
+: r@     [ $6b81 , ] ;
 
 : ! [ $6123 , $6103 , ] ;
 
@@ -36,11 +39,31 @@
 : here  ( -- addr )  DP @ ;
 2 constant cell
 : cells  1 lshift ;
+: aligned  dup 1 and + ;
 : allot  DP +! ;
 : ,  here !  cell allot ;
 : compile,  1 rshift  $4000 or  , ;
+: align  DP @  aligned  DP ! ;
 
 <TARGET-EVOLVE> ( make bootstrap aware of dictionary words )
+
+( Byte access. These words access the bytes within cells in little endian. )
+: c@  dup @
+      swap 1 and if ( lsb set )
+        8 rshift
+      else
+        $FF and
+      then ;
+
+: c!  dup >r
+      1 and if ( lsb set )
+        8 lshift
+        r@ @ $FF and or
+      else
+        $FF and
+        r@ @ $FF00 and or
+      then
+      r> ! ;
 
 ( General code above )
 ( ----------------------------------------------------------- )

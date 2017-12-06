@@ -276,7 +276,30 @@ fallback "until" = do
   a <- tpop
   inst $ NotLit $ JumpZ $ truncateB $ word2wa a
 
-fallback "<TARGET-EVOLVE>" = rescan
+fallback "if" = do
+  compileOnly "if"
+  readHere >>= tpush
+  inst $ NotLit $ JumpZ 0  -- placeholder
+
+fallback "else" = do
+  compileOnly "else"
+  ifA <- tpop
+  readHere >>= tpush
+  inst $ NotLit $ Jump 0  -- placeholder
+  h <- readHere
+  i <- tload (word2wa ifA)
+  tstore (word2wa ifA) $ i .|. (h `shiftR` 1)
+
+fallback "then" = do
+  compileOnly "then"
+  h <- readHere
+  a <- tpop
+  i <- tload (word2wa a)
+  tstore (word2wa a) $ i .|. (h `shiftR` 1)
+
+fallback "<TARGET-EVOLVE>" = do
+  interpretationOnly "<TARGET-EVOLVE>"
+  rescan
 
 fallback ('$' : hnum) | all isHexDigit hnum = do
   s <- readState
