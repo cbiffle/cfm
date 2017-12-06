@@ -75,6 +75,8 @@ data ForthState = Interpreting | Compiling
 
 data FS = FS
   { fsInput :: String
+  , fsCommaXT :: Maybe WordAddr
+  , fsCompileCommaXT :: Maybe WordAddr
   }
 
 data ForthErr = WordExpected
@@ -94,6 +96,8 @@ bootstrap (BsT a) source = do
   where
     s = FS
       { fsInput = source
+      , fsCommaXT = Nothing
+      , fsCompileCommaXT = Nothing
       }
 
 -- | Sets up the basic memory contents we expect in the target system.
@@ -159,25 +163,37 @@ nameEqual (w : ws) a = do
     then nameEqual ws (a + 1)
     else pure False
 
+cached_1_0 :: (MonadTarget m)
+           => (FS -> Maybe WordAddr)
+           -> Word
+           -> BsT m ()
+           -> BsT m ()
+cached_1_0 getter arg impl = do
+  mxt <- gets getter
+  case mxt of
+    Nothing -> impl
+    Just xt -> tpush arg >> tcall xt
+
 -- | Encloses a cell into the dictionary.
-comma :: (MonadTarget m) => Word -> m ()
-comma x = do
+comma :: (MonadTarget m) => Word -> BsT m ()
+comma x = cached_1_0 fsCommaXT x $ do
   h <- readHere
   writeHere (h + 2)
   tstore (word2wa h) x
 
-literal :: (MonadTarget m) => Word -> m ()
+literal :: (MonadTarget m) => Word -> BsT m ()
 literal w = do
   comma $ 0x8000 .|. (if w >= 0x8000 then complement w else w)
   when (w >= 0x8000) $ inst invert
 
-compile :: (MonadTarget m) => Word -> m ()
-compile = comma . (0x4000 .|.) . zeroExtend . word2wa
+compile :: (MonadTarget m) => Word -> BsT m ()
+compile w = cached_1_0 fsCompileCommaXT w $
+  comma $ (0x4000 .|.) $ zeroExtend $ word2wa w
 
-inst :: (MonadTarget m) => Inst -> m ()
+inst :: (MonadTarget m) => Inst -> BsT m ()
 inst = comma . pack
 
-createHeader :: (MonadTarget m) => Name -> Word -> m ()
+createHeader :: (MonadTarget m) => Name -> Word -> BsT m ()
 createHeader name flags = do
   h <- readHere
   readLatest >>= comma . wa2word
@@ -260,6 +276,8 @@ fallback "until" = do
   a <- tpop
   inst $ NotLit $ JumpZ $ truncateB $ word2wa a
 
+fallback "<TARGET-EVOLVE>" = rescan
+
 fallback ('$' : hnum) | all isHexDigit hnum = do
   s <- readState
   case s of
@@ -281,6 +299,13 @@ dropWhile' p s = case dropWhile p s of
 
 endOfInput :: (Monad m) => BsT m Bool
 endOfInput = gets $ null . fsInput
+
+rescan :: (MonadTarget m) => BsT m ()
+rescan = do
+  mx <- lookupWord (nameFromString ",")
+  case mx of
+    Nothing -> pure ()
+    Just (cfa, _) -> modify $ \s -> s { fsCommaXT = Just cfa }
 
 interpreter :: (MonadTarget m) => BsT m ()
 interpreter = do
