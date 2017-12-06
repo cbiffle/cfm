@@ -80,6 +80,7 @@ data FS = FS
   { fsInput :: String
   , fsCommaXT :: Maybe WordAddr
   , fsCompileCommaXT :: Maybe WordAddr
+  , fsSfindXT :: Maybe WordAddr
   }
 
 data ForthErr = WordExpected
@@ -103,6 +104,7 @@ bootstrap (BsT a) source = do
       { fsInput = source
       , fsCommaXT = Nothing
       , fsCompileCommaXT = Nothing
+      , fsSfindXT = Nothing
       }
 
 -- | Sets up the basic memory contents we expect in the target system.
@@ -145,9 +147,18 @@ writeState s = tstore 5 $ case s of
 
 -- | Searches for a word in the target dictionary. Returns its code field
 -- address and flags word if found.
-lookupWord :: (MonadTarget m) => Name -> m (Maybe (WordAddr, Word))
-lookupWord name = readLatest >>= lookupWordFrom
+lookupWord :: (MonadTarget m) => String -> BsT m (Maybe (WordAddr, Word))
+lookupWord name = do
+  mxt <- gets fsSfindXT
+  case mxt of
+    Nothing -> lookupWordH name
+    Just xt -> lookupWordT name xt
+
+lookupWordH :: (MonadTarget m) => String -> m (Maybe (WordAddr, Word))
+lookupWordH nameS = readLatest >>= lookupWordFrom
   where
+    name = nameFromString nameS
+
     lookupWordFrom 0 = pure Nothing
 
     lookupWordFrom lfa = do
@@ -158,7 +169,23 @@ lookupWord name = readLatest >>= lookupWordFrom
           flags <- tload (lfa + 1 + nl)
           pure $ Just (lfa + 1 + nl + 1, flags)
         else tload lfa >>= lookupWordFrom . word2wa
- 
+
+lookupWordT :: (MonadTarget m) => String -> WordAddr -> m (Maybe (WordAddr, Word))
+lookupWordT name xt = do
+  h <- readHere
+  zipWithM_ tstore [word2wa h ..] $ nameFromString name
+  tpush (h + 1)
+  tpush (fromIntegral (length name))
+  tcall xt
+  flag <- tpop
+  if flag == 0
+    then tpop >> tpop >> pure Nothing
+    else do
+      flags <- tpop
+      newXt <- tpop
+      pure $ Just (word2wa newXt, flags)
+
+
 -- | Compares a name to the sequence of words stored starting at an address.
 nameEqual :: (MonadTarget m) => Name -> WordAddr -> m Bool
 nameEqual [] _ = pure True
@@ -267,7 +294,7 @@ fallback ".(" = do
 fallback "'" = do
   interpretationOnly "'"
   w <- takeWord
-  me <- lookupWord (nameFromString w)
+  me <- lookupWord w
   case me of
     Just (cfa, _) -> tpush (wa2word cfa)
     Nothing -> throwError $ UnknownWord w
@@ -363,6 +390,13 @@ rescan = do
       Just (cfa, _) -> do
         tell ["Found compile, at " ++ show cfa]
         modify $ \s -> s { fsCompileCommaXT = Just cfa }
+  do
+    mx <- lookupWord "sfind"
+    case mx of
+      Nothing -> pure ()
+      Just (cfa, _) -> do
+        tell ["Found sfind at " ++ show cfa]
+        modify $ \s -> s { fsSfindXT = Just cfa }
 
 interpreter :: (MonadTarget m) => BsT m ()
 interpreter = do
@@ -370,7 +404,7 @@ interpreter = do
   eoi <- endOfInput
   unless eoi $ do
     w <- takeWord
-    me <- lookupWord (nameFromString w)
+    me <- lookupWord w
     case me of
       Just (cfa, flags) -> do
         s <- readState
