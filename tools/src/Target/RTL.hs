@@ -84,7 +84,7 @@ checkResponse action = do
   r <- tget
   if r == 0
     then action
-    else error "target command failed"
+    else error $ "target command failed: " ++ show r
 
 instance MonadTarget IORTL where
   tload addr = do

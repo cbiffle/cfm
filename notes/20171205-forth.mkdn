@@ -1,0 +1,145 @@
+CPU works! What about Forth?
+
+The CPU's assembler provides a convincing Forth analogue, but it isn't real: it
+isn't extensible, it has no real interpreter, it isn't interactive.
+
+A proper Forth would let me connect to a running system, test short chunks of
+code, and extend the system online. (I'm leaving hosted vs. self-contained
+unspecified, each is useful.)
+
+
+It seems obvious to implement a native-code Forth, since the CFM's instruction
+set is so close to Forth. Specifically, a subroutine-threaded model makes sense.
+
+This means that colon-definitions simply contain code, and other types of
+definitions -- constants, variables, and the like -- are special somehow.
+
+Consider constants. There are two obvious ways to compile constants (ignoring
+inlining):
+
+- Native: Push literal instruction, return instruction (with optional invert), or
+- DOCON: Call to DOCON, followed by constant value.
+
+DOCON would be coded as
+
+    : docon  r> @ ;
+
+The native approach takes three cycles to access a constant; the latter, four
+(note that the `@ ;` fuses). Constants occupy the same amount of memory (two
+words plus header) in both cases, though the DOCON approach also requires DOCON
+to live somewhere. The DOCON approach may be easier to decompile, though
+recognizing the native version seems straightforward.
+
+Variables: same deal.
+
+- Native: push address following return, return.
+- DOVAR: call to DOVAR, where DOVAR is
+
+    : dovar r> ;
+
+
+In both cases I'm inclined to go with the native versions.
+
+
+More generally, how will DOES> work in this model? I haven't done an STC Forth
+with DOES>.
+
+Here's an implementation of CONSTANT that uses the DOCON approach, indirectly,
+via DOES>.
+
+    : constant
+      create ,
+      does> @ ;
+
+We can see what DOES> is required to do by comparing this to DOCON.
+
+- At compile time, DOES> compiles a call to (DOES>) and then R>.
+
+- At runtime, CREATE lays down a call to DOVAR.
+- (DOES>) pops the return address and replaces the DOVAR call of the current
+  definition with a call to it, thereby calling the sequence `R> @ ;`.
+
+
+A version of CONSTANT without using DOES>, using native code instead, would be:
+
+    : constant
+      create  ( the definition )
+      -1 cells allot  ( rewind the call laid down by CREATE )
+      dup 0 < if  ( high bit set )
+        invert $600
+      else
+        0
+      then
+      swap $8000 or ,
+      $700C or , ;
+
+Marginally faster. Lots more complex! Unfortunate dependencies on instruction
+encoding. I'm voting for DOES>, contrary to what I said earlier.
+
+
+
+Sooooo how will I do words like DROP? or !?
+
+I could put them in subroutines. This would work and be slow. (Note that they
+may *have* to exist as subroutines, for tick to work.)
+
+I could make them state-sensing immediates. This would mess with tick, and I
+have a vague sense of unease around this.
+
+I could set some header flag requesting inlining.
+
+I lean toward the latter. I can start off defining them in subroutines and
+optimize later by inlining and fusion.
+
+
+
+And how will I do the bootstrapping? I need to define colon definitions before
+colon is defined.
+
+I don't have to go as primitive as I did in, say, PropellerForth, because I have
+MonadTarget and Target.RTL. I can treat every bootstrap process as a tethered
+situation. Once a word is defined, I can actually start using it.
+
+Let's assume the host maintains a shadow dictionary. Initially it's populated
+with emulated words like : that, when used, will run on the host and interact
+with the target. Definitions on the target override these.
+
+Let's assume the host literally searches the target's dictionary, once such a
+thing exists. We'll restrict ourselves to a single wordlist for now. The host
+needs to find its root.
+
+We'd want to gradually push logic into the target. For example, once something
+like FIND exists, we could begin using it. This could happen automatically, or
+the bootstrap code could signal information to the host at points.
+
+
+
+Header structure!
+
+Headers are linked together through their link fields. The link field of a word
+stores the address of the link field of an earlier word, or zero if the word is
+the first to be defined.
+
+It should be possible to find the name from the CFA/XT, but it need not be fast.
+It should be relatively fast to find the XT from the LFA.
+
+This suggests the following structure:
+
+- 0: link
+- 2 .. n-2: name packed into words, with length in first word
+- n: flags
+- n+2: beginning of code
+
+
+
+Input is interesting.
+
+Initially, input happens on the host. But eventually words like : will need to
+read input from the target.
+
+REFILL is responsible for gathering another line. It could easily do that by
+host interaction. The host needs to be a possible input source, which suggests
+that input sources need to be vectored.
+
+
+
