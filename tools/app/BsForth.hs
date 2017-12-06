@@ -10,6 +10,7 @@ import Data.Char (ord, isSpace, isHexDigit, digitToInt, isDigit)
 import Data.List (foldl')
 import Control.Monad.State.Strict
 import Control.Monad.Except
+import Control.Monad.Writer
 import Text.Printf
 import System.Environment (getArgs)
 import System.Exit (exitWith, ExitCode(..))
@@ -24,7 +25,8 @@ main = do
   [inputPath] <- getArgs
   input <- readFile inputPath
   putStrLn "Bootstrapping..."
-  r <- runIORTL $ bootstrap interpreter input
+  (logs, r) <- runIORTL $ bootstrap interpreter input
+  mapM_ putStrLn logs
   case r of
     Left e -> do
       print e
@@ -53,11 +55,12 @@ word2wa x = truncateB (x `shiftR` 1)
 wa2word :: WordAddr -> Word
 wa2word x = zeroExtend x `shiftL` 1
 
-newtype BsT m x = BsT (StateT FS (ExceptT ForthErr m) x)
-  deriving (Functor, Applicative, Monad, MonadState FS, MonadError ForthErr)
+newtype BsT m x = BsT (StateT FS (ExceptT ForthErr (WriterT [String] m)) x)
+  deriving (Functor, Applicative, Monad,
+            MonadState FS, MonadError ForthErr, MonadWriter [String])
 
 instance MonadTrans BsT where
-  lift = BsT . lift . lift
+  lift = BsT . lift . lift . lift
 
 instance (MonadTarget m) => MonadTarget (BsT m) where
   tload = lift . tload
@@ -84,15 +87,17 @@ data ForthErr = WordExpected
               | BadState ForthState ForthState String
   deriving (Eq, Show)
 
-bootstrap :: (MonadTarget m) => BsT m () -> String -> m (Either ForthErr [Word])
+bootstrap :: (MonadTarget m)
+          => BsT m () -> String -> m ([String], Either ForthErr [Word])
 bootstrap (BsT a) source = do
   initializeTarget
-  r <- runExceptT $ evalStateT a s
-  case r of
+  (r, logs) <- runWriterT $ runExceptT $ evalStateT a s
+  img <- case r of
     Left e -> pure $ Left e
     Right _ -> do
       h <- word2wa <$> readHere
       Right <$> forM [0 .. h-1] tload
+  pure (logs, img)
   where
     s = FS
       { fsInput = source
@@ -254,6 +259,11 @@ fallback "]" = do
 fallback "(" = modify $ \s -> s { fsInput = dropWhile' (/= ')') (fsInput s) }
 fallback "\\" = modify $ \s -> s { fsInput = dropWhile' (/= '\n') (fsInput s) }
 
+fallback ".(" = do
+  i <- gets fsInput
+  tell [takeWhile (/= ')') i]
+  modify $ \s -> s { fsInput = dropWhile' (/= ')') i }
+
 fallback "'" = do
   interpretationOnly "'"
   w <- takeWord
@@ -301,6 +311,11 @@ fallback "<TARGET-EVOLVE>" = do
   interpretationOnly "<TARGET-EVOLVE>"
   rescan
 
+fallback "host." = do
+  interpretationOnly "host."
+  v <- tpop
+  tell [show (fromIntegral v :: Integer)]
+
 fallback ('$' : hnum) | all isHexDigit hnum = do
   s <- readState
   case s of
@@ -325,16 +340,22 @@ endOfInput = gets $ null . fsInput
 
 rescan :: (MonadTarget m) => BsT m ()
 rescan = do
+  h <- readHere
+  tell ["Evolving target, HERE=" ++ show h]
   do
     mx <- lookupWord ","
     case mx of
       Nothing -> pure ()
-      Just (cfa, _) -> modify $ \s -> s { fsCommaXT = Just cfa }
+      Just (cfa, _) -> do
+        tell ["Found , at " ++ show cfa]
+        modify $ \s -> s { fsCommaXT = Just cfa }
   do
     mx <- lookupWord "compile,"
     case mx of
       Nothing -> pure ()
-      Just (cfa, _) -> modify $ \s -> s { fsCompileCommaXT = Just cfa }
+      Just (cfa, _) -> do
+        tell ["Found compile, at " ++ show cfa]
+        modify $ \s -> s { fsCompileCommaXT = Just cfa }
 
 interpreter :: (MonadTarget m) => BsT m ()
 interpreter = do
