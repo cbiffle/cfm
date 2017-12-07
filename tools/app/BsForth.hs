@@ -275,6 +275,15 @@ fallback "constant" = do
   literal v
   inst ret
 
+fallback "variable" = do
+  interpretationOnly "variable"
+  w <- nameFromString <$> takeWord
+  createHeader w 0
+  h <- readHere
+  literal (h + 4)
+  inst ret
+  comma 0
+
 fallback "," = do
   interpretationOnly ","
   v <- tpop
