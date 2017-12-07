@@ -120,15 +120,42 @@ $FFFF constant true  ( also abused as -1 below )
 
 : c,  here c!  1 allot ;
 
-: begin freeze here ; immediate
-: again 1 rshift asm, ; immediate
-: until 1 rshift $2000 or asm, ; immediate
+( Records the destination of a backwards branch, for later consumption by )
+( <resolve . )
+: mark<  ( -- dest )
+  freeze here ;
+( Assembles a backwards branch to a destination recorded by mark< . )
+( The type of the branch is given by the instruction template. )
+: <resolve  ( dest template -- )
+  swap 1 rshift  ( convert to word address )
+  or asm, ;
 
-: if freeze here $2000 asm, ; immediate
-: then freeze dup@  here 1 rshift or  swap ! ; immediate
-: else
-  freeze here $0000 asm, swap
-  dup@  here 1 rshift or  swap ! ; immediate
+: begin  ( C: -- dest )  mark< ; immediate
+: again  ( C: dest -- )  0 <resolve ; immediate
+: until  ( C: dest -- )  $2000 <resolve ; immediate
+
+( Assembles a forward branch to an unresolved location, leaving its address. )
+( The address can be used to resolve the branch via >resolve . )
+: mark>  ( template -- orig )
+  mark<  ( lightly abused for its 'freeze here' definition )
+  swap asm, ;
+
+( Resolves a forward branch previously assembled by mark> . )
+: >resolve  ( orig -- )
+  freeze
+  dup@  here 1 rshift or  swap ! ;
+
+: if  ( C: -- orig )  $2000 mark> ; immediate
+: then  ( C: orig -- )  >resolve ; immediate
+: else  ( C: orig1 -- orig2 )
+  $0000 mark>
+  swap >resolve ; immediate
+
+: while  ( C: dest -- orig dest )
+  $2000 mark> swap ; immediate
+: repeat  ( C: orig dest -- )
+  $0000 <resolve
+  >resolve ; immediate
 
 ( Compares a string to the name field of a header. )
 : name= ( c-addr u nfa -- ? )
@@ -136,6 +163,8 @@ $FFFF constant true  ( also abused as -1 below )
   r@ c@ over = if  ( lengths equal )
     r> 1 + swap   ( c-addr c-addr2 u )
     begin
+      dup
+    while
       >r
       over @ over @ <> if
         r>
@@ -143,8 +172,7 @@ $FFFF constant true  ( also abused as -1 below )
       then
       1 + swap 1 +
       r> 1 -
-      dup 0=
-    until
+    repeat
     true
   else
     r> false
@@ -152,10 +180,10 @@ $FFFF constant true  ( also abused as -1 below )
 
 ( Variant of standard FIND that uses a modern string and returns the flags. )
 : sfind  ( c-addr u -- c-addr u 0 | xt flags true )
-  LATEST @ begin          ( c-addr u lfa )
-    dup 0= if             ( c-addr u 0 )
-      exit
-    then
+  LATEST
+  begin          ( c-addr u lfa )
+    @ dup
+  while
     >r  ( stash the LFA ) ( c-addr u )              ( R: lfa )
     2dup                  ( c-addr u c-addr u )     ( R: lfa )
     r@ cell +             ( c-addr u c-addr u nfa ) ( R: lfa )
@@ -168,8 +196,7 @@ $FFFF constant true  ( also abused as -1 below )
       true exit           ( cfa flags true )
     then    ( c-addr u ) ( R: lfa )
     r>      ( c-addr u lfa )
-     @      ( c-addr u lfa' )
-  again ;
+  repeat ;
 
 <TARGET-EVOLVE>  ( for sfind )
 
