@@ -10,10 +10,10 @@ import Data.Char (ord, isSpace, isHexDigit, digitToInt, isDigit)
 import Data.List (foldl')
 import Control.Monad.State.Strict
 import Control.Monad.Except
-import Control.Monad.Writer
 import Text.Printf
 import System.Environment (getArgs)
 import System.Exit (exitWith, ExitCode(..))
+import System.IO (hClose, IOMode(WriteMode), openFile)
 
 import CFM.Types
 import CFM.Inst
@@ -22,17 +22,22 @@ import Target.RTL
 
 main :: IO ()
 main = do
-  [inputPath] <- getArgs
+  [inputPath, outputPath] <- getArgs
   input <- readFile inputPath
   putStrLn "Bootstrapping..."
-  (logs, r) <- runIORTL $ bootstrap interpreter input
-  mapM_ putStrLn logs
-  case r of
-    Left e -> do
-      print e
-      exitWith (ExitFailure 1)
-    Right img -> forM_ (zip [0 :: Int ..] img) $ \(a, v) ->
-      printf "%04x  %04x\n" (2*a) (fromIntegral v :: Int)
+  runIORTL $ do
+    r <- bootstrap interpreter input
+    case r of
+      Left e -> liftIO $ do
+        print e
+        exitWith (ExitFailure 1)
+      Right h -> do
+        liftIO $ print $ (fromIntegral h :: Integer)
+        out <- liftIO $ openFile outputPath WriteMode
+        forM_ [0 .. h-1] $ \a -> do
+          x <- tload a
+          liftIO $ hPrintf out "%04x\n" (fromIntegral x :: Int)
+        liftIO $ hClose out
 
 type Name = [Word]
 
@@ -55,12 +60,12 @@ word2wa x = truncateB (x `shiftR` 1)
 wa2word :: WordAddr -> Word
 wa2word x = zeroExtend x `shiftL` 1
 
-newtype BsT m x = BsT (StateT FS (ExceptT ForthErr (WriterT [String] m)) x)
+newtype BsT m x = BsT { unBsT :: StateT FS (ExceptT ForthErr m) x }
   deriving (Functor, Applicative, Monad,
-            MonadState FS, MonadError ForthErr, MonadWriter [String])
+            MonadState FS, MonadError ForthErr, MonadIO)
 
 instance MonadTrans BsT where
-  lift = BsT . lift . lift . lift
+  lift = BsT . lift . lift
 
 instance (MonadTarget m) => MonadTarget (BsT m) where
   tload = lift . tload
@@ -88,17 +93,16 @@ data ForthErr = WordExpected
               | BadState ForthState ForthState String
   deriving (Eq, Show)
 
-bootstrap :: (MonadTarget m)
-          => BsT m () -> String -> m ([String], Either ForthErr [Word])
-bootstrap (BsT a) source = do
-  initializeTarget
-  (r, logs) <- runWriterT $ runExceptT $ evalStateT a s
-  img <- case r of
+hostlog :: (MonadIO m) => String -> BsT m ()
+hostlog m = liftIO $ putStrLn m
+
+bootstrap :: (MonadTarget m, MonadIO m)
+          => BsT m () -> String -> m (Either ForthErr WordAddr)
+bootstrap a source = do
+  r <- runExceptT $ evalStateT (unBsT (initializeTarget >> a)) s
+  case r of
     Left e -> pure $ Left e
-    Right _ -> do
-      h <- word2wa <$> readHere
-      Right <$> forM [0 .. h-1] tload
-  pure (logs, img)
+    Right _ -> Right . word2wa <$> readHere
   where
     s = FS
       { fsInput = source
@@ -108,7 +112,7 @@ bootstrap (BsT a) source = do
       }
 
 -- | Sets up the basic memory contents we expect in the target system.
-initializeTarget :: (MonadTarget m) => m ()
+initializeTarget :: (MonadIO m, MonadTarget m) => BsT m ()
 initializeTarget = do
   tstore 0 0  -- reset vector
   tstore 1 0  -- interrupt vector
@@ -116,6 +120,7 @@ initializeTarget = do
   tstore 3 12 -- dictionary pointer
   tstore 4 0x1FF0 -- user area base
   tstore 5 0  -- STATE
+  hostlog "Target initialized."
 
 -- | Reads the vocabulary head cell, giving the LFA of the latest definition.
 readLatest :: (MonadTarget m) => m WordAddr
@@ -250,7 +255,7 @@ compileOnly name = do
   s <- readState
   when (s /= Compiling) (throwError (BadState s Compiling name))
 
-fallback :: (MonadTarget m) => String -> BsT m ()
+fallback :: (MonadIO m, MonadTarget m) => String -> BsT m ()
 fallback ":" = do
   interpretationOnly ":"
   w <- nameFromString <$> takeWord
@@ -288,7 +293,7 @@ fallback "\\" = modify $ \s -> s { fsInput = dropWhile' (/= '\n') (fsInput s) }
 
 fallback ".(" = do
   i <- gets fsInput
-  tell [takeWhile (/= ')') i]
+  hostlog $ takeWhile (/= ')') i
   modify $ \s -> s { fsInput = dropWhile' (/= ')') i }
 
 fallback "'" = do
@@ -348,7 +353,7 @@ fallback "<TARGET-EVOLVE>" = do
 fallback "host." = do
   interpretationOnly "host."
   v <- tpop
-  tell [show (fromIntegral v :: Integer)]
+  hostlog $ show (fromIntegral v :: Integer)
 
 fallback ('$' : hnum) | all isHexDigit hnum = do
   s <- readState
@@ -372,33 +377,33 @@ dropWhile' p s = case dropWhile p s of
 endOfInput :: (Monad m) => BsT m Bool
 endOfInput = gets $ null . fsInput
 
-rescan :: (MonadTarget m) => BsT m ()
+rescan :: (MonadIO m, MonadTarget m) => BsT m ()
 rescan = do
   h <- readHere
-  tell ["Evolving target, HERE=" ++ show h]
+  hostlog $ "Evolving target, HERE=" ++ show h
   do
     mx <- lookupWord ","
     case mx of
       Nothing -> pure ()
       Just (cfa, _) -> do
-        tell ["Found , at " ++ show cfa]
+        hostlog $ "Found , at " ++ show cfa
         modify $ \s -> s { fsCommaXT = Just cfa }
   do
     mx <- lookupWord "compile,"
     case mx of
       Nothing -> pure ()
       Just (cfa, _) -> do
-        tell ["Found compile, at " ++ show cfa]
+        hostlog $ "Found compile, at " ++ show cfa
         modify $ \s -> s { fsCompileCommaXT = Just cfa }
   do
     mx <- lookupWord "sfind"
     case mx of
       Nothing -> pure ()
       Just (cfa, _) -> do
-        tell ["Found sfind at " ++ show cfa]
+        hostlog $ "Found sfind at " ++ show cfa
         modify $ \s -> s { fsSfindXT = Just cfa }
 
-interpreter :: (MonadTarget m) => BsT m ()
+interpreter :: (MonadIO m, MonadTarget m) => BsT m ()
 interpreter = do
   modify $ \s -> s { fsInput = dropWhile isSpace (fsInput s) }
   eoi <- endOfInput
