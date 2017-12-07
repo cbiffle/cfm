@@ -296,7 +296,7 @@ asmQQ :: QuasiQuoter
 asmQQ = QuasiQuoter
   { quoteExp = \text -> case asmString text of
         Left m -> fail m
-        Right words -> pure $ ListE $ map (LitE . IntegerL . fromIntegral) words
+        Right ws -> pure $ ListE $ map (LitE . IntegerL . fromIntegral) ws
   , quotePat = \_ -> fail "illegal"
   , quoteType = \_ -> fail "illegal"
   , quoteDec = \_ -> fail "illegal"

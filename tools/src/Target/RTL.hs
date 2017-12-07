@@ -12,7 +12,6 @@ import Clash.Sized.BitVector ((++#))
 import qualified Clash.Sized.Vector as V
 import GHC.TypeLits (KnownNat)
 import Data.List (foldl')
-import Data.Either (either)
 import Control.Monad.State.Strict
 import Control.Monad.Reader
 import Control.Concurrent.Chan

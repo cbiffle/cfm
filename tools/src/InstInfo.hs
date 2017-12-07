@@ -5,8 +5,7 @@ import Prelude hiding (Word)
 import Clash.Class.BitPack
 import Clash.Class.Resize (zeroExtend)
 
-import Data.Maybe (fromMaybe, mapMaybe)
-import Data.Monoid ((<>))
+import Data.Maybe (fromMaybe)
 
 import Control.Monad (forM_)
 import qualified Data.Map.Strict as M
@@ -53,6 +52,7 @@ simpl1 x = x
 --
 -- Note that this function is poorly behaved if the stack contains fewer than
 -- three elements.
+stack :: SDelta -> Maybe Expr -> Stack -> Stack
 stack 0 up (x : xs) = fromMaybe x up : xs
 
 stack 1 up xs = fromMaybe Undef up : xs
@@ -64,6 +64,7 @@ stack 2 up (_ : _ : x : xs) = fromMaybe x up : xs
 stack x y z = error $ "stack " ++ show x ++ " " ++ show y ++ " " ++ show z
 
 -- | Symbolic expression generator for the ALU mux.
+tmux :: TMux -> Expr -> Expr -> Expr -> Expr
 tmux v t n r = simpl1 $ case v of
   T        -> t
   N        -> n
@@ -124,18 +125,19 @@ eval (t : ds) (r : rs) pc inst =
           , if rp then Just r else Nothing
           , if nm then Just (t, head ds) else Nothing
           )
+eval _ _ _ _ = error "stacks empty in eval"
 
 -- | Evaluates a sequence of two instructions `i1` then `i2`, using the initial
 -- stacks `ds` and `rs`, and returns their compound effect in the same format
 -- as 'eval' if such an effect can be described. (If both instructions store to
 -- memory, or the first returns, the compound effect can't be described.)
+evalPair :: Stack -> Stack -> Inst -> Inst -> Maybe Effect
 evalPair ds rs i1 i2 =
   let (ds', rs', pc, mem) = eval ds rs 0 i1
       (ds'', rs'', pc', mem') = eval ds' rs' 1 i2
       merge (Just _) (Just _) = Nothing
       merge a Nothing = Just a
       merge Nothing a = Just a
-      merge _ _ = Just Nothing
   in do -- in Maybe
     -- Allow either instruction to write memory, but not both, since we can't
     -- generate two memory accesses in the fused version.
@@ -150,6 +152,7 @@ crs = map V [6 .. 11]
 ceval :: Int -> Inst -> Effect
 ceval = eval cds crs
 
+cevalPair :: Inst -> Inst -> Maybe Effect
 cevalPair = evalPair cds crs
 
 canAluInsts :: [Inst]
