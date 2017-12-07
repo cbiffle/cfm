@@ -64,7 +64,7 @@ executable enumerator
 executable bsforth
   hs-source-dirs:      app
   main-is:             BsForth.hs
-  ghc-options:         -threaded -rtsopts -with-rtsopts=-N
+  ghc-options:         -threaded -rtsopts -with-rtsopts=-N4
                        -Wall
   build-depends:       base
                      , cfm-arch
