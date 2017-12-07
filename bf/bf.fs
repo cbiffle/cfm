@@ -23,7 +23,10 @@
 : -      [ $6a03 asm, ] ;
 : <      [ $6803 asm, ] ;
 
-: ! [ $6123 asm, $710f asm, ] ;
+( Has the effect of a store that only drops the address. )
+: 2dup_!_drop [ $6123 asm, ] ;
+
+: ! 2dup_!_drop drop ;
 
 ( Access to the system variables block )
 4 constant LATEST
@@ -193,7 +196,7 @@ $F006 constant irqcon-ce  ( clear enable )
 
 ( Atomically enables interrupts and returns. This is intended to be tail )
 ( called from the end of an ISR. )
-: enable-interrupts  0 irqcon-st ! ; ( TODO fusion )
+: enable-interrupts  irqcon-st 2dup_!_drop ;
 
 : disable-irq  ( u -- )  #bit irqcon-ce ! ;
 : enable-irq   ( u -- )  #bit irqcon-se ! ;
