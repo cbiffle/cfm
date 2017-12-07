@@ -30,6 +30,14 @@
 
 : ! 2dup_!_drop drop ;
 
+( These two words implement constant and variable the same way DOES> would, )
+( but are defined well before DOES> . Or even before the instructions they're )
+( using, hence the machine code. Note: 6b8d = r> )
+( Code action of CONSTANT words. )
+: (docon) [ $6b8d asm, ] @ ;
+( Code action of VARIABLE words. )
+: (dovar) [ $6b8d asm, ] ;
+
 ( Access to the system variables block )
 4 constant LATEST
 6 constant DP

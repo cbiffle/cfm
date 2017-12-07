@@ -328,20 +328,30 @@ fallback "exit" = do
 
 fallback "constant" = do
   interpretationOnly "constant"
-  v <- tpop
-  w <- nameFromString <$> takeWord
-  createHeader w 0
-  literal v
-  inst ret
-  freeze
+
+  docon <- lookupWord "(docon)"
+  case docon of
+    Nothing -> throwError $ UnknownWord "(docon)"
+    Just (xt, _) -> do
+      v <- tpop
+      w <- nameFromString <$> takeWord
+      createHeader w 0
+      inst $ NotLit $ Call $ truncateB xt
+      comma v
+
+fallback "create" = do
+  interpretationOnly "create"
+  dovar <- lookupWord "(dovar)"
+  case dovar of
+    Nothing -> throwError $ UnknownWord "(dovar)"
+    Just (xt, _) -> do
+      w <- nameFromString <$> takeWord
+      createHeader w 0
+      inst $ NotLit $ Call $ truncateB xt
 
 fallback "variable" = do
   interpretationOnly "variable"
-  w <- nameFromString <$> takeWord
-  createHeader w 0
-  h <- readHere
-  literal (h + 4)
-  inst ret
+  fallback "create"
   comma 0
 
 fallback "," = do

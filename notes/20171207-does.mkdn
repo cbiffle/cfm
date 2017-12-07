@@ -1,0 +1,32 @@
+Rewriting defining words in terms of DOES>. To the extent possible anyway.
+
+
+CREATE should add only a single cell to the definition. This means we need a
+canned DOVAR / DOCON for bootstrap definitions.
+
+
+: (DOVAR) r> ;
+: (DOCON) r> @ ;
+
+At least they're tiny. These are now in the kernel.
+
+The runtime equivalent of DOES> executes during the defining word, after CREATE.
+It looks like this:
+
+: (DOES>)
+  ( replace the instruction assembled by CREATE with a call to our origin )
+  r>  1 rshift  $4000 or
+  LATEST @ LFA>CFA !
+  ( return to caller's caller )
+  ;
+
+This gives us the following for DOES> :
+
+: DOES>
+  [ ' (DOES>) ] literal compile,
+  freeze ( DOES> is going to generate a call to here )
+  [ ' r> ] literal compile,
+  ; immediate
+
+
+Not bad!
