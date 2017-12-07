@@ -215,8 +215,8 @@ $C006 constant timer-m1
   2dup !  ( u' addr )
   drop ;
 
-2500 constant cycles/bit
-1250 constant cycles/bit/2
+5000 constant cycles/bit
+2500 constant cycles/bit/2
 
 variable uart-tx-bits   ( holds bits as they're shifted out )
 variable uart-tx-count  ( tracks the number of bits remaining )
