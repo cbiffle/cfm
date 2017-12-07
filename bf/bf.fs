@@ -8,23 +8,23 @@
 ( We directly comma literal instructions into definitions here. )
 ( This is obviously not portable ;-)
 ( Note that I've manually fused return into all of these. TODO )
-: +      [ $720f , ] ;
-: swap   [ $718c , ] ;
-: over   [ $718d , ] ;
-: nip    [ $700f , ] ;
-: lshift [ $7d0f , ] ;
-: rshift [ $790f , ] ;
-: dup    [ $708d , ] ;
-: =      [ $770f , ] ;
-: drop   [ $710f , ] ;
-: invert [ $760c , ] ;
-: @      [ $7c0c , ] ;
-: or     [ $740f , ] ;
-: and    [ $730f , ] ;
-: -      [ $7a0f , ] ;
-: <      [ $780f , ] ;
+: +      [ $720f asm, ] ;
+: swap   [ $718c asm, ] ;
+: over   [ $718d asm, ] ;
+: nip    [ $700f asm, ] ;
+: lshift [ $7d0f asm, ] ;
+: rshift [ $790f asm, ] ;
+: dup    [ $708d asm, ] ;
+: =      [ $770f asm, ] ;
+: drop   [ $710f asm, ] ;
+: invert [ $760c asm, ] ;
+: @      [ $7c0c asm, ] ;
+: or     [ $740f asm, ] ;
+: and    [ $730f asm, ] ;
+: -      [ $7a0f asm, ] ;
+: <      [ $780f asm, ] ;
 
-: ! [ $6123 , $710f , ] ;
+: ! [ $6123 asm, $710f asm, ] ;
 
 ( Access to the system variables block )
 4 constant LATEST
@@ -45,10 +45,12 @@ $FFFF constant true
 : allot  DP +! ;
 : ,  here !  cell allot ;
 
-: >r  $6147 , ; immediate
-: r>  $6b8d , ; immediate
-: r@  $6b81 , ; immediate
-: exit  $700c , ; immediate
+: asm, , ;
+
+: >r  $6147 asm, ; immediate
+: r>  $6b8d asm, ; immediate
+: r@  $6b81 asm, ; immediate
+: exit  $700c asm, ; immediate
 
 : execute  ( i*x xt -- j*x )  >r ; ( NOINLINE )
 
@@ -59,10 +61,10 @@ $FFFF constant true
   ( Does this XT reference a returning ALU instruction? )
   dup @  $F00C and  $700C = if
     ( Inline it with the return effect stripped. )
-    @ $EFF3 and ,
+    @ $EFF3 and asm,
   else
     ( Whatever, just compile a call to it. )
-    1 rshift $4000 or ,
+    1 rshift $4000 or asm,
   then ;
 
 : align  DP @  aligned  DP ! ;
@@ -165,8 +167,8 @@ host. host. host.
   else
     false swap
   then
-  $8000 or ,
-  if $6600 , then ; immediate
+  $8000 or asm,
+  if $6600 asm, then ; immediate
 
 ( General code above )
 

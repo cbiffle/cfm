@@ -293,6 +293,11 @@ fallback "," = do
   v <- tpop
   comma v
 
+fallback "asm," = do
+  interpretationOnly "asm,"
+  v <- tpop
+  comma v
+
 fallback "[" = do
   compileOnly "["
   writeState Interpreting
