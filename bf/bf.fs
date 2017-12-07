@@ -288,6 +288,12 @@ variable uart-rx-tl
 
 \ Triggered when we're between frames and RX drops.
 : rx-negedge-isr
+  \ Set up the timer to interrupt us again halfway into the start bit.
+  \ First, the timer may have rolled over while we were waiting for a new
+  \ frame, so clear its pending interrupt status.
+  2 timer-flags !
+  \ Next set the match register to the point in time we want.
+  timer-ctr @  cycles/bit/2 +  timer-m0 !
   \ We don't need to clear the IRQ condition, because we won't be re-enabling
   \ it any time soon. Mask our interrupt.
   irq-inport-negedge disable-irq
@@ -295,12 +301,6 @@ variable uart-rx-tl
   \ Prepare to receive a ten bit frame.
   10 uart-rx-bitcount !
 
-  \ Set up the timer to interrupt us again halfway into the start bit.
-  \ First, the timer may have rolled over while we were waiting for a new
-  \ frame, so clear its pending interrupt status.
-  2 timer-flags !
-  \ Next set the match register to the point in time we want.
-  timer-ctr @  cycles/bit/2 +  timer-m0 !
   \ Now enable its interrupt.
   irq-timer-m0 enable-irq ;
 
@@ -308,14 +308,14 @@ variable uart-rx-tl
 : rx-timer-isr
   \ Sample the input port into the high bit of a word.
   inport @  15 lshift
+    \ Reset the timer for the next sample point.
+    timer-ctr @  cycles/bit +  timer-m0 !
   \ Load this into the frame shift register.
   uart-rx-bits @  1 rshift  or  uart-rx-bits !
   \ Decrement the bit count.
   uart-rx-bitcount -counter if \ we have more bits to receive
     \ Clear the interrupt condition.
     2 timer-flags !
-    \ Reset the timer for the next sample point.
-    timer-ctr @  cycles/bit +  timer-m0 !
   else  \ we're done, disable timer interrupt
     irq-timer-m0 disable-irq
     \ Enqueue the received frame
@@ -371,6 +371,7 @@ variable uart-rx-tl
 : cold
   uart-rx-init
   enable-interrupts
+  $FF tx
   begin
     rx if tx else drop then
   again ;
