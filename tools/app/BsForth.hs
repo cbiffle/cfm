@@ -32,7 +32,7 @@ main = do
         print e
         exitWith (ExitFailure 1)
       Right h -> do
-        liftIO $ print $ (fromIntegral h :: Integer)
+        liftIO $ print (fromIntegral h :: Integer)
         out <- liftIO $ openFile outputPath WriteMode
         forM_ [0 .. h-1] $ \a -> do
           x <- tload a
