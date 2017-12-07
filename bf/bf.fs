@@ -21,6 +21,7 @@
 : or     [ $6403 , ] ;
 : and    [ $6303 , ] ;
 : -      [ $6a03 , ] ;
+: <      [ $6803 , ] ;
 
 : ! [ $6123 , $6103 , ] ;
 
@@ -31,6 +32,7 @@
 10 constant STATE
 
 $FFFF constant true
+0 constant false
 2 constant cell
 
 : +!  swap over @ + swap ! ;
@@ -146,26 +148,136 @@ host. host. host.
 
 <TARGET-EVOLVE>  ( for sfind )
 
-( General code above )
-( ----------------------------------------------------------- )
-( Demo wiring below )
+: literal
+  dup 0 < if  ( MSB set )
+    true swap invert
+  else
+    false swap
+  then
+  $8000 or ,
+  if $6600 , then ; immediate
 
+( General code above )
+
+( ----------------------------------------------------------- )
+( Icestick SoC support code )
 
 : #bit  1 swap lshift ;
 
-$8006 constant outport-tog
+( ----------------------------------------------------------- )
+( Interrupt Controller )
+
+$F000 constant irqcon-st  ( status / enable trigger )
+$F002 constant irqcon-en  ( enable )
+$F004 constant irqcon-se  ( set enable )
+$F006 constant irqcon-ce  ( clear enable )
+
+( Atomically enables interrupts and returns. This is intended to be tail )
+( called from the end of an ISR. )
+: enable-interrupts  0 irqcon-st ! ; ( TODO fusion )
+
+: disable-irq  ( u -- )  #bit irqcon-ce ! ;
+: enable-irq   ( u -- )  #bit irqcon-se ! ;
+
+13 constant irq-timer-m1
+14 constant irq-timer-m0
+15 constant irq-inport-negedge
+
+( ----------------------------------------------------------- )
+( I/O ports )
+
+$8000 constant outport      ( literal value)
+$8002 constant outport-set  ( 1s set pins, 0s do nothing)
+$8004 constant outport-clr  ( 1s clear pins, 0s do nothing)
+$8006 constant outport-tog  ( 1s toggle pins, 0s do nothing)
+
+$A000 constant inport
+
+( ----------------------------------------------------------- )
+( Timer )
+
+$C000 constant timer-ctr
+$C002 constant timer-flags
+$C004 constant timer-m0
+$C006 constant timer-m1
+
+( ----------------------------------------------------------- )
+( UART emulation )
+
+( Spins reading a variable until it contains zero. )
+: poll0  ( addr -- )  begin dup @ 0= until drop ;
+
+( Decrements a counter variable and leaves its value on stack )
+: -counter  ( addr -- u )
+  dup @   ( addr u )
+  1 -     ( addr u' )
+  swap    ( u' addr )
+  2dup !  ( u' addr )
+  drop ;
+
+2500 constant cycles/bit
+1250 constant cycles/bit/2
+
+variable uart-tx-bits   ( holds bits as they're shifted out )
+variable uart-tx-count  ( tracks the number of bits remaining )
+
+.( UART control variables: )
+' uart-tx-bits host.
+uart-tx-bits host.
+uart-tx-bits @ host.
+
+: tx-isr
+  1 timer-flags !     ( acknowledge interrupt )
+  uart-tx-bits @
+  1 over and
+  if outport-set else outport-clr then
+  1 swap !
+  1 rshift uart-tx-bits !
+
+  uart-tx-count -counter if
+    timer-ctr @ cycles/bit + timer-m1 !
+  else
+    irq-timer-m1 disable-irq
+  then ;
+
+: tx
+  ( Wait for transmitter to be free )
+  uart-tx-count poll0
+  ( Frame the byte )
+  1 lshift
+  $200 or
+  uart-tx-bits !
+  10 uart-tx-count !
+  irq-timer-m1 enable-irq ;
+
+( ----------------------------------------------------------- )
+( Icestick board features )
 
 : ledtog  4 + #bit outport-tog ! ;
 
+
+( ----------------------------------------------------------- )
+( Demo wiring below )
+
 : delay 0 begin 1 + dup 0 = until drop ;
+
+: isr
+  r> 2 - >r
+  1 ledtog
+  irqcon-st @
+  $2000 over and if
+    tx-isr
+  then
+  drop
+  enable-interrupts ;
+
 : cold
-  0
+  enable-interrupts
   begin
-    dup ledtog
-    1 +
-    delay
-    ( 4 over = if drop 0 then )
+    $23 tx
   again ;
 
 ( install cold as the reset vector )
 ' cold  1 rshift  0 !
+( install isr as the interrupt vector )
+' isr  1 rshift  2 !
