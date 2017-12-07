@@ -31,6 +31,7 @@
 6 constant DP
 8 constant U0
 10 constant STATE
+12 constant FREEZEP
 
 $FFFF constant true
 0 constant false
@@ -43,9 +44,12 @@ $FFFF constant true
 
 : here  ( -- addr )  DP @ ;
 : allot  DP +! ;
-: ,  here !  cell allot ;
+: freeze  here FREEZEP ! ;
 
-: asm, , ;
+: raw,  here !  cell allot ;
+: , raw, freeze ;
+
+: asm, raw, ;
 
 : >r  $6147 asm, ; immediate
 : r>  $6b8d asm, ; immediate
@@ -58,14 +62,15 @@ $FFFF constant true
 : aligned  dup 1 and + ;
 
 : compile,  ( xt -- )
-  ( Does this XT reference a returning ALU instruction? )
-  dup @  $F00C and  $700C = if
+  ( Convert the XT into an assembly instruction. )
+  dup @  $F00C and  $700C = if  ( Is the destination a fused op-return? )
     ( Inline it with the return effect stripped. )
-    @ $EFF3 and asm,
+    @ $EFF3 and
   else
-    ( Whatever, just compile a call to it. )
-    1 rshift $4000 or asm,
-  then ;
+    ( Convert the CFA into a call. )
+    1 rshift $4000 or
+  then
+  asm, ;
 
 : align  DP @  aligned  DP ! ;
 
@@ -91,14 +96,14 @@ $FFFF constant true
 
 : c,  here c!  1 allot ;
 
-: begin here ; immediate
+: begin freeze here ; immediate
 : again 1 rshift asm, ; immediate
 : until 1 rshift $2000 or asm, ; immediate
 
-: if here $2000 asm, ; immediate
-: then dup @  here 1 rshift or  swap ! ; immediate
+: if freeze here $2000 asm, ; immediate
+: then freeze dup @  here 1 rshift or  swap ! ; immediate
 : else
-  here $0000 asm, swap
+  freeze here $0000 asm, swap
   dup @  here 1 rshift or  swap ! ; immediate
 
 ( Compares a string to the name field of a header. )

@@ -4,7 +4,7 @@ module Main where
 import Prelude hiding (Word)
 
 import Clash.Class.Resize (truncateB, zeroExtend)
-import Clash.Class.BitPack (pack)
+import Clash.Class.BitPack (pack, unpack)
 import Data.Bits
 import Data.Char (ord, isSpace, isHexDigit, digitToInt, isDigit)
 import Data.List (foldl')
@@ -117,9 +117,10 @@ initializeTarget = do
   tstore 0 0  -- reset vector
   tstore 1 0  -- interrupt vector
   tstore 2 0  -- vocabulary root
-  tstore 3 12 -- dictionary pointer
+  tstore 3 14 -- dictionary pointer
   tstore 4 0x1FF0 -- user area base
   tstore 5 0  -- STATE
+  tstore 6 0  -- compilation freeze pointer
   hostlog "Target initialized."
 
 -- | Reads the vocabulary head cell, giving the LFA of the latest definition.
@@ -149,6 +150,15 @@ writeState :: (MonadTarget m) => ForthState -> m ()
 writeState s = tstore 5 $ case s of
   Interpreting -> 0
   Compiling -> -1
+
+readFreeze :: (MonadTarget m) => m Word
+readFreeze = tload 6
+
+writeFreeze :: (MonadTarget m) => Word -> m ()
+writeFreeze = tstore 6
+
+freeze :: (MonadTarget m) => m ()
+freeze = readHere >>= writeFreeze
 
 -- | Searches for a word in the target dictionary. Returns its code field
 -- address and flags word if found.
@@ -211,28 +221,44 @@ cached_1_0 getter arg impl = do
     Nothing -> impl
     Just xt -> tpush arg >> tcall xt
 
--- | Encloses a cell into the dictionary.
+-- | Encloses a cell into the dictionary. The cell is treated as data and is
+-- frozen from fusion.
 comma :: (MonadTarget m) => Word -> BsT m ()
 comma x = cached_1_0 fsCommaXT x $ do
+  rawComma x
+  freeze
+
+-- | Encloses a cell into the dictionary without having an opinion on whether
+-- it's data or code.
+rawComma :: (MonadTarget m) => Word -> BsT m ()
+rawComma x = do
   h <- readHere
   writeHere (h + 2)
   tstore (word2wa h) x
 
+-- | Compiles instructions for materializing a literal value.
 literal :: (MonadTarget m) => Word -> BsT m ()
 literal w = do
-  comma $ 0x8000 .|. (if w >= 0x8000 then complement w else w)
+  inst $ Lit $ truncateB $ if w >= 0x8000 then complement w else w
   when (w >= 0x8000) $ inst invert
 
 compile :: (MonadTarget m) => Word -> BsT m ()
 compile w = cached_1_0 fsCompileCommaXT w $ do
   -- Fetch the instruction on the far end of the call.
-  dst <- tload $ word2wa w
-  if (dst .&. 0xF00C) == 0x700C -- returning ALU instruction?
-    then comma $ dst .&. 0xEFF3 -- inline it without the return
-    else comma $ (0x4000 .|.) $ zeroExtend $ word2wa w  -- compile it
+  dst <- unpack <$> tload (word2wa w)
+  case dst of
+    -- Returning ALU instruction?
+    NotLit (ALU True t tn tr nm _ (-1) dadj) ->
+      -- Inline it without the return.
+      inst $ NotLit $ ALU False t tn tr nm (Res 0) 0 dadj
+    -- Otherwise, compile the call as planned.
+    _ -> inst $ NotLit $ Call $ truncateB $ word2wa w
+
+rawInst :: (MonadTarget m) => Word -> BsT m ()
+rawInst = rawComma
 
 inst :: (MonadTarget m) => Inst -> BsT m ()
-inst = comma . pack
+inst = rawInst . pack
 
 createHeader :: (MonadTarget m) => Name -> Word -> BsT m ()
 createHeader name flags = do
@@ -269,6 +295,7 @@ fallback ":" = do
 fallback ";" = do
   compileOnly ";"
   inst ret
+  freeze
   writeState Interpreting
 
 fallback "constant" = do
@@ -278,6 +305,7 @@ fallback "constant" = do
   createHeader w 0
   literal v
   inst ret
+  freeze
 
 fallback "variable" = do
   interpretationOnly "variable"
@@ -296,7 +324,7 @@ fallback "," = do
 fallback "asm," = do
   interpretationOnly "asm,"
   v <- tpop
-  comma v
+  rawInst v
 
 fallback "[" = do
   compileOnly "["
@@ -325,6 +353,7 @@ fallback "'" = do
 fallback "begin" = do
   compileOnly "begin"
   readHere >>= tpush
+  freeze
 
 fallback "again" = do
   compileOnly "again"
@@ -339,12 +368,14 @@ fallback "until" = do
 fallback "if" = do
   compileOnly "if"
   readHere >>= tpush
+  freeze
   inst $ NotLit $ JumpZ 0  -- placeholder
 
 fallback "else" = do
   compileOnly "else"
   ifA <- tpop
   readHere >>= tpush
+  freeze
   inst $ NotLit $ Jump 0  -- placeholder
   h <- readHere
   i <- tload (word2wa ifA)
@@ -353,6 +384,7 @@ fallback "else" = do
 fallback "then" = do
   compileOnly "then"
   h <- readHere
+  freeze
   a <- tpop
   i <- tload (word2wa a)
   tstore (word2wa a) $ i .|. (h `shiftR` 1)
