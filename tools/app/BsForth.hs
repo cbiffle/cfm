@@ -262,13 +262,12 @@ compile w = cached_1_0 fsCompileCommaXT w $ do
 rawInst :: (MonadTarget m) => Word -> BsT m ()
 rawInst i = do
   h <- readHere
-  let prevH = h - 2
   fp <- readFreeze
 
-  if fp > prevH
+  if fp == h
     then rawComma i
     else do -- Previous instruction is not frozen, we can do stuff.
-      pi <- tload $ word2wa prevH
+      pi <- tload $ word2wa (h - 2)
       case () of
         -- (ALU without return) - (return) fusion
         _ | (pi .&. 0x704C) == 0x6000 && i == 0x700C -> fuse (pi .|. 0x100C)
@@ -322,6 +321,10 @@ fallback ";" = do
   inst ret
   freeze
   writeState Interpreting
+
+fallback "exit" = do
+  compileOnly "exit"
+  inst ret
 
 fallback "constant" = do
   interpretationOnly "constant"

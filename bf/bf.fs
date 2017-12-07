@@ -44,11 +44,33 @@ $FFFF constant true
 : here  ( -- addr )  DP @ ;
 : allot  DP +! ;
 : freeze  here FREEZEP ! ;
+: cells  1 lshift ;
+: aligned  dup 1 and + ;
 
 : raw,  here !  cell allot ;
 : , raw, freeze ;
 
-: asm, raw, ;
+( Assembles an instruction into the dictionary, with smarts. )
+: asm,
+  here FREEZEP @ = if  ( Can't do anything clever, just... )
+    raw,
+  else  ( Fusion is a possibility... )
+    here cell - @   ( new-inst prev-inst )
+
+    over $700C = if ( if we're assembling a bare return instruction... )
+      dup $704C and $6000 = if  ( ...on a non-returning ALU instruction )
+        $FFFF cells allot
+        nip  $100C or  asm, exit
+      then
+      dup $E000 and $4000 = if  ( ...on a call )
+        $FFFF cells allot
+        nip $1FFF and  asm, exit
+      then
+    then
+
+    ( No patterns matched. )
+    drop raw,
+  then ;
 
 : >r  $6147 asm, ; immediate
 : r>  $6b8d asm, ; immediate
@@ -56,9 +78,6 @@ $FFFF constant true
 : exit  $700c asm, ; immediate
 
 : execute  ( i*x xt -- j*x )  >r ; ( NOINLINE )
-
-: cells  1 lshift ;
-: aligned  dup 1 and + ;
 
 : compile,  ( xt -- )
   ( Convert the XT into an assembly instruction. )
