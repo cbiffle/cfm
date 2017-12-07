@@ -25,6 +25,8 @@
 
 ( Has the effect of a store that only drops the address. )
 : 2dup_!_drop [ $6123 asm, ] ;
+( Has the effect of a store that preserves the address. )
+: dup@ [ $6c81 asm, ] ;
 
 : ! 2dup_!_drop drop ;
 
@@ -35,13 +37,13 @@
 10 constant STATE
 12 constant FREEZEP
 
-$FFFF constant true
+$FFFF constant true  ( also abused as -1 below )
 0 constant false
 2 constant cell
 
 : +!  swap over @ + swap ! ;
 : 0= 0 = ;
-: <> = 0= ;
+: <> = invert ;
 : 2dup over over ;
 
 : here  ( -- addr )  DP @ ;
@@ -55,25 +57,25 @@ $FFFF constant true
 
 ( Assembles an instruction into the dictionary, with smarts. )
 : asm,
-  here FREEZEP @ = if  ( Can't do anything clever, just... )
-    raw,
-  else  ( Fusion is a possibility... )
+  here FREEZEP @ <> if  ( Fusion is a possibility... )
     here cell - @   ( new-inst prev-inst )
 
     over $700C = if ( if we're assembling a bare return instruction... )
-      dup $704C and $6000 = if  ( ...on a non-returning ALU instruction )
-        $FFFF cells allot
+      dup $F04C and $6000 = if  ( ...on a non-returning ALU instruction )
+        true cells allot
         nip  $100C or  asm, exit
       then
       dup $E000 and $4000 = if  ( ...on a call )
-        $FFFF cells allot
+        true cells allot
         nip $1FFF and  asm, exit
       then
     then
 
     ( No patterns matched. )
-    drop raw,
-  then ;
+    drop
+  then
+  ( Fusion was not possible, simply append the bits. )
+  raw, ;
 
 : >r  $6147 asm, ; immediate
 : r>  $6b8d asm, ; immediate
@@ -82,9 +84,10 @@ $FFFF constant true
 
 : execute  ( i*x xt -- j*x )  >r ; ( NOINLINE )
 
+( Compile in a word by XT, with smarts. )
 : compile,  ( xt -- )
   ( Convert the XT into an assembly instruction. )
-  dup @  $F00C and  $700C = if  ( Is the destination a fused op-return? )
+  dup@  $F04C and  $700C = if  ( Is the destination a fused op-return? )
     ( Inline it with the return effect stripped. )
     @ $EFF3 and
   else
@@ -98,7 +101,7 @@ $FFFF constant true
 <TARGET-EVOLVE> ( make bootstrap aware of dictionary words )
 
 ( Byte access. These words access the bytes within cells in little endian. )
-: c@  dup @
+: c@  dup@
       swap 1 and if ( lsb set )
         8 rshift
       else
@@ -122,10 +125,10 @@ $FFFF constant true
 : until 1 rshift $2000 or asm, ; immediate
 
 : if freeze here $2000 asm, ; immediate
-: then freeze dup @  here 1 rshift or  swap ! ; immediate
+: then freeze dup@  here 1 rshift or  swap ! ; immediate
 : else
   freeze here $0000 asm, swap
-  dup @  here 1 rshift or  swap ! ; immediate
+  dup@  here 1 rshift or  swap ! ; immediate
 
 ( Compares a string to the name field of a header. )
 : name= ( c-addr u nfa -- ? )
@@ -142,10 +145,10 @@ $FFFF constant true
       r> 1 -
       dup 0=
     until
-    drop drop drop true
+    true
   else
-    r> drop drop drop 0
-  then ;
+    r> false
+  then nip nip nip ;
 
 ( Variant of standard FIND that uses a modern string and returns the flags. )
 : sfind  ( c-addr u -- c-addr u 0 | xt flags true )
@@ -227,15 +230,14 @@ $C006 constant timer-m1
 ( UART emulation )
 
 ( Spins reading a variable until it contains zero. )
-: poll0  ( addr -- )  begin dup @ 0= until drop ;
+: poll0  ( addr -- )  begin dup@ 0= until drop ;
 
 ( Decrements a counter variable and leaves its value on stack )
 : -counter  ( addr -- u )
-  dup @   ( addr u )
+  dup@   ( addr u )
   1 -     ( addr u' )
   swap    ( u' addr )
-  2dup !  ( u' addr )
-  drop ;
+  2dup_!_drop ;  ( u' )
 
 2500 constant cycles/bit
 1250 constant cycles/bit/2
@@ -325,8 +327,8 @@ variable uart-rx-tl
 : rx-timer-isr
   \ Sample the input port into the high bit of a word.
   inport @  15 lshift
-    \ Reset the timer for the next sample point.
-    timer-ctr @  cycles/bit +  timer-m0 !
+  \ Reset the timer for the next sample point.
+  timer-ctr @  cycles/bit +  timer-m0 !
   \ Load this into the frame shift register.
   uart-rx-bits @  1 rshift  or  uart-rx-bits !
   \ Decrement the bit count.
@@ -356,7 +358,8 @@ variable uart-rx-tl
   dup 1 rshift $FF and   \ extract the data bits
   swap $201 and          \ extract the start/stop bits.
   $200 =                 \ check for valid framing
-  rxq-empty? if CTSon then ;  \ allow sender to resume if we've emptied the queue.
+  rxq-empty? if CTSon then  \ allow sender to resume if we've emptied the queue.
+  ;
 
 
 ( ----------------------------------------------------------- )
