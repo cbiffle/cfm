@@ -224,8 +224,12 @@ literal w = do
   when (w >= 0x8000) $ inst invert
 
 compile :: (MonadTarget m) => Word -> BsT m ()
-compile w = cached_1_0 fsCompileCommaXT w $
-  comma $ (0x4000 .|.) $ zeroExtend $ word2wa w
+compile w = cached_1_0 fsCompileCommaXT w $ do
+  -- Fetch the instruction on the far end of the call.
+  dst <- tload $ word2wa w
+  if (dst .&. 0xF00C) == 0x700C -- returning ALU instruction?
+    then comma $ dst .&. 0xEFF3 -- inline it without the return
+    else comma $ (0x4000 .|.) $ zeroExtend $ word2wa w  -- compile it
 
 inst :: (MonadTarget m) => Inst -> BsT m ()
 inst = comma . pack

@@ -7,23 +7,24 @@
 ( Instruction primitives that are hard to express at a higher level. )
 ( We directly comma literal instructions into definitions here. )
 ( This is obviously not portable ;-)
-: +      [ $6203 , ] ;
-: swap   [ $6180 , ] ;
-: over   [ $6181 , ] ;
-: nip    [ $6003 , ] ;
-: lshift [ $6d03 , ] ;
-: rshift [ $6903 , ] ;
-: dup    [ $6081 , ] ;
-: =      [ $6703 , ] ;
-: drop   [ $6103 , ] ;
-: invert [ $6600 , ] ;
-: @      [ $6c00 , ] ;
-: or     [ $6403 , ] ;
-: and    [ $6303 , ] ;
-: -      [ $6a03 , ] ;
-: <      [ $6803 , ] ;
+( Note that I've manually fused return into all of these. TODO )
+: +      [ $720f , ] ;
+: swap   [ $718c , ] ;
+: over   [ $718d , ] ;
+: nip    [ $700f , ] ;
+: lshift [ $7d0f , ] ;
+: rshift [ $790f , ] ;
+: dup    [ $708d , ] ;
+: =      [ $770f , ] ;
+: drop   [ $710f , ] ;
+: invert [ $760c , ] ;
+: @      [ $7c0c , ] ;
+: or     [ $740f , ] ;
+: and    [ $730f , ] ;
+: -      [ $7a0f , ] ;
+: <      [ $780f , ] ;
 
-: ! [ $6123 , $6103 , ] ;
+: ! [ $6123 , $710f , ] ;
 
 ( Access to the system variables block )
 4 constant LATEST
@@ -53,7 +54,17 @@ $FFFF constant true
 
 : cells  1 lshift ;
 : aligned  dup 1 and + ;
-: compile,  1 rshift  $4000 or  , ;
+
+: compile,  ( xt -- )
+  ( Does this XT reference a returning ALU instruction? )
+  dup @  $F00C and  $700C = if
+    ( Inline it with the return effect stripped. )
+    @ $EFF3 and ,
+  else
+    ( Whatever, just compile a call to it. )
+    1 rshift $4000 or ,
+  then ;
+
 : align  DP @  aligned  DP ! ;
 
 .( value of true: )
@@ -215,8 +226,8 @@ $C006 constant timer-m1
   2dup !  ( u' addr )
   drop ;
 
-5000 constant cycles/bit
-2500 constant cycles/bit/2
+2500 constant cycles/bit
+1250 constant cycles/bit/2
 
 variable uart-tx-bits   ( holds bits as they're shifted out )
 variable uart-tx-count  ( tracks the number of bits remaining )

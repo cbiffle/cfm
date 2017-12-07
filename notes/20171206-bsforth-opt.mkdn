@@ -1,0 +1,39 @@
+Adding basic optimizations and fusion to BsForth.
+
+I've established that BsForth's basic performance is ... disappointing. It's
+having a hard time keeping up with a 19200 bps serial stream. (Admittedly, it's
+a software UART that I haven't spent much time optimizing, but hey.)
+
+Implementing the general fusion algorithm from the assembler is
+cost-prohibitive right now. Where are the low-hanging fruit?
+
+
+When compiling exit or ;,
+- If the previous instruction is a call, we can make it a jump.
+- If the previous instruction is ALU, and does not have RP or Radj set, we can
+  merge the return.
+- If the previous instruction is an unconditional jump, we can elide the return
+  entirely.
+
+
+When compiling a CFA, we can dereference it. If the target instruction is...
+- An ALU instruction with the return bit set and Radj set to -1,
+  - We can inline it with return bit clear and Radj set to 0.
+- An unconditional jump,
+  - We can call its target directly, or more generally,
+  - We can convert its target to a CFA and recurse.
+
+I've gone through and converted all the instruction primitives at the top of the
+kernel to have fused returns. This should marginally improve performance without
+changing behavior otherwise.
+
+Now, extending COMPILE, in the target to inline primitives.  This will obviously
+only kick in after the host starts using it. Testing...
+
+Because target COMPILE, is in use when the UART driver is compiled, the UART
+performance is now improved. It's stable at 19200. Yay!
+
+
+
+
+It would be nice if the bootstrap host compiler had the same behavior....
