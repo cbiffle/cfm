@@ -1,7 +1,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 module Main where
 
-import Prelude hiding (Word)
+import Prelude hiding (Word, pi)
 
 import Clash.Class.Resize (truncateB, zeroExtend)
 import Clash.Class.BitPack (pack, unpack)
@@ -254,8 +254,33 @@ compile w = cached_1_0 fsCompileCommaXT w $ do
     -- Otherwise, compile the call as planned.
     _ -> inst $ NotLit $ Call $ truncateB $ word2wa w
 
+-- | Compiles an instruction into the target's dictionary. This is the analog
+-- of the word asm, .
+--
+-- This is where simple peephole optimizations can occur, subject to the freeze
+-- line.
 rawInst :: (MonadTarget m) => Word -> BsT m ()
-rawInst = rawComma
+rawInst i = do
+  h <- readHere
+  let prevH = h - 2
+  fp <- readFreeze
+
+  if fp > prevH
+    then rawComma i
+    else do -- Previous instruction is not frozen, we can do stuff.
+      pi <- tload $ word2wa prevH
+      case () of
+        -- (ALU without return) - (return) fusion
+        _ | (pi .&. 0x704C) == 0x6000 && i == 0x700C -> fuse (pi .|. 0x100C)
+        -- (call) - (return) fusion
+        _ | (pi .&. 0xE000) == 0x4000 && i == 0x700C -> fuse (pi .&. 0x1FFF)
+        _ -> rawComma i
+
+fuse :: (MonadTarget m) => Word -> BsT m ()
+fuse i = do
+  h <- readHere
+  writeHere (h - 2)
+  rawInst i
 
 inst :: (MonadTarget m) => Inst -> BsT m ()
 inst = rawInst . pack

@@ -7,22 +7,21 @@
 ( Instruction primitives that are hard to express at a higher level. )
 ( We directly comma literal instructions into definitions here. )
 ( This is obviously not portable ;-)
-( Note that I've manually fused return into all of these. TODO )
-: +      [ $720f asm, ] ;
-: swap   [ $718c asm, ] ;
-: over   [ $718d asm, ] ;
-: nip    [ $700f asm, ] ;
-: lshift [ $7d0f asm, ] ;
-: rshift [ $790f asm, ] ;
-: dup    [ $708d asm, ] ;
-: =      [ $770f asm, ] ;
-: drop   [ $710f asm, ] ;
-: invert [ $760c asm, ] ;
-: @      [ $7c0c asm, ] ;
-: or     [ $740f asm, ] ;
-: and    [ $730f asm, ] ;
-: -      [ $7a0f asm, ] ;
-: <      [ $780f asm, ] ;
+: +      [ $6203 asm, ] ;
+: swap   [ $6180 asm, ] ;
+: over   [ $6181 asm, ] ;
+: nip    [ $6003 asm, ] ;
+: lshift [ $6d03 asm, ] ;
+: rshift [ $6903 asm, ] ;
+: dup    [ $6081 asm, ] ;
+: =      [ $6703 asm, ] ;
+: drop   [ $6103 asm, ] ;
+: invert [ $6600 asm, ] ;
+: @      [ $6c00 asm, ] ;
+: or     [ $6403 asm, ] ;
+: and    [ $6303 asm, ] ;
+: -      [ $6a03 asm, ] ;
+: <      [ $6803 asm, ] ;
 
 : ! [ $6123 asm, $710f asm, ] ;
 
