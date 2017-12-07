@@ -69,9 +69,6 @@ $FFFF constant true
 
 : align  DP @  aligned  DP ! ;
 
-.( value of true: )
-' true execute host.
-
 <TARGET-EVOLVE> ( make bootstrap aware of dictionary words )
 
 ( Byte access. These words access the bytes within cells in little endian. )
@@ -81,9 +78,6 @@ $FFFF constant true
       else
         $FF and
       then ;
-
-.( Length of name of c@: )
-LATEST @ 2 + c@ host.
 
 : c!  dup >r
       1 and if ( lsb set )
@@ -97,14 +91,15 @@ LATEST @ 2 + c@ host.
 
 : c,  here c!  1 allot ;
 
-.( c, test, should be 1 2 3 4 )
-here
-1 c, 2 c, 3 c, 4 c,
-dup c@ host.
-dup 1 + c@ host.
-dup 2 + c@ host.
-dup 3 + c@ host.
-drop
+: begin here ; immediate
+: again 1 rshift asm, ; immediate
+: until 1 rshift $2000 or asm, ; immediate
+
+: if here $2000 asm, ; immediate
+: then dup @  here 1 rshift or  swap ! ; immediate
+: else
+  here $0000 asm, swap
+  dup @  here 1 rshift or  swap ! ; immediate
 
 ( Compares a string to the name field of a header. )
 : name= ( c-addr u nfa -- ? )
@@ -126,12 +121,6 @@ drop
     r> drop drop drop 0
   then ;
 
-.( name= test: does its name match itself? )
-LATEST @ 3 +    ( c-addr )
-LATEST @ 2 + c@ ( u )
-LATEST @ 2 +    ( nfa )
-name= host.
-
 ( Variant of standard FIND that uses a modern string and returns the flags. )
 : sfind  ( c-addr u -- c-addr u 0 | xt flags true )
   LATEST @ begin          ( c-addr u lfa )
@@ -152,12 +141,6 @@ name= host.
     r>      ( c-addr u lfa )
      @      ( c-addr u lfa' )
   again ;
-
-.( sfind test: can it find itself ? )
-LATEST @ 3 +
-LATEST @ 2 + c@
-sfind
-host. host. host.
 
 <TARGET-EVOLVE>  ( for sfind )
 
@@ -233,11 +216,6 @@ $C006 constant timer-m1
 
 variable uart-tx-bits   ( holds bits as they're shifted out )
 variable uart-tx-count  ( tracks the number of bits remaining )
-
-.( UART control variables: )
-' uart-tx-bits host.
-uart-tx-bits host.
-uart-tx-bits @ host.
 
 : tx-isr
   1 timer-flags !     ( acknowledge interrupt )
