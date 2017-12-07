@@ -250,6 +250,98 @@ uart-tx-bits @ host.
   10 uart-tx-count !
   irq-timer-m1 enable-irq ;
 
+variable uart-rx-bits
+variable uart-rx-bitcount
+
+variable uart-rx-buf  3 cells allot
+variable uart-rx-hd
+variable uart-rx-tl
+
+: CTSon 2 outport-clr ! ;
+: CTSoff 2 outport-set ! ;
+
+: rxq-empty? uart-rx-hd @ uart-rx-tl @ = ;
+: rxq-full? uart-rx-hd @ uart-rx-tl @ - 4 = ;
+
+( Inserts a cell into the receive queue. This is intended to be called from )
+( interrupt context, so if it encounters a queue overrun, it simply drops )
+( data. )
+: >rxq
+  rxq-full? if
+    drop
+  else
+    uart-rx-buf  uart-rx-hd @ 6 and +  !
+    2 uart-rx-hd +!
+  then ;
+
+( Takes a cell from the receive queue. If the queue is empty, spin. )
+: rxq>
+  begin rxq-empty? 0= until
+  uart-rx-buf  uart-rx-tl @ 6 and +  @
+  2 uart-rx-tl +! ;
+
+: uart-rx-init
+  \ Clear any pending negedge condition
+  0 inport !
+  \ Enable the initial negedge ISR to detect the start bit.
+  irq-inport-negedge enable-irq ;
+
+\ Triggered when we're between frames and RX drops.
+: rx-negedge-isr
+  \ We don't need to clear the IRQ condition, because we won't be re-enabling
+  \ it any time soon. Mask our interrupt.
+  irq-inport-negedge disable-irq
+
+  \ Prepare to receive a ten bit frame.
+  10 uart-rx-bitcount !
+
+  \ Set up the timer to interrupt us again halfway into the start bit.
+  \ First, the timer may have rolled over while we were waiting for a new
+  \ frame, so clear its pending interrupt status.
+  2 timer-flags !
+  \ Next set the match register to the point in time we want.
+  timer-ctr @  cycles/bit/2 +  timer-m0 !
+  \ Now enable its interrupt.
+  irq-timer-m0 enable-irq ;
+
+\ Triggered at each sampling point during an RX frame.
+: rx-timer-isr
+  \ Sample the input port into the high bit of a word.
+  inport @  15 lshift
+  \ Load this into the frame shift register.
+  uart-rx-bits @  1 rshift  or  uart-rx-bits !
+  \ Decrement the bit count.
+  uart-rx-bitcount -counter if \ we have more bits to receive
+    \ Clear the interrupt condition.
+    2 timer-flags !
+    \ Reset the timer for the next sample point.
+    timer-ctr @  cycles/bit +  timer-m0 !
+  else  \ we're done, disable timer interrupt
+    irq-timer-m0 disable-irq
+    \ Enqueue the received frame
+    uart-rx-bits @ >rxq
+    \ Clear any pending negedge condition
+    0 inport !
+    \ Enable the initial negedge ISR to detect the start bit.
+    irq-inport-negedge enable-irq
+    \ Conservatively deassert CTS to try and stop sender.
+    CTSoff
+  then ;
+
+\ Receives a byte from RX, returning the bits and a valid flag. The valid flag may
+\ be false in the event of a framing error.
+: rx  ( -- c ? )
+  rxq>
+
+  \ Dissect the frame and check for framing error. The frame is in the
+  \ upper bits of the word.
+  6 rshift
+  dup 1 rshift $FF and   \ extract the data bits
+  swap $201 and          \ extract the start/stop bits.
+  $200 =                 \ check for valid framing
+  rxq-empty? if CTSon then ;  \ allow sender to resume if we've emptied the queue.
+
+
 ( ----------------------------------------------------------- )
 ( Icestick board features )
 
@@ -262,19 +354,25 @@ uart-tx-bits @ host.
 : delay 0 begin 1 + dup 0 = until drop ;
 
 : isr
-  r> 2 - >r
-  1 ledtog
   irqcon-st @
+  $4000 over and if
+    rx-timer-isr
+  then
+  $8000 over and if
+    rx-negedge-isr
+  then
   $2000 over and if
     tx-isr
   then
   drop
+  r> 2 - >r
   enable-interrupts ;
 
 : cold
+  uart-rx-init
   enable-interrupts
   begin
-    $23 tx
+    rx if tx else drop then
   again ;
 
 ( install cold as the reset vector )
