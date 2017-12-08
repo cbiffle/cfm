@@ -285,6 +285,15 @@ variable >IN
   [ ' (dovar) ] literal compile, ;
 
 : :  (CREATE) ] ;
+
+: ;  $700C asm,
+  ( this is faking POSTPONE: )
+  [ ' [ compile, ]
+  ( and now we need to set this definition IMMEDIATE, )
+  ( because we're about to invoke it to end its own definition. )
+  [ immediate ]
+  ;
+
 : constant
   (CREATE)
   [ ' (docon) ] literal compile,
