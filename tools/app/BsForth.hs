@@ -9,6 +9,7 @@ import Data.Bits
 import Data.Char (ord, isSpace, isHexDigit, digitToInt, isDigit)
 import Data.List (foldl')
 import qualified Data.Map.Strict as M
+import qualified Data.Set as S
 import Control.Monad.State.Strict
 import Control.Monad.Except
 import Text.Printf
@@ -105,7 +106,6 @@ data KnownXT = CommaXT
              | SfindXT
              | TickSourceXT
              | ToInXT
-             | MCreateXT
     deriving (Show, Eq, Enum, Bounded, Ord)
 
 nameForXT :: KnownXT -> String
@@ -115,11 +115,11 @@ nameForXT x = case x of
   SfindXT         -> "sfind"
   TickSourceXT    -> "'SOURCE"
   ToInXT          -> ">IN"
-  MCreateXT       -> "(CREATE)"
 
 data ForthErr = WordExpected
               | UnknownWord String
               | BadState ForthState ForthState String
+              | ParserPhase
   deriving (Eq, Show)
 
 hostlog :: (MonadIO m) => String -> BsT m ()
@@ -497,43 +497,48 @@ fallback num | all isDigit num = do
   
 fallback unk = throwError (UnknownWord unk)
 
-
--- | Host-emulated version of (CREATE)
-mcreateH :: (MonadIO m, MonadTarget m) => BsT m ()
-mcreateH = do
+-- | Host-implemented (CREATE) wrapper.
+mcreate :: (MonadIO m, MonadTarget m) => BsT m ()
+mcreate = do
   interpretationOnly "(CREATE)"
   w <- nameFromString <$> takeWord
   createHeader w 0
 
--- | Target-implemented (CREATE) wrapper.
---
--- (CREATE) expects to be able to read a word from the input source. This may
--- run before there is a real input source. But if enough words are present in
--- the target, we can fake it.
-mcreate :: (MonadIO m, MonadTarget m) => BsT m ()
-mcreate = do
+callParser :: (MonadIO m, MonadTarget m)
+           => WordAddr
+           -> BsT m ()
+callParser xt = do
   tsourcem <- gets $ M.lookup TickSourceXT . fsCache
   toinm <- gets $ M.lookup ToInXT . fsCache
-  mcreatem <- gets $ M.lookup MCreateXT . fsCache
-  case (,,) <$> tsourcem <*> toinm <*> mcreatem of
-    Nothing -> mcreateH
-    Just (tsource, toin, mcreate') -> do
+  case (,) <$> tsourcem <*> toinm of
+    Nothing ->
+      throwError ParserPhase
+    Just (tsource, toin) -> do
       -- Parse a name from host input.
       w <- takeWord
-      liftIO $ putStrLn $ "Calling target (CREATE) with: " ++ w
+      liftIO $ putStrLn $ "Calling target parsing word " ++ show xt ++ " with: " ++ w
       -- Copy it into a PAD-like transient region. We'll copy it as a counted
       -- string because I've already got code for that.
       buf <- ((+ 80) . word2wa) <$> readHere
-      liftIO $ putStrLn $
-        "Using buffer: " ++ show buf ++ " length " ++ show (length w)
       zipWithM_ tstore [buf ..] (nameFromString w)
       -- Designate its location in 'SOURCE.
       tstore (tsource + 1) (wa2word buf + 1)
       tstore (tsource + 2) (fromIntegral $ length w)
       -- zero >IN
       tstore (toin + 1) 0
-      -- execute (CREATE)
-      tcall mcreate'
+      -- execute
+      tcall xt
+
+-- | A list of target words that parse. This tool will ensure that the next
+-- word of source is copied into the target's SOURCE buffer before any target
+-- definitions named here are interpreted.
+--
+-- Words that look up an *existing* word and may need to signal failure are not
+-- listed here, because the parsing mechanism we currently provide can't detect
+-- their failure.
+knownParsers :: S.Set String
+knownParsers = S.fromList
+  [":", "constant", "variable", "create"]
 
 interpreter :: (MonadIO m, MonadTarget m) => BsT m ()
 interpreter = do
@@ -546,9 +551,11 @@ interpreter = do
       Just (cfa, flags) -> do
         s <- readState
         case s of
-          Interpreting -> if flags == 0
-                            then tcall cfa
-                            else throwError (BadState Interpreting Compiling w)
+          Interpreting
+            | flags == 0 -> if S.member w knownParsers
+                              then callParser cfa
+                              else tcall cfa
+            | otherwise -> throwError (BadState Interpreting Compiling w)
           Compiling    -> if flags == 0
                             then compile $ wa2word cfa
                             else tcall cfa

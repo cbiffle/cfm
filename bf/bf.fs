@@ -233,6 +233,8 @@ variable 'SOURCE  cell allot
 ( Offset within SOURCE. )
 variable >IN
 
+<TARGET-EVOLVE>  ( for SOURCE and >IN )
+
 : /string   ( c-addr u n -- c-addr' u' )
   >r  r@ - swap  r> + swap ;
 
@@ -278,11 +280,18 @@ variable >IN
   ( flags )
   0 , ;
 
-<TARGET-EVOLVE>
-
 : create
   (CREATE)
   [ ' (dovar) ] literal compile, ;
+
+: :  (CREATE) ] ;
+: constant
+  (CREATE)
+  [ ' (docon) ] literal compile,
+  , ;
+
+: variable create 0 , ;
+
 
 ( General code above )
 
