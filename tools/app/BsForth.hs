@@ -62,6 +62,18 @@ word2wa x = truncateB (x `shiftR` 1)
 wa2word :: WordAddr -> Word
 wa2word x = zeroExtend x `shiftL` 1
 
+dropWhile' :: (a -> Bool) -> [a] -> [a]
+dropWhile' p s = case dropWhile p s of
+  [] -> []
+  (_ : rest) -> rest
+
+ret, invert :: Inst
+ret = NotLit $ ALU True T False False False (Res 0) (-1) 0
+invert = NotLit $ ALU False NotT False False False (Res 0) 0 0
+
+parseHex :: String -> Word
+parseHex = foldl' (\n c -> n * 16 + fromIntegral (digitToInt c)) 0
+
 newtype BsT m x = BsT { unBsT :: StateT FS (ExceptT ForthErr m) x }
   deriving (Functor, Applicative, Monad,
             MonadState FS, MonadError ForthErr, MonadIO)
@@ -88,13 +100,22 @@ data FS = FS
   , fsCache :: M.Map KnownXT WordAddr
   }
 
-data KnownXT = CommaXT | CompileCommaXT | SfindXT
+data KnownXT = CommaXT
+             | CompileCommaXT
+             | SfindXT
+             | TickSourceXT
+             | ToInXT
+             | MCreateXT
     deriving (Show, Eq, Enum, Bounded, Ord)
 
 nameForXT :: KnownXT -> String
-nameForXT CommaXT = ","
-nameForXT CompileCommaXT = "compile,"
-nameForXT SfindXT = "sfind"
+nameForXT x = case x of
+  CommaXT         -> ","
+  CompileCommaXT  -> "compile,"
+  SfindXT         -> "sfind"
+  TickSourceXT    -> "'SOURCE"
+  ToInXT          -> ">IN"
+  MCreateXT       -> "(CREATE)"
 
 data ForthErr = WordExpected
               | UnknownWord String
@@ -128,6 +149,40 @@ initializeTarget = do
   tstore 5 0  -- STATE
   tstore 6 0  -- compilation freeze pointer
   hostlog "Target initialized."
+
+cached_1_0 :: (MonadTarget m)
+           => KnownXT
+           -> Word
+           -> BsT m ()
+           -> BsT m ()
+cached_1_0 name arg impl = do
+  mxt <- gets $ M.lookup name . fsCache
+  case mxt of
+    Nothing -> impl
+    Just xt -> tpush arg >> tcall xt
+
+rescan :: (MonadIO m, MonadTarget m) => BsT m ()
+rescan = do
+  h <- readHere
+  hostlog $ "Evolving target, HERE=" ++ show h
+  forM_ [minBound .. maxBound] $ \xt -> do
+    mx <- lookupWord $ nameForXT xt
+    case mx of
+      Nothing -> pure ()
+      Just (cfa, _) -> do
+        hostlog $ "Found " ++ nameForXT xt ++ " at " ++ show cfa
+        modify $ \s -> s { fsCache = M.insert xt cfa (fsCache s) }
+
+endOfInput :: (Monad m) => BsT m Bool
+endOfInput = gets $ null . fsInput
+
+takeWord :: (Monad m) => BsT m String
+takeWord = do
+  (w, rest) <- gets $ break isSpace . dropWhile isSpace . fsInput
+  when (null w) (throwError WordExpected)
+  modify $ \s -> s { fsInput = if null rest then [] else tail rest }
+  pure w
+
 
 -- | Reads the vocabulary head cell, giving the LFA of the latest definition.
 readLatest :: (MonadTarget m) => m WordAddr
@@ -215,17 +270,6 @@ lookupWordT name xt = do
       newXt <- tpop
       pure $ Just (word2wa newXt, flags)
 
-cached_1_0 :: (MonadTarget m)
-           => KnownXT
-           -> Word
-           -> BsT m ()
-           -> BsT m ()
-cached_1_0 name arg impl = do
-  mxt <- gets $ M.lookup name . fsCache
-  case mxt of
-    Nothing -> impl
-    Just xt -> tpush arg >> tcall xt
-
 -- | Encloses a cell into the dictionary. The cell is treated as data and is
 -- frozen from fusion.
 comma :: (MonadTarget m) => Word -> BsT m ()
@@ -298,13 +342,6 @@ createHeader name flags = do
 
   writeLatest (word2wa h)
 
-takeWord :: (Monad m) => BsT m String
-takeWord = do
-  (w, rest) <- gets $ break isSpace . dropWhile isSpace . fsInput
-  when (null w) (throwError WordExpected)
-  modify $ \s -> s { fsInput = if null rest then [] else tail rest }
-  pure w
-
 interpretationOnly, compileOnly :: (MonadTarget m) => String -> BsT m ()
 interpretationOnly name = do
   s <- readState
@@ -317,8 +354,7 @@ compileOnly name = do
 fallback :: (MonadIO m, MonadTarget m) => String -> BsT m ()
 fallback ":" = do
   interpretationOnly ":"
-  w <- nameFromString <$> takeWord
-  createHeader w 0
+  mcreate
   writeState Compiling
 
 fallback ";" = do
@@ -350,8 +386,7 @@ fallback "create" = do
   case dovar of
     Nothing -> throwError $ UnknownWord "(dovar)"
     Just (xt, _) -> do
-      w <- nameFromString <$> takeWord
-      createHeader w 0
+      mcreate
       inst $ NotLit $ Call $ truncateB xt
 
 fallback "variable" = do
@@ -462,25 +497,43 @@ fallback num | all isDigit num = do
   
 fallback unk = throwError (UnknownWord unk)
 
-dropWhile' :: (a -> Bool) -> [a] -> [a]
-dropWhile' p s = case dropWhile p s of
-  [] -> []
-  (_ : rest) -> rest
 
-endOfInput :: (Monad m) => BsT m Bool
-endOfInput = gets $ null . fsInput
+-- | Host-emulated version of (CREATE)
+mcreateH :: (MonadIO m, MonadTarget m) => BsT m ()
+mcreateH = do
+  interpretationOnly "(CREATE)"
+  w <- nameFromString <$> takeWord
+  createHeader w 0
 
-rescan :: (MonadIO m, MonadTarget m) => BsT m ()
-rescan = do
-  h <- readHere
-  hostlog $ "Evolving target, HERE=" ++ show h
-  forM_ [minBound .. maxBound] $ \xt -> do
-    mx <- lookupWord $ nameForXT xt
-    case mx of
-      Nothing -> pure ()
-      Just (cfa, _) -> do
-        hostlog $ "Found " ++ nameForXT xt ++ " at " ++ show cfa
-        modify $ \s -> s { fsCache = M.insert xt cfa (fsCache s) }
+-- | Target-implemented (CREATE) wrapper.
+--
+-- (CREATE) expects to be able to read a word from the input source. This may
+-- run before there is a real input source. But if enough words are present in
+-- the target, we can fake it.
+mcreate :: (MonadIO m, MonadTarget m) => BsT m ()
+mcreate = do
+  tsourcem <- gets $ M.lookup TickSourceXT . fsCache
+  toinm <- gets $ M.lookup ToInXT . fsCache
+  mcreatem <- gets $ M.lookup MCreateXT . fsCache
+  case (,,) <$> tsourcem <*> toinm <*> mcreatem of
+    Nothing -> mcreateH
+    Just (tsource, toin, mcreate') -> do
+      -- Parse a name from host input.
+      w <- takeWord
+      liftIO $ putStrLn $ "Calling target (CREATE) with: " ++ w
+      -- Copy it into a PAD-like transient region. We'll copy it as a counted
+      -- string because I've already got code for that.
+      buf <- ((+ 80) . word2wa) <$> readHere
+      liftIO $ putStrLn $
+        "Using buffer: " ++ show buf ++ " length " ++ show (length w)
+      zipWithM_ tstore [buf ..] (nameFromString w)
+      -- Designate its location in 'SOURCE.
+      tstore (tsource + 1) (wa2word buf + 1)
+      tstore (tsource + 2) (fromIntegral $ length w)
+      -- zero >IN
+      tstore (toin + 1) 0
+      -- execute (CREATE)
+      tcall mcreate'
 
 interpreter :: (MonadIO m, MonadTarget m) => BsT m ()
 interpreter = do
@@ -501,10 +554,3 @@ interpreter = do
                             else tcall cfa
       Nothing -> fallback w
     interpreter
-
-ret, invert :: Inst
-ret = NotLit $ ALU True T False False False (Res 0) (-1) 0
-invert = NotLit $ ALU False NotT False False False (Res 0) 0 0
-
-parseHex :: String -> Word
-parseHex = foldl' (\n c -> n * 16 + fromIntegral (digitToInt c)) 0
