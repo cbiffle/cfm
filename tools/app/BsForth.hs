@@ -99,6 +99,7 @@ data ForthState = Interpreting | Compiling
 data FS = FS
   { fsInput :: String
   , fsCache :: M.Map KnownXT WordAddr
+  , fsFallbacks :: M.Map String Int
   }
 
 data KnownXT = CommaXT
@@ -128,15 +129,23 @@ hostlog m = liftIO $ putStrLn m
 bootstrap :: (MonadTarget m, MonadIO m)
           => BsT m () -> String -> m (Either ForthErr WordAddr)
 bootstrap a source = do
-  r <- runExceptT $ evalStateT (unBsT (initializeTarget >> a)) s
+  r <- runExceptT $ runStateT (unBsT (initializeTarget >> a)) s
   case r of
     Left e -> pure $ Left e
-    Right _ -> Right . word2wa <$> readHere
+    Right (_, s') -> do
+      liftIO $ putStrLn "Frequency of fallback emulation after last evolution:"
+      forM_ (M.toList (fsFallbacks s')) $ \(w, c) ->
+        liftIO $ putStrLn $ w ++ ": " ++ show c
+      Right . word2wa <$> readHere
   where
     s = FS
       { fsInput = source
       , fsCache = M.empty
+      , fsFallbacks = M.empty
       }
+
+clearFallbacks :: Monad m => BsT m ()
+clearFallbacks = modify $ \s -> s { fsFallbacks = M.empty }
 
 -- | Sets up the basic memory contents we expect in the target system.
 initializeTarget :: (MonadIO m, MonadTarget m) => BsT m ()
@@ -470,6 +479,7 @@ fallback "then" = do
 fallback "<TARGET-EVOLVE>" = do
   interpretationOnly "<TARGET-EVOLVE>"
   rescan
+  clearFallbacks
 
 fallback "host." = do
   interpretationOnly "host."
@@ -552,5 +562,8 @@ interpreter = do
           Compiling    -> if flags == 0
                             then compile $ wa2word cfa
                             else tcall cfa
-      Nothing -> fallback w
+      Nothing -> do
+        modify $ \s -> s { fsFallbacks =
+          M.insert w (M.findWithDefault 0 w (fsFallbacks s) + 1) (fsFallbacks s) }
+        fallback w
     interpreter

@@ -306,6 +306,7 @@ variable >IN
 
 : variable create 0 , ;
 
+<TARGET-EVOLVE>  ( clearing fallback stats )
 
 ( General code above )
 
