@@ -68,6 +68,14 @@ $FFFF constant true  ( also abused as -1 below )
 : raw,  here !  cell allot ;
 : , raw, freeze ;
 
+( Byte access. These words access the bytes within cells in little endian. )
+: c@  dup@
+      swap 1 and if ( lsb set )
+        8 rshift
+      else
+        $FF and
+      then ;
+
 ( Assembles an instruction into the dictionary, with smarts. )
 : asm,
   here FREEZEP @ xor if  ( Fusion is a possibility... )
@@ -89,6 +97,11 @@ $FFFF constant true  ( also abused as -1 below )
   then
   ( Fusion was not possible, simply append the bits. )
   raw, ;
+
+: immediate
+  LATEST @  cell +  ( nfa )
+  dup c@ + 1 + aligned
+  true swap ! ;
 
 : >r  $6147 asm, ; immediate
 : r>  $6b8d asm, ; immediate
@@ -112,16 +125,6 @@ $FFFF constant true  ( also abused as -1 below )
   then
   asm, ;
 
-<TARGET-EVOLVE> ( make bootstrap aware of dictionary words )
-
-( Byte access. These words access the bytes within cells in little endian. )
-: c@  dup@
-      swap 1 and if ( lsb set )
-        8 rshift
-      else
-        $FF and
-      then ;
-
 : c!  dup >r
       1 and if ( lsb set )
         8 lshift
@@ -133,6 +136,8 @@ $FFFF constant true  ( also abused as -1 below )
       r> ! ;
 
 : c,  here c!  1 allot ;
+
+<TARGET-EVOLVE> ( make bootstrap aware of dictionary words )
 
 : align
   here 1 and if 0 c, then ;

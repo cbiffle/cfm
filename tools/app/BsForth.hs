@@ -467,13 +467,6 @@ fallback "then" = do
   i <- tload (word2wa a)
   tstore (word2wa a) $ i .|. (h `shiftR` 1)
 
-fallback "immediate" = do
-  interpretationOnly "immediate"
-  lfa <- readLatest
-  nl <- (.&. 0xFF) <$> tload (lfa + 1)
-  let nlWords = (nl `div` 2) + 1
-  tstore (lfa + 1 + truncateB nlWords) 0xFFFF
-
 fallback "<TARGET-EVOLVE>" = do
   interpretationOnly "<TARGET-EVOLVE>"
   rescan
