@@ -25,7 +25,7 @@ main = do
   [inputPath, outputPath] <- getArgs
   input <- readFile inputPath
   putStrLn "Bootstrapping..."
-  runIORTL $ do
+  (_, c) <- runIORTL $ do
     r <- bootstrap interpreter input
     case r of
       Left e -> liftIO $ do
@@ -38,6 +38,7 @@ main = do
           x <- tload a
           liftIO $ hPrintf out "%04x\n" (fromIntegral x :: Int)
         liftIO $ hClose out
+  putStrLn $ "Cycles: " ++ show c
 
 type Name = [Word]
 

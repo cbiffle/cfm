@@ -26,12 +26,17 @@ import qualified RTL.TargetTop as R
 --
 -- We'll then apply the circuit to it and stash its unconsumed output as State.
 
+data IORTLS = IORTLS
+  { iortlsInp :: [(Maybe Word, Bool)]
+  , iortlsCnt :: Int
+  } deriving (Show)
+
 -- | IO monad wrapper for interacting with the RTL target while performing I/O.
 newtype IORTL x = IORTL (ReaderT (Chan (Maybe Word, Bool))
-                        (StateT [(Maybe Word, Bool)] IO) x)
+                        (StateT IORTLS IO) x)
         deriving (Functor, Applicative, Monad,
                   MonadReader (Chan (Maybe Word, Bool)),
-                  MonadState [(Maybe Word, Bool)],
+                  MonadState IORTLS,
                   MonadIO)
 
 -- | Advances the simulation one cycle, providing host-to-target signals, and
@@ -40,17 +45,20 @@ tick :: Maybe Word -> Bool -> IORTL (Maybe Word, Bool)
 tick w b = do
   c <- ask
   liftIO $ writeChan c (w, b)
-  r : rest <- get
-  put rest
+  r : rest <- gets iortlsInp
+  modify $ \s -> s { iortlsInp = rest, iortlsCnt = iortlsCnt s + 1 }
   pure r
 
 -- | Initializes a new target and runs an 'IORTL' action.
-runIORTL :: IORTL x -> IO x
+runIORTL :: IORTL x -> IO (x, Int)
 runIORTL (IORTL a) = do
   stim <- newChan
   stimLazy <- getChanContents stim
-  let resp = target debugStub stimLazy
-  evalStateT (runReaderT a stim) resp
+  let s = IORTLS { iortlsInp = target debugStub stimLazy
+                 , iortlsCnt = 0
+                 }
+  (x, s') <- runStateT (runReaderT a stim) s
+  pure (x, iortlsCnt s')
 
 -- | Transmits a word to the target system via the H2T buffer.
 tput :: Word -> IORTL ()
