@@ -20,13 +20,17 @@
 : @      [ $6c00 asm, ] ;
 : or     [ $6403 asm, ] ;
 : and    [ $6303 asm, ] ;
+: xor    [ $6503 asm, ] ;
 : -      [ $6a03 asm, ] ;
 : <      [ $6803 asm, ] ;
+: u<     [ $6f03 asm, ] ;
 
 ( Has the effect of a store that only drops the address. )
 : 2dup_!_drop [ $6123 asm, ] ;
 ( Has the effect of a store that preserves the address. )
 : dup@ [ $6c81 asm, ] ;
+( Has the effect of an XOR that preserves both arguments. )
+: 2dup_xor [ $6581 asm, ] ;
 
 : ! 2dup_!_drop drop ;
 
@@ -49,7 +53,8 @@ $FFFF constant true  ( also abused as -1 below )
 0 constant false
 2 constant cell
 
-: +!  swap over @ + swap ! ;
+: tuck  ( a b -- b a b )  swap over ;
+: +!  tuck @ + swap ! ;
 : 0= 0 = ;
 : <> = invert ;
 : 2dup over over ;
@@ -65,7 +70,7 @@ $FFFF constant true  ( also abused as -1 below )
 
 ( Assembles an instruction into the dictionary, with smarts. )
 : asm,
-  here FREEZEP @ <> if  ( Fusion is a possibility... )
+  here FREEZEP @ xor if  ( Fusion is a possibility... )
     here cell - @   ( new-inst prev-inst )
 
     over $700C = if ( if we're assembling a bare return instruction... )
@@ -88,9 +93,12 @@ $FFFF constant true  ( also abused as -1 below )
 : >r  $6147 asm, ; immediate
 : r>  $6b8d asm, ; immediate
 : r@  $6b81 asm, ; immediate
+: rdrop $600C asm, ; immediate
 : exit  $700c asm, ; immediate
 
 : execute  ( i*x xt -- j*x )  >r ; ( NOINLINE )
+: min  ( n1 n2 -- lesser )
+  2dup < if drop else nip then ;  ( TODO could be optimized )
 
 ( Compile in a word by XT, with smarts. )
 : compile,  ( xt -- )
@@ -103,8 +111,6 @@ $FFFF constant true  ( also abused as -1 below )
     1 rshift $4000 or
   then
   asm, ;
-
-: align  DP @  aligned  DP ! ;
 
 <TARGET-EVOLVE> ( make bootstrap aware of dictionary words )
 
@@ -127,6 +133,9 @@ $FFFF constant true  ( also abused as -1 below )
       r> ! ;
 
 : c,  here c!  1 allot ;
+
+: align
+  here 1 and if 0 c, then ;
 
 ( Records the destination of a backwards branch, for later consumption by )
 ( <resolve . )
@@ -174,7 +183,7 @@ $FFFF constant true  ( also abused as -1 below )
       dup
     while
       >r
-      over @ over @ <> if
+      over @ over @ xor if
         r>
         drop drop drop 0 exit
       then
@@ -217,7 +226,68 @@ $FFFF constant true  ( also abused as -1 below )
   $8000 or asm,
   if $6600 asm, then ; immediate
 
+( Address and length of current input SOURCE. )
+variable 'SOURCE  cell allot
+: SOURCE  'SOURCE dup@ swap cell + @ ;
+
+( Offset within SOURCE. )
+variable >IN
+
+: /string   ( c-addr u n -- c-addr' u' )
+  >r  r@ - swap  r> + swap ;
+
+: skip-while  ( c-addr u xt -- c-addr' u' )
+  >r
+  begin
+    over c@ r@ execute
+    over and
+  while
+    1 /string
+  repeat
+  rdrop ;
+
+: isspace? $21 u< ;
+: isnotspace? isspace? 0= ;
+
+: parse-name
+  SOURCE  >IN @  /string
+  [ ' isspace? ] literal skip-while over >r
+  [ ' isnotspace? ] literal skip-while
+  2dup  1 min +  'SOURCE @ -  >IN !
+  drop r> tuck - ;
+
+: [ 0 STATE ! ; immediate
+: ] 1 STATE ! ;
+
+: s,  ( c-addr u -- )
+  dup c,        ( Length byte )
+  over + swap   ( c-addr-end c-addr-start )
+  begin
+    2dup_xor    ( cheap inequality test )
+  while
+    dup c@ c,
+    1 +
+  repeat
+  drop drop align ;
+
+: (CREATE)
+  ( link field )
+  align here  LATEST @ ,  LATEST !
+  ( name )
+  parse-name s,
+  ( flags )
+  0 , ;
+
+<TARGET-EVOLVE>
+
+: create
+  (CREATE)
+  [ ' (dovar) ] literal compile, ;
+
 ( General code above )
+
+.( After compiling general-purpose code, HERE is... )
+here host.
 
 ( ----------------------------------------------------------- )
 ( Icestick SoC support code )
@@ -435,3 +505,6 @@ variable uart-rx-tl
 ' cold  1 rshift  0 !
 ( install isr as the interrupt vector )
 ' isr  1 rshift  2 !
+
+.( Compilation complete. HERE is... )
+here host.
