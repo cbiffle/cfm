@@ -71,6 +71,7 @@ executable bsforth
                      , cfm-tools
                      , clash-prelude
                      , mtl
+                     , containers
   default-language:    Haskell2010
 
 test-suite cfm-tools-test

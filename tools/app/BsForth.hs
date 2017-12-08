@@ -8,6 +8,7 @@ import Clash.Class.BitPack (pack, unpack)
 import Data.Bits
 import Data.Char (ord, isSpace, isHexDigit, digitToInt, isDigit)
 import Data.List (foldl')
+import qualified Data.Map.Strict as M
 import Control.Monad.State.Strict
 import Control.Monad.Except
 import Text.Printf
@@ -84,10 +85,16 @@ data ForthState = Interpreting | Compiling
 
 data FS = FS
   { fsInput :: String
-  , fsCommaXT :: Maybe WordAddr
-  , fsCompileCommaXT :: Maybe WordAddr
-  , fsSfindXT :: Maybe WordAddr
+  , fsCache :: M.Map KnownXT WordAddr
   }
+
+data KnownXT = CommaXT | CompileCommaXT | SfindXT
+    deriving (Show, Eq, Enum, Bounded, Ord)
+
+nameForXT :: KnownXT -> String
+nameForXT CommaXT = ","
+nameForXT CompileCommaXT = "compile,"
+nameForXT SfindXT = "sfind"
 
 data ForthErr = WordExpected
               | UnknownWord String
@@ -107,9 +114,7 @@ bootstrap a source = do
   where
     s = FS
       { fsInput = source
-      , fsCommaXT = Nothing
-      , fsCompileCommaXT = Nothing
-      , fsSfindXT = Nothing
+      , fsCache = M.empty
       }
 
 -- | Sets up the basic memory contents we expect in the target system.
@@ -165,11 +170,12 @@ freeze = readHere >>= writeFreeze
 -- address and flags word if found.
 lookupWord :: (MonadTarget m) => String -> BsT m (Maybe (WordAddr, Word))
 lookupWord name = do
-  mxt <- gets fsSfindXT
+  mxt <- gets $ M.lookup SfindXT . fsCache
   case mxt of
     Nothing -> lookupWordH name
     Just xt -> lookupWordT name xt
 
+-- | Host-emulated version of lookupWord.
 lookupWordH :: (MonadTarget m) => String -> m (Maybe (WordAddr, Word))
 lookupWordH nameS = readLatest >>= lookupWordFrom
   where
@@ -186,6 +192,14 @@ lookupWordH nameS = readLatest >>= lookupWordFrom
           pure $ Just (lfa + 1 + nl + 1, flags)
         else tload lfa >>= lookupWordFrom . word2wa
 
+    nameEqual [] _ = pure True
+    nameEqual (w : ws) a = do
+      w' <- tload a
+      if w' == w
+        then nameEqual ws (a + 1)
+        else pure False
+
+-- | Target-implemented version of lookupWord based on SFind.
 lookupWordT :: (MonadTarget m) => String -> WordAddr -> m (Maybe (WordAddr, Word))
 lookupWordT name xt = do
   h <- readHere
@@ -201,23 +215,13 @@ lookupWordT name xt = do
       newXt <- tpop
       pure $ Just (word2wa newXt, flags)
 
-
--- | Compares a name to the sequence of words stored starting at an address.
-nameEqual :: (MonadTarget m) => Name -> WordAddr -> m Bool
-nameEqual [] _ = pure True
-nameEqual (w : ws) a = do
-  w' <- tload a
-  if w' == w
-    then nameEqual ws (a + 1)
-    else pure False
-
 cached_1_0 :: (MonadTarget m)
-           => (FS -> Maybe WordAddr)
+           => KnownXT
            -> Word
            -> BsT m ()
            -> BsT m ()
-cached_1_0 getter arg impl = do
-  mxt <- gets getter
+cached_1_0 name arg impl = do
+  mxt <- gets $ M.lookup name . fsCache
   case mxt of
     Nothing -> impl
     Just xt -> tpush arg >> tcall xt
@@ -225,7 +229,7 @@ cached_1_0 getter arg impl = do
 -- | Encloses a cell into the dictionary. The cell is treated as data and is
 -- frozen from fusion.
 comma :: (MonadTarget m) => Word -> BsT m ()
-comma x = cached_1_0 fsCommaXT x $ do
+comma x = cached_1_0 CommaXT x $ do
   rawComma x
   freeze
 
@@ -244,7 +248,7 @@ literal w = do
   when (w >= 0x8000) $ inst invert
 
 compile :: (MonadTarget m) => Word -> BsT m ()
-compile w = cached_1_0 fsCompileCommaXT w $ do
+compile w = cached_1_0 CompileCommaXT w $ do
   -- Fetch the instruction on the far end of the call.
   dst <- unpack <$> tload (word2wa w)
   case dst of
@@ -470,27 +474,13 @@ rescan :: (MonadIO m, MonadTarget m) => BsT m ()
 rescan = do
   h <- readHere
   hostlog $ "Evolving target, HERE=" ++ show h
-  do
-    mx <- lookupWord ","
+  forM_ [minBound .. maxBound] $ \xt -> do
+    mx <- lookupWord $ nameForXT xt
     case mx of
       Nothing -> pure ()
       Just (cfa, _) -> do
-        hostlog $ "Found , at " ++ show cfa
-        modify $ \s -> s { fsCommaXT = Just cfa }
-  do
-    mx <- lookupWord "compile,"
-    case mx of
-      Nothing -> pure ()
-      Just (cfa, _) -> do
-        hostlog $ "Found compile, at " ++ show cfa
-        modify $ \s -> s { fsCompileCommaXT = Just cfa }
-  do
-    mx <- lookupWord "sfind"
-    case mx of
-      Nothing -> pure ()
-      Just (cfa, _) -> do
-        hostlog $ "Found sfind at " ++ show cfa
-        modify $ \s -> s { fsSfindXT = Just cfa }
+        hostlog $ "Found " ++ nameForXT xt ++ " at " ++ show cfa
+        modify $ \s -> s { fsCache = M.insert xt cfa (fsCache s) }
 
 interpreter :: (MonadIO m, MonadTarget m) => BsT m ()
 interpreter = do
