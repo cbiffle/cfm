@@ -389,24 +389,15 @@ fallback "constant" = do
       inst $ NotLit $ Call $ truncateB xt
       comma v
 
-fallback "create" = do
-  interpretationOnly "create"
+fallback "variable" = do
+  interpretationOnly "variable"
   dovar <- lookupWord "(dovar)"
   case dovar of
     Nothing -> throwError $ UnknownWord "(dovar)"
     Just (xt, _) -> do
       mcreate
       inst $ NotLit $ Call $ truncateB xt
-
-fallback "variable" = do
-  interpretationOnly "variable"
-  fallback "create"
   comma 0
-
-fallback "," = do
-  interpretationOnly ","
-  v <- tpop
-  comma v
 
 fallback "asm," = do
   interpretationOnly "asm,"
@@ -436,21 +427,6 @@ fallback "'" = do
   case me of
     Just (cfa, _) -> tpush (wa2word cfa)
     Nothing -> throwError $ UnknownWord w
-
-fallback "begin" = do
-  compileOnly "begin"
-  readHere >>= tpush
-  freeze
-
-fallback "again" = do
-  compileOnly "again"
-  a <- tpop
-  inst $ NotLit $ Jump $ truncateB $ word2wa a
-
-fallback "until" = do
-  compileOnly "until"
-  a <- tpop
-  inst $ NotLit $ JumpZ $ truncateB $ word2wa a
 
 fallback "if" = do
   compileOnly "if"
