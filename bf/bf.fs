@@ -34,6 +34,10 @@
 : 2dup_!_drop  ( x addr -- x )  [ $6123 asm, ] ;
 : dup_@        ( addr -- addr x )  [ $6c81 asm, ] ;
 : 2dup_xor     ( a b -- a b a^b )  [ $6581 asm, ] ;
+: over_and     ( a b -- a b&a )  [ $6300 asm, ] ;
+: 2dup_and     ( a b -- a b b&a )  [ $6381 asm, ] ;
+: over_=       ( a b -- a b=a )  [ $6700 asm, ] ;
+: 2dup_+       ( a b -- a b b+a )  [ $6281 asm, ] ;
 
 \ -----------------------------------------------------------------------------
 \ Support for CONSTANT. CONSTANT is implemented as if written with DOES>, but
@@ -84,6 +88,8 @@ $FFFF constant true  ( also abused as -1 below, since it's cheaper )
   then ;
 
 : 2dup over over ;
+: 2drop drop drop ;
+: 1+ 1 + ;
 
 \ -----------------------------------------------------------------------------
 \ The Dictionary and the Optimizing Assembler.
@@ -137,7 +143,7 @@ $FFFF constant true  ( also abused as -1 below, since it's cheaper )
 \ Sets the flags on the most recent definition.
 : immediate
   LATEST @  cell +  ( nfa )
-  dup c@ + 1 + aligned
+  dup c@ + 1+ aligned
   true swap ! ;
 
 \ Switches from compilation to interpretation.
@@ -252,16 +258,16 @@ $FFFF constant true  ( also abused as -1 below, since it's cheaper )
 : name= ( c-addr u nfa -- ? )
   >r  ( stash the NFA )
   r@ c@ over = if  ( lengths equal )
-    r> 1 + swap   ( c-addr c-addr2 u )
+    r> 1+ swap   ( c-addr c-addr2 u )
     begin
       dup
     while
       >r
       over @ over @ xor if
-        r>
-        drop drop drop 0 exit
+        rdrop
+        2drop 0 exit
       then
-      1 + swap 1 +
+      1+ swap 1+
       r> 1 -
     repeat
     true
@@ -282,7 +288,7 @@ $FFFF constant true  ( also abused as -1 below, since it's cheaper )
     name= if              ( c-addr u )              ( R: lfa )
       nip                 ( u )                     ( R: lfa )
       r> cell +           ( u nfa )
-      1 +  +  aligned     ( ffa )
+      1+  +  aligned      ( ffa )
       dup cell +          ( ffa cfa )
       swap @              ( cfa flags )
       true exit           ( cfa flags true )
@@ -348,7 +354,7 @@ variable >IN
   >r
   begin
     over c@ r@ execute
-    over and
+    over_and
   while
     1 /string
   repeat
@@ -376,9 +382,9 @@ variable >IN
     2dup_xor    ( cheap inequality test )
   while
     dup c@ c,
-    1 +
+    1+
   repeat
-  drop drop align ;
+  2drop align ;
 
 \ Implementation factor of the other defining words: parses a name and creates
 \ a header, without generating any code.
@@ -498,6 +504,9 @@ $C006 constant timer-m1
 ( ----------------------------------------------------------- )
 ( UART emulation )
 
+.( Compiling soft UART... )
+here
+
 ( Spins reading a variable until it contains zero. )
 : poll0  ( addr -- )  begin dup_@ 0= until drop ;
 
@@ -517,7 +526,7 @@ variable uart-tx-count  ( tracks the number of bits remaining )
 : tx-isr
   1 timer-flags !     ( acknowledge interrupt )
   uart-tx-bits @
-  1 over and
+  1 over_and
   if outport-set else outport-clr then
   1 swap !
   1 rshift uart-tx-bits !
@@ -640,17 +649,17 @@ variable uart-rx-tl
 ( ----------------------------------------------------------- )
 ( Demo wiring below )
 
-: delay 0 begin 1 + dup 0 = until drop ;
+: delay 0 begin 1+ dup 0 = until drop ;
 
 : isr
   irqcon-st @
-  $4000 over and if
+  $4000 over_and if
     rx-timer-isr
   then
-  $8000 over and if
+  $8000 over_and if
     rx-negedge-isr
   then
-  $2000 over and if
+  $2000 over_and if
     tx-isr
   then
   drop
