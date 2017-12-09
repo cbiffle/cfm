@@ -1,12 +1,16 @@
 ( Bootstrap Forth, my first Forth for the CFM. )
 
 
-( --------------------------------------------------------------------------- )
-( Kernel code. )
+\ -----------------------------------------------------------------------------
+\ Instruction-level machine-code primitives.
 
-( Instruction primitives that are hard to express at a higher level. )
-( We directly comma literal instructions into definitions here. )
-( This is obviously not portable ;-)
+\ The ALU instructions are written without a fused return for clarity, but the
+\ effect of ; will fuse a return into the final instruction. The result is a
+\ definition containing a single returning instruction, which will be noticed
+\ by the inlining algorithm. As a result, these definitions function as an
+\ assembler.
+
+\ Instructions that map to traditional Forth words:
 : +      [ $6203 asm, ] ;
 : swap   [ $6180 asm, ] ;
 : over   [ $6181 asm, ] ;
@@ -25,58 +29,76 @@
 : <      [ $6803 asm, ] ;
 : u<     [ $6f03 asm, ] ;
 
-( Has the effect of a store that only drops the address. )
-: 2dup_!_drop [ $6123 asm, ] ;
-( Has the effect of a store that preserves the address. )
-: dup@ [ $6c81 asm, ] ;
-( Has the effect of an XOR that preserves both arguments. )
-: 2dup_xor [ $6581 asm, ] ;
+\ Useful compound instructions are named for the equivalent sequence of Forth
+\ words:
+: 2dup_!_drop  ( x addr -- x )  [ $6123 asm, ] ;
+: dup_@        ( addr -- addr x )  [ $6c81 asm, ] ;
+: 2dup_xor     ( a b -- a b a^b )  [ $6581 asm, ] ;
 
-: ! 2dup_!_drop drop ;
+\ -----------------------------------------------------------------------------
+\ Support for CONSTANT. CONSTANT is implemented as if written with DOES>, but
+\ we need to start slinging constants before we have DOES> (or CREATE or : for
+\ that matter) so we must roll it by hand.
 
-( These two words implement constant and variable the same way DOES> would, )
-( but are defined well before DOES> . Or even before the instructions they're )
-( using, hence the machine code. Note: 6b8d = r> )
-( Code action of CONSTANT words. )
-: (docon) [ $6b8d asm, ] @ ;
-( Code action of VARIABLE words. )
-: (dovar) [ $6b8d asm, ] ;
+\ A word created with CONSTANT will call (docon) as its only instruction.
+\ Immediately following the call is a cell containing the value of the
+\ constant.  Thus, (docon) must consume its return address and load the cell.
 
-( Access to the system variables block )
-4 constant LATEST
-6 constant DP
-8 constant U0
-10 constant STATE
-12 constant FREEZEP
+\ We're working without a definition for R> here, because we're going to write
+\ an optimizing assembler before writing R> .
 
-$FFFF constant true  ( also abused as -1 below )
+: (docon)  ( -- x ) ( R: addr -- )
+  [ $6b8d asm, ]  ( machine code for R> )
+  @ ;
+
+\ -----------------------------------------------------------------------------
+\ Useful CONSTANTs.
+
+\ System variables. These memory locations are wired into the bootstrap
+\ program.
+4 constant LATEST  ( head of wordlist )
+6 constant DP  ( dictionary pointer, read by HERE )
+8 constant U0  ( address of user area )
+10 constant STATE  ( compiler state )
+12 constant FREEZEP  ( high-water-mark for code immune to fusion )
+
+$FFFF constant true  ( also abused as -1 below, since it's cheaper )
 0 constant false
 2 constant cell
 
+
+\ -----------------------------------------------------------------------------
+\ More useful Forth words.
+
 : tuck  ( a b -- b a b )  swap over ;
-: +!  tuck @ + swap ! ;
-: 0= 0 = ;
-: <> = invert ;
+: !  ( x addr -- )  2dup_!_drop drop ;
+: +!  ( x addr -- )  tuck @ + swap ! ;
+: aligned  ( addr -- a-addr )  dup 1 and + ;
+
+: c@  ( c-addr -- c )
+  dup_@
+  swap 1 and if ( lsb set )
+    8 rshift
+  else
+    $FF and
+  then ;
+
 : 2dup over over ;
+
+\ -----------------------------------------------------------------------------
+\ The Dictionary and the Optimizing Assembler.
+
+\ Because the host manipulates the dictionary, it's important to keep the
+\ layout consistent between us and the host. This is why LATEST, DP, and
+\ FREEZEP are part of the system variables block.
 
 : here  ( -- addr )  DP @ ;
 : allot  DP +! ;
-: freeze  here FREEZEP ! ;
-: cells  1 lshift ;
-: aligned  dup 1 and + ;
-
 : raw,  here !  cell allot ;
-: , raw, freeze ;
+: cells  1 lshift ;
 
-( Byte access. These words access the bytes within cells in little endian. )
-: c@  dup@
-      swap 1 and if ( lsb set )
-        8 rshift
-      else
-        $FF and
-      then ;
-
-( Assembles an instruction into the dictionary, with smarts. )
+\ We've been calling the host's emulation of asm, for building words out of
+\ machine code. Here's the actual definition.
 : asm,
   here FREEZEP @ xor if  ( Fusion is a possibility... )
     here cell - @   ( new-inst prev-inst )
@@ -98,88 +120,135 @@ $FFFF constant true  ( also abused as -1 below )
   ( Fusion was not possible, simply append the bits. )
   raw, ;
 
+\ Sometimes we want a clear separation between one instruction and the next.
+\ For example, if the second instruction is the target of control flow like a
+\ loop or if. The word freeze updates FREEZEP, preventing fusion of any
+\ instructions already present in the dictionary.
+: freeze  here FREEZEP ! ;
+
+\ Encloses a data cell in the dictionary. Prevents misinterpretation of the
+\ data as instructions by using freeze . Thus using , to assemble machine
+\ instructions will *work* but the results will have poor performance.
+: ,  ( x -- )  raw, freeze ;
+
+\ -----------------------------------------------------------------------------
+\ Aside: IMMEDIATE and STATE manipulation.
+
+\ Sets the flags on the most recent definition.
 : immediate
   LATEST @  cell +  ( nfa )
   dup c@ + 1 + aligned
   true swap ! ;
 
-: >r  $6147 asm, ; immediate
+\ Switches from compilation to interpretation.
+: [ 0 STATE ! ; immediate
+\ Switches from interpretation to compilation.
+: ] 1 STATE ! ;
+
+\ -----------------------------------------------------------------------------
+\ Forth return stack words. These are machine-language primitives like we have
+\ above, but since they affect the return stack, they (1) must be inlined at
+\ their site of use, and (2) cannot be automatically inlined by the compiler,
+\ because that would change the meaning of the code. Thus these are our first
+\ IMMEDIATE definitions as they have side effects on the current definition.
+
+\ It would be reasonable to describe this as the start of the compiler.
+
 : r>  $6b8d asm, ; immediate
+: >r  $6147 asm, ; immediate
 : r@  $6b81 asm, ; immediate
 : rdrop $600C asm, ; immediate
 : exit  $700c asm, ; immediate
 
-: execute  ( i*x xt -- j*x )  >r ; ( NOINLINE )
-: min  ( n1 n2 -- lesser )
-  2dup < if drop else nip then ;  ( TODO could be optimized )
+\ -----------------------------------------------------------------------------
+\ LITERAL
 
-( Compile in a word by XT, with smarts. )
+\ Compiles code to insert a computed literal into a definition.
+: literal  ( C: x -- )  ( -- x )
+  dup 0 < if  ( MSB set )
+    true swap invert
+  else
+    false swap
+  then
+  $8000 or asm,
+  if $6600 asm, then ; immediate
+
+
+\ -----------------------------------------------------------------------------
+\ The inlining XT compiler.
+
+\ Appends the execution semantics of a word to the current definition. In
+\ practice, this means either compiling in a call, or inlining it (if the
+\ target word contains a single returning instruction). The result goes
+\ through asm, and thus may be subject to fusion.
 : compile,  ( xt -- )
-  ( Convert the XT into an assembly instruction. )
-  dup@  $F04C and  $700C = if  ( Is the destination a fused op-return? )
-    ( Inline it with the return effect stripped. )
+  \ Check if the instruction at the start of the target code field is a
+  \ fused operate-return instruction.
+  dup_@  $F04C and  $700C = if
+    \ Retrieve it and mask out its return effect.
     @ $EFF3 and
   else
-    ( Convert the CFA into a call. )
+    \ Convert the CFA into a call.
     1 rshift $4000 or
   then
   asm, ;
 
-: c!  dup >r
-      1 and if ( lsb set )
-        8 lshift
-        r@ @ $FF and or
-      else
-        $FF and
-        r@ @ $FF00 and or
-      then
-      r> ! ;
 
-: c,  here c!  1 allot ;
+\ -----------------------------------------------------------------------------
+\ Our first evolution. This jettisons the host's implementation of the XT
+\ compiler and dictionary maintenance words, and switches to using the target
+\ versions, thus improving performance (and ensuring correctness).
 
-<TARGET-EVOLVE> ( make bootstrap aware of dictionary words )
+<TARGET-EVOLVE>
 
-: align
-  here 1 and if 0 c, then ;
 
-( Records the destination of a backwards branch, for later consumption by )
-( <resolve . )
-: mark<  ( -- dest )
-  freeze here ;
-( Assembles a backwards branch to a destination recorded by mark< . )
-( The type of the branch is given by the instruction template. )
+\ -----------------------------------------------------------------------------
+\ Basic control structures.
+
+\ Records the current location as the destination of a backwards branch, yet
+\ to be assembled by <resolve .
+: mark<  ( -- dest )  freeze here ;
+\ Assembles a backwards branch (using the given template) to a location left
+\ by mark< .
 : <resolve  ( dest template -- )
-  swap 1 rshift  ( convert to word address )
+  swap 1 rshift  \ convert to word address
   or asm, ;
 
-: begin  ( C: -- dest )  mark< ; immediate
-: again  ( C: dest -- )  0 <resolve ; immediate
-: until  ( C: dest -- )  $2000 <resolve ; immediate
-
-( Assembles a forward branch to an unresolved location, leaving its address. )
-( The address can be used to resolve the branch via >resolve . )
+\ Assembles a forward branch (using the given template) to a yet-unknown
+\ location. Leaves the address of the branch (the 'orig') on the stack for
+\ fixup via >resolve .
 : mark>  ( template -- orig )
   mark<  ( lightly abused for its 'freeze here' definition )
   swap asm, ;
-
-( Resolves a forward branch previously assembled by mark> . )
+\ Resolves a forward branch previously assembled by mark> by updating its
+\ destination field.
 : >resolve  ( orig -- )
   freeze
-  dup@  here 1 rshift or  swap ! ;
+  dup_@  here 1 rshift or  swap ! ;
 
+\ The host has been providing IF ELSE THEN until now. These definitions
+\ immediately shadow the host versions.
 : if  ( C: -- orig )  $2000 mark> ; immediate
 : then  ( C: orig -- )  >resolve ; immediate
 : else  ( C: orig1 -- orig2 )
   $0000 mark>
   swap >resolve ; immediate
 
+\ Loop support!
+: begin  ( C: -- dest )  mark< ; immediate
+: again  ( C: dest -- )  0 <resolve ; immediate
+: until  ( C: dest -- )  $2000 <resolve ; immediate
 : while  ( C: dest -- orig dest )
   $2000 mark> swap ; immediate
 : repeat  ( C: orig dest -- )
   $0000 <resolve
   >resolve ; immediate
 
-( Compares a string to the name field of a header. )
+
+\ -----------------------------------------------------------------------------
+\ Dictionary search.
+
+\ Compares a string to the name field of a definition.
 : name= ( c-addr u nfa -- ? )
   >r  ( stash the NFA )
   r@ c@ over = if  ( lengths equal )
@@ -200,7 +269,8 @@ $FFFF constant true  ( also abused as -1 below )
     r> false
   then nip nip nip ;
 
-( Variant of standard FIND that uses a modern string and returns the flags. )
+\ Searches the dictionary for a definition with the given name. This is a
+\ variant of standard FIND, which uses a counted string for some reason.
 : sfind  ( c-addr u -- c-addr u 0 | xt flags true )
   LATEST
   begin          ( c-addr u lfa )
@@ -220,25 +290,56 @@ $FFFF constant true  ( also abused as -1 below )
     r>      ( c-addr u lfa )
   repeat ;
 
-<TARGET-EVOLVE>  ( for sfind )
+\ Jettison the host's dictionary search code.
+<TARGET-EVOLVE>
 
-: literal
-  dup 0 < if  ( MSB set )
-    true swap invert
-  else
-    false swap
-  then
-  $8000 or asm,
-  if $6600 asm, then ; immediate
 
-( Address and length of current input SOURCE. )
+\ -----------------------------------------------------------------------------
+\ More useful Forth words.
+
+: execute  ( i*x xt -- j*x )  >r ; ( NOINLINE )
+: min  ( n1 n2 -- lesser )
+  2dup < if drop else nip then ;  ( TODO could be optimized )
+
+: c!  dup >r
+      1 and if ( lsb set )
+        8 lshift
+        r@ @ $FF and or
+      else
+        $FF and
+        r@ @ $FF00 and or
+      then
+      r> ! ;
+
+: c,  here c!  1 allot ;
+
+: align
+  here 1 and if 0 c, then ;
+  ( TODO this shouldn't have to comma zeroes, but name= has a bug )
+
+: 0= 0 = ;
+: <> = invert ;
+
+
+\ -----------------------------------------------------------------------------
+\ Support for VARIABLE .
+
+\ Because we don't need VARIABLE until much later in bootstrap, we can write
+\ its code fragment more clearly than (docon) .
+
+: (dovar) r> ;
+
+
+\ -----------------------------------------------------------------------------
+\ Basic source code input support and parsing.
+
+\ Address and length of current input SOURCE.
 variable 'SOURCE  cell allot
-: SOURCE  'SOURCE dup@ swap cell + @ ;
+\ Returns the current input as a string.
+: SOURCE  ( -- c-addr u )  'SOURCE dup_@ swap cell + @ ;
 
-( Offset within SOURCE. )
+\ Holds the number of characters consumed from SOURCE so far.
 variable >IN
-
-<TARGET-EVOLVE>  ( for SOURCE and >IN )
 
 : /string   ( c-addr u n -- c-addr' u' )
   >r  r@ - swap  r> + swap ;
@@ -263,9 +364,11 @@ variable >IN
   2dup  1 min +  'SOURCE @ -  >IN !
   drop r> tuck - ;
 
-: [ 0 STATE ! ; immediate
-: ] 1 STATE ! ;
 
+\ -----------------------------------------------------------------------------
+\ Header creation and defining words.
+
+\ Encloses a string in the dictionary as a counted string.
 : s,  ( c-addr u -- )
   dup c,        ( Length byte )
   over + swap   ( c-addr-end c-addr-start )
@@ -277,6 +380,8 @@ variable >IN
   repeat
   drop drop align ;
 
+\ Implementation factor of the other defining words: parses a name and creates
+\ a header, without generating any code.
 : (CREATE)
   ( link field )
   align here  LATEST @ ,  LATEST !
@@ -285,19 +390,17 @@ variable >IN
   ( flags )
   0 , ;
 
+<TARGET-EVOLVE>
+  \ Cause the host to notice 'SOURCE and >IN, which enables the use of target
+  \ parsing words. Because our definitions for CONSTANT , VARIABLE , and : are
+  \ about to shadow the host emulated versions, this support is important!
+
+: :  (CREATE) ] ;
+  \ Note that this definition gets used immediately.
+
 : create
   (CREATE)
   [ ' (dovar) ] literal compile, ;
-
-: :  (CREATE) ] ;
-
-: ;  $700C asm,
-  ( this is faking POSTPONE: )
-  [ ' [ compile, ]
-  ( and now we need to set this definition IMMEDIATE, )
-  ( because we're about to invoke it to end its own definition. )
-  [ immediate ]
-  ;
 
 : constant
   (CREATE)
@@ -306,12 +409,49 @@ variable >IN
 
 : variable create 0 , ;
 
-<TARGET-EVOLVE>  ( clearing fallback stats )
 
-( General code above )
+\ -----------------------------------------------------------------------------
+\ Semicolon. This is my favorite piece of code in the kernel, and the most
+\ heavily commented punctuation character of my career thus far.
 
+\ Recall that the Forth word ; (semicolon) has the effect of compiling in a
+\ return-from-colon-definition sequence and returning to the interpreter.
+
+\ Recall also that ; is an IMMEDIATE word (it has to be, to have those effects
+\ during compilation).
+
+\ Finally, note that BsForth never hides definitions. A definition is available
+\ for recursion without further effort, in deviation from the standard.
+
+\ Alright, that said, let's go.
+: ;
+  [ ' exit compile, ]  \ aka POSTPONE exit
+  [ ' [    compile, ]  \ aka POSTPONE [
+
+  \ Now we have a condundrum. How do we end this definition? We've been using a
+  \ host-emulated version of ; to end definitions 'till now. But now that a
+  \ definition exists in the target, it *immediately* shadows the emulated
+  \ version. We can't simply write ; because ; is not yet IMMEDIATE. But we can
+  \ fix that:
+  [ immediate ]
+
+  \ Because ; is now IMMEDIATE, we are going to recurse *at compile time.* We
+  \ invoke the target definition of ; to complete the target definition of ; by
+  \ performing the actions above.
+  ;
+
+\ Voila. Tying the knot in the Forth compiler.
+
+
+\ -----------------------------------------------------------------------------
+\ END OF GENERAL KERNEL CODE
+\ -----------------------------------------------------------------------------
+<TARGET-EVOLVE>  \ Clear stats on host emulated word usage.
 .( After compiling general-purpose code, HERE is... )
 here host.
+
+
+
 
 ( ----------------------------------------------------------- )
 ( Icestick SoC support code )
@@ -359,11 +499,11 @@ $C006 constant timer-m1
 ( UART emulation )
 
 ( Spins reading a variable until it contains zero. )
-: poll0  ( addr -- )  begin dup@ 0= until drop ;
+: poll0  ( addr -- )  begin dup_@ 0= until drop ;
 
 ( Decrements a counter variable and leaves its value on stack )
 : -counter  ( addr -- u )
-  dup@   ( addr u )
+  dup_@   ( addr u )
   1 -     ( addr u' )
   swap    ( u' addr )
   2dup_!_drop ;  ( u' )
