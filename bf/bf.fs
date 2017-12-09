@@ -450,6 +450,84 @@ variable >IN
 
 
 \ -----------------------------------------------------------------------------
+\ More useful Forth words.
+
+: rot  ( x1 x2 x3 -- x2 x3 x1 )
+  >r swap r> swap ;
+: -rot  ( x1 x2 x3 -- x3 x1 x2 )
+  rot rot ; ( TODO could likely be cleverer )
+
+\ -----------------------------------------------------------------------------
+\ User-facing terminal.
+
+\ We assume there is a terminal that operates like a, well, terminal, without
+\ fancy features like online editing. We can't assume anything about its
+\ implementation, however, so we have to define terminal operations in terms
+\ of hooks to be implemented later for a specific device.
+
+\ XT storage for the key and emit vectors. This is strictly less efficient than
+\ using DEFER and should probably get changed later.
+variable 'key
+variable 'emit
+
+: key 'key @ execute ;
+: emit 'emit @ execute ;
+
+$20 constant bl
+: space bl emit ;
+: beep 7 emit ;
+
+: cr $D emit $A emit ;
+  \ This assumes a traditional terminal and is a candidate for vectoring.
+
+: type  ( c-addr u -- )
+  over + swap
+  begin
+    2dup_xor
+  while
+    dup c@ emit
+    1+
+  repeat 2drop ;
+
+\ Receive a string of at most u characters, allowing basic line editing.
+\ Returns the number of characters received, which may be zero.
+: accept  ( c-addr u -- u )
+  >r 0
+  begin ( c-addr pos ) ( R: limit )
+    key
+
+    $1F over u< if  \ Printable character
+      over r@ u< if   \ in bounds
+        dup emit  \ echo character
+        >r 2dup_+ r>  ( c-addr pos dest c )
+        swap c! 1+    ( c-addr pos' )
+        0  \ "key" for code above
+      else  \ buffer full
+        beep
+      then
+    then
+
+    3 over_= if   \ ^C - abort
+      2drop 0     \ Reset buffer to zero
+      $D          \ act like a CR
+    then
+
+    8 over_= if   \ Backspace
+      drop
+      dup if  \ Not at start of line
+        8 emit  space  8 emit   \ rub out character
+        1 -
+      else    \ At start of line
+        beep
+      then
+      0
+    then
+
+    $D =
+  until
+  rdrop nip ;
+
+\ -----------------------------------------------------------------------------
 \ END OF GENERAL KERNEL CODE
 \ -----------------------------------------------------------------------------
 <TARGET-EVOLVE>  \ Clear stats on host emulated word usage.
@@ -666,12 +744,25 @@ variable uart-rx-tl
   r> 2 - >r
   enable-interrupts ;
 
+create TIB 80 allot
+
+: rx! rx 0= if rx! exit then ;
+
+' tx 'emit !
+' rx! 'key !
+
 : cold
   uart-rx-init
   enable-interrupts
   $FF tx
+  35 emit
+  LATEST @ cell + 1 + 4 type
+  35 emit
   begin
-    rx if tx else drop then
+    TIB 80 accept
+    cr
+    TIB swap type
+    cr
   again ;
 
 ( install cold as the reset vector )
