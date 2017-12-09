@@ -585,48 +585,41 @@ $C006 constant timer-m1
 .( Compiling soft UART... )
 here
 
-( Spins reading a variable until it contains zero. )
-: poll0  ( addr -- )  begin dup_@ 0= until drop ;
-
-( Decrements a counter variable and leaves its value on stack )
-: -counter  ( addr -- u )
-  dup_@   ( addr u )
-  1 -     ( addr u' )
-  swap    ( u' addr )
-  2dup_!_drop ;  ( u' )
-
 2500 constant cycles/bit
 1250 constant cycles/bit/2
 
-variable uart-tx-bits   ( holds bits as they're shifted out )
-variable uart-tx-count  ( tracks the number of bits remaining )
+variable uart-tx-bits
+  \ Holds bits as they're shifted out.
+  \ Because the final bit to be shifted out, the stop bit, is a 1,
+  \ this also serves as a "transmitter available" indicator when 0.
 
 : tx-isr
-  1 timer-flags !     ( acknowledge interrupt )
-  uart-tx-bits @
-  1 over_and
-  if outport-set else outport-clr then
-  1 swap !
-  1 rshift uart-tx-bits !
+  \ Acknowledge interrupt by writing 1 to bit 0 of timer-flags.
+  \ Keep the 1 around; we're going to use it to save cycles.
+  1 timer-flags 2dup_!_drop
+  \ Read the transmit shift register, and derive its LSB using the 1.
+  uart-tx-bits @  2dup_and  ( 1 bits lsb )
+  if outport-set else outport-clr then  ( 1 bits regaddr )
+  1 swap !  ( 1 bits )
+  swap rshift   ( bits' )
+  uart-tx-bits 2dup_!_drop  ( bits' )
 
-  uart-tx-count -counter if
+  if  \ bits remain
     timer-ctr @ cycles/bit + timer-m1 !
-  else
+  else  \ bits all gone
     irq-timer-m1 disable-irq
   then ;
 
 : tx
   ( Wait for transmitter to be free )
-  uart-tx-count poll0
+  begin uart-tx-bits @ 0= until
   ( Frame the byte )
   1 lshift
   $200 or
   uart-tx-bits !
-  10 uart-tx-count !
   irq-timer-m1 enable-irq ;
 
 variable uart-rx-bits
-variable uart-rx-bitcount
 
 variable uart-rx-buf  3 cells allot
 variable uart-rx-hd
@@ -674,7 +667,7 @@ variable uart-rx-tl
   irq-inport-negedge disable-irq
 
   \ Prepare to receive a ten bit frame.
-  10 uart-rx-bitcount !
+  10 #bit uart-rx-bits !
 
   \ Now enable its interrupt.
   irq-timer-m0 enable-irq ;
@@ -686,12 +679,9 @@ variable uart-rx-tl
   \ Reset the timer for the next sample point.
   timer-ctr @  cycles/bit +  timer-m0 !
   \ Load this into the frame shift register.
-  uart-rx-bits @  1 rshift  or  uart-rx-bits !
-  \ Decrement the bit count.
-  uart-rx-bitcount -counter if \ we have more bits to receive
-    \ Clear the interrupt condition.
-    2 timer-flags !
-  else  \ we're done, disable timer interrupt
+  uart-rx-bits @  1 rshift  or  uart-rx-bits 2dup_!_drop
+  \ Check the LSB to see if we're done.
+  1 and if  \ all done
     irq-timer-m0 disable-irq
     \ Enqueue the received frame
     uart-rx-bits @ >rxq
@@ -701,6 +691,9 @@ variable uart-rx-tl
     irq-inport-negedge enable-irq
     \ Conservatively deassert CTS to try and stop sender.
     CTSoff
+  else  \ more bits to receive
+    \ Clear the interrupt condition.
+    2 timer-flags !
   then ;
 
 \ Receives a byte from RX, returning the bits and a valid flag. The valid flag may
