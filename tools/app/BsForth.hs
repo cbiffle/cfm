@@ -266,7 +266,7 @@ lookupWordH nameS = readLatest >>= lookupWordFrom
 -- | Target-implemented version of lookupWord based on SFind.
 lookupWordT :: (MonadTarget m) => String -> WordAddr -> m (Maybe (WordAddr, Word))
 lookupWordT name xt = do
-  h <- readHere
+  h <- (80 +) . aligned <$> readHere
   zipWithM_ tstore [word2wa h ..] $ nameFromString name
   tpush (h + 1)
   tpush (fromIntegral (length name))
@@ -342,8 +342,19 @@ fuse i = do
 inst :: (MonadTarget m) => Inst -> BsT m ()
 inst = rawInst . pack
 
+aligned :: Word -> Word
+aligned x = x + (x .&. 1)
+
+align :: (MonadTarget m) => BsT m ()
+align = do
+  h <- readHere
+  if (h .&. 1) /= 0
+    then writeHere (h + 1)
+    else pure ()
+
 createHeader :: (MonadTarget m) => Name -> Word -> BsT m ()
 createHeader name flags = do
+  align
   h <- readHere
   readLatest >>= comma . wa2word
   mapM_ comma name
@@ -498,7 +509,7 @@ callParser xt = do
       liftIO $ putStrLn $ "Calling target parsing word " ++ show xt ++ " with: " ++ w
       -- Copy it into a PAD-like transient region. We'll copy it as a counted
       -- string because I've already got code for that.
-      buf <- ((+ 80) . word2wa) <$> readHere
+      buf <- (word2wa . (+ 80) . aligned) <$> readHere
       zipWithM_ tstore [buf ..] (nameFromString w)
       -- Designate its location in 'SOURCE.
       tstore (tsource + 1) (wa2word buf + 1)
