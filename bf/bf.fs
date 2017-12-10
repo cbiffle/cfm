@@ -593,7 +593,40 @@ variable 'ABORT
   repeat
   2drop ;
 
+\ -----------------------------------------------------------------------------
+\ Parsing words and target syntax.
 
+\ These can't use the TARGET-PARSER: support, because they are "partial
+\ functions" of the input text -- that is, there are input sequences that need
+\ to trigger failure, but the target has no good way of indicating that at this
+\ point. Thus we use TARGET-MASK: instead to keep using the host emulation.
+
+TARGET-MASK: '
+: '  ( "name" -- xt )
+  parse-name dup if
+    sfind if  ( xt flags )
+      drop exit
+    then
+    \ Got input, but the input was bogus:
+    type
+    $3F emit
+    cr
+  then \ Bogus input or end-of-input:
+  ABORT ;
+
+TARGET-MASK: \
+\ Line comments simply discard the rest of input.
+: \
+  SOURCE nip >IN ! ;  immediate
+
+TARGET-MASK: (
+: isnotparen?  $29 <> ;
+\ Block comments look for a matching paren.
+: (
+  SOURCE  >IN @  /string  ( c-addr u )
+  [ ' isnotparen? ] literal skip-while  ( c-addr' u' )
+  1 min +  \ consume the trailing paren
+  'SOURCE @ -  >IN ! ;  immediate
 
 \ -----------------------------------------------------------------------------
 \ END OF GENERAL KERNEL CODE

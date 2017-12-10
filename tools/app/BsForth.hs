@@ -101,6 +101,7 @@ data FS = FS
   , fsCache :: M.Map KnownXT WordAddr
   , fsFallbacks :: M.Map String Int
   , fsParsers :: S.Set String
+  , fsMasked :: S.Set String
   }
 
 data KnownXT = CommaXT
@@ -144,6 +145,7 @@ bootstrap a source = do
       , fsCache = M.empty
       , fsFallbacks = M.empty
       , fsParsers = S.empty
+      , fsMasked = S.empty
       }
 
 clearFallbacks :: Monad m => BsT m ()
@@ -479,6 +481,11 @@ fallback "TARGET-PARSER:" = do
   liftIO $ putStrLn $ "TARGET-PARSER: " ++ w
   modify $ \s -> s { fsParsers = S.insert w (fsParsers s) }
 
+fallback "TARGET-MASK:" = do
+  w <- takeWord
+  liftIO $ putStrLn $ "TARGET-MASK: " ++ w
+  modify $ \s -> s { fsMasked = S.insert w (fsMasked s) }
+
 fallback ('$' : hnum) | all isHexDigit hnum = do
   s <- readState
   case s of
@@ -532,8 +539,9 @@ interpreter = do
   unless eoi $ do
     w <- takeWord
     me <- lookupWord w
+    mask <- gets fsMasked
     case me of
-      Just (cfa, flags) -> do
+      Just (cfa, flags) | not (S.member w mask) -> do
         s <- readState
         case s of
           Interpreting
@@ -546,7 +554,7 @@ interpreter = do
           Compiling    -> if flags == 0
                             then compile $ wa2word cfa
                             else tcall cfa
-      Nothing -> do
+      _ -> do
         modify $ \s -> s { fsFallbacks =
           M.insert w (M.findWithDefault 0 w (fsFallbacks s) + 1) (fsFallbacks s) }
         fallback w
