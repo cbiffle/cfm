@@ -323,6 +323,8 @@ $FFFF constant true  ( also abused as -1 below, since it's cheaper )
 : 0= 0 = ;
 : <> = invert ;
 
+: :noname
+  align here ] ;
 
 \ -----------------------------------------------------------------------------
 \ Support for VARIABLE .
