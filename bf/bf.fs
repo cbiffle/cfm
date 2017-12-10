@@ -398,17 +398,25 @@ variable >IN
   \ parsing words. Because our definitions for CONSTANT , VARIABLE , and : are
   \ about to shadow the host emulated versions, this support is important!
 
+TARGET-PARSER: :
+
 : :  (CREATE) ] ;
   \ Note that this definition gets used immediately.
+
+TARGET-PARSER: create
 
 : create
   (CREATE)
   [ ' (dovar) ] literal compile, ;
 
+TARGET-PARSER: constant
+
 : constant
   (CREATE)
   [ ' (docon) ] literal compile,
   , ;
+
+TARGET-PARSER: variable
 
 : variable create 0 , ;
 

@@ -100,6 +100,7 @@ data FS = FS
   { fsInput :: String
   , fsCache :: M.Map KnownXT WordAddr
   , fsFallbacks :: M.Map String Int
+  , fsParsers :: S.Set String
   }
 
 data KnownXT = CommaXT
@@ -142,6 +143,7 @@ bootstrap a source = do
       { fsInput = source
       , fsCache = M.empty
       , fsFallbacks = M.empty
+      , fsParsers = S.empty
       }
 
 clearFallbacks :: Monad m => BsT m ()
@@ -191,7 +193,6 @@ takeWord = do
   when (null w) (throwError WordExpected)
   modify $ \s -> s { fsInput = if null rest then [] else tail rest }
   pure w
-
 
 -- | Reads the vocabulary head cell, giving the LFA of the latest definition.
 readLatest :: (MonadTarget m) => m WordAddr
@@ -473,6 +474,11 @@ fallback "host." = do
   v <- tpop
   hostlog $ show (fromIntegral v :: Integer)
 
+fallback "TARGET-PARSER:" = do
+  w <- takeWord
+  liftIO $ putStrLn $ "TARGET-PARSER: " ++ w
+  modify $ \s -> s { fsParsers = S.insert w (fsParsers s) }
+
 fallback ('$' : hnum) | all isHexDigit hnum = do
   s <- readState
   case s of
@@ -519,17 +525,6 @@ callParser xt = do
       -- execute
       tcall xt
 
--- | A list of target words that parse. This tool will ensure that the next
--- word of source is copied into the target's SOURCE buffer before any target
--- definitions named here are interpreted.
---
--- Words that look up an *existing* word and may need to signal failure are not
--- listed here, because the parsing mechanism we currently provide can't detect
--- their failure.
-knownParsers :: S.Set String
-knownParsers = S.fromList
-  [":", "constant", "variable", "create"]
-
 interpreter :: (MonadIO m, MonadTarget m) => BsT m ()
 interpreter = do
   modify $ \s -> s { fsInput = dropWhile isSpace (fsInput s) }
@@ -542,9 +537,11 @@ interpreter = do
         s <- readState
         case s of
           Interpreting
-            | flags == 0 -> if S.member w knownParsers
-                              then callParser cfa
-                              else tcall cfa
+            | flags == 0 -> do
+              ps <- gets fsParsers
+              if S.member w ps
+                then callParser cfa
+                else tcall cfa
             | otherwise -> throwError (BadState Interpreting Compiling w)
           Compiling    -> if flags == 0
                             then compile $ wa2word cfa
