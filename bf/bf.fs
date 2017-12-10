@@ -744,7 +744,8 @@ variable uart-tx-bits
 
 variable uart-rx-bits
 
-variable uart-rx-buf  3 cells allot
+8 constant uart-#rx
+variable uart-rx-buf  uart-#rx 1 - cells allot
 variable uart-rx-hd
 variable uart-rx-tl
 
@@ -752,7 +753,7 @@ variable uart-rx-tl
 : CTSoff 2 outport-set ! ;
 
 : rxq-empty? uart-rx-hd @ uart-rx-tl @ = ;
-: rxq-full? uart-rx-hd @ uart-rx-tl @ - 4 = ;
+: rxq-full? uart-rx-hd @ uart-rx-tl @ - uart-#rx = ;
 
 ( Inserts a cell into the receive queue. This is intended to be called from )
 ( interrupt context, so if it encounters a queue overrun, it simply drops )
@@ -761,14 +762,14 @@ variable uart-rx-tl
   rxq-full? if
     drop
   else
-    uart-rx-buf  uart-rx-hd @ 6 and +  !
+    uart-rx-buf  uart-rx-hd @ [ uart-#rx 1 - 1 lshift ] literal and +  !
     2 uart-rx-hd +!
   then ;
 
 ( Takes a cell from the receive queue. If the queue is empty, spin. )
 : rxq>
   begin rxq-empty? 0= until
-  uart-rx-buf  uart-rx-tl @ 6 and +  @
+  uart-rx-buf  uart-rx-tl @ [ uart-#rx 1 - 1 lshift ] literal and +  @
   2 uart-rx-tl +! ;
 
 : uart-rx-init
