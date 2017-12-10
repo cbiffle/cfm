@@ -77,7 +77,7 @@ $FFFF constant true  ( also abused as -1 below, since it's cheaper )
 : tuck  ( a b -- b a b )  swap over ;
 : !  ( x addr -- )  2dup_!_drop drop ;
 : +!  ( x addr -- )  tuck @ + swap ! ;
-: aligned  ( addr -- a-addr )  dup 1 and + ;
+: aligned  ( addr -- a-addr )  1 over_and + ;
 
 : c@  ( c-addr -- c )
   dup_@
@@ -102,6 +102,7 @@ $FFFF constant true  ( also abused as -1 below, since it's cheaper )
 : allot  DP +! ;
 : raw,  here !  cell allot ;
 : cells  1 lshift ;
+: align  here  aligned  DP ! ;
 
 \ We've been calling the host's emulation of asm, for building words out of
 \ machine code. Here's the actual definition.
@@ -263,7 +264,7 @@ $FFFF constant true  ( also abused as -1 below, since it's cheaper )
       dup
     while
       >r
-      over @ over @ xor if
+      over c@ over c@ xor if
         rdrop
         2drop 0 exit
       then
@@ -318,10 +319,6 @@ $FFFF constant true  ( also abused as -1 below, since it's cheaper )
       r> ! ;
 
 : c,  here c!  1 allot ;
-
-: align
-  here 1 and if 0 c, then ;
-  ( TODO this shouldn't have to comma zeroes, but name= has a bug )
 
 : 0= 0 = ;
 : <> = invert ;
