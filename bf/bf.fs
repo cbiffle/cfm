@@ -630,6 +630,26 @@ TARGET-MASK: (
   1 min +  \ consume the trailing paren
   'SOURCE @ -  >IN ! ;  immediate
 
+: (S")
+  r>        ( addr )
+  dup 1+
+  swap c@   ( c-addr u )
+  2dup_+ aligned  ( c-addr u end )
+  >r ;
+
+: isnotquote?  $22 <> ;
+: S"
+  SOURCE  >IN @  /string
+  over >r
+  [ ' isnotquote? ] literal skip-while
+  2dup  1 min +  'SOURCE @ -  >IN !
+  drop r> tuck -
+
+  [ ' (S") ] literal compile,
+  s, ;  immediate
+  
+
+
 \ -----------------------------------------------------------------------------
 \ END OF GENERAL KERNEL CODE
 \ -----------------------------------------------------------------------------
