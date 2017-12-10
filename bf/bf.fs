@@ -753,7 +753,8 @@ variable uart-rx-tl
   \ Clear any pending negedge condition
   0 inport !
   \ Enable the initial negedge ISR to detect the start bit.
-  irq-inport-negedge enable-irq ;
+  irq-inport-negedge enable-irq
+  CTSon ;
 
 \ Triggered when we're between frames and RX drops.
 : rx-negedge-isr
@@ -845,11 +846,11 @@ create TIB 80 allot
 : quit
   [ ' [ compile, ]
   begin
-    TIB 80 accept
-    space
     TIB 'SOURCE !
-    'SOURCE cell + !
+    80  'SOURCE cell + !
     0 >IN !
+    SOURCE accept  'SOURCE cell + !
+    space
     interpret
     STATE @ 0= if  
       $6F emit $6B emit
@@ -862,9 +863,9 @@ create TIB 80 allot
 ' quit 'ABORT !
 
 : cold
+  1 outport-set !   \ raise TX line soon after reset
   uart-rx-init
   enable-interrupts
-  $FF tx
   35 emit
   LATEST @ cell + 1 + 4 type
   35 emit
