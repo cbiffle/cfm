@@ -454,6 +454,7 @@ variable >IN
 : -rot  ( x1 x2 x3 -- x3 x1 x2 )
   rot rot ; ( TODO could likely be cleverer )
 
+
 \ -----------------------------------------------------------------------------
 \ User-facing terminal.
 
@@ -523,6 +524,68 @@ $20 constant bl
     $D =
   until
   rdrop nip ;
+
+: .
+  begin
+    dup  12 rshift  9 over u< 7 and +  $30 +  emit
+    4 lshift
+    dup 0=
+  until drop space ;
+
+\ -----------------------------------------------------------------------------
+\ Text interpreter.
+
+variable 'ABORT
+: ABORT  'ABORT @ execute ;
+
+: digit  ( c -- x )
+  $30 -
+  9 over u< 7 and -
+  15 over u< if ABORT then ;
+
+: nstep  ( n c -- n' )
+  4 lshift swap
+  digit + ;
+
+: sfoldl  ( c-addr u x0 xt -- x )
+  >r >r
+  over + swap
+  begin
+    2dup_xor
+  while
+    dup c@ r> r@ execute >r
+    1+
+  repeat
+  2drop r> rdrop ;
+
+: number  ( c-addr u -- x )
+  0 [ ' nstep ] literal sfoldl ;
+
+: interpret
+  begin
+    parse-name
+  dup while
+    sfind if  \ word found
+      ( xt flags )
+      if  \ immediate
+        execute
+      else  \ normal
+        STATE @ if  \ compiling
+          compile,
+        else  \ interpreting
+          execute
+        then
+      then
+    else  \ word unknown
+      number
+      STATE @ if
+        [ ' literal compile, ]
+      then
+    then
+  repeat
+  2drop ;
+
+
 
 \ -----------------------------------------------------------------------------
 \ END OF GENERAL KERNEL CODE
@@ -738,8 +801,24 @@ create TIB 80 allot
 
 : rx! rx 0= if rx! exit then ;
 
+: quit
+  [ ' [ compile, ]
+  begin
+    TIB 80 accept
+    space
+    TIB 'SOURCE !
+    'SOURCE cell + !
+    0 >IN !
+    interpret
+    STATE @ 0= if  
+      $6F emit $6B emit
+    then
+    cr
+  again ;
+
 ' tx 'emit !
 ' rx! 'key !
+' quit 'ABORT !
 
 : cold
   uart-rx-init
@@ -748,12 +827,7 @@ create TIB 80 allot
   35 emit
   LATEST @ cell + 1 + 4 type
   35 emit
-  begin
-    TIB 80 accept
-    cr
-    TIB swap type
-    cr
-  again ;
+  quit ;
 
 ( install cold as the reset vector )
 ' cold  1 rshift  0 !
