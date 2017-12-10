@@ -464,6 +464,29 @@ TARGET-PARSER: variable
 : -rot  ( x1 x2 x3 -- x3 x1 x2 )
   rot rot ; ( TODO could likely be cleverer )
 
+: (does>)
+  LATEST @  cell +  ( nfa )
+  dup c@ + 1+ aligned ( ffa )
+  cell + ( cfa )
+  
+  \ Store a call to our return address into the code field.
+  r> 1 rshift $4000 or swap ! ;
+
+: does>
+  \ End the defining code with a non-tail call to (does>)
+  [ ' (does>) ] literal compile, freeze
+  \ Control will reach this point from the call instruction at the start of the
+  \ code field. We need to reveal the parameter field address by postponing r>
+  [ ' r> compile, ]
+  ; immediate
+
+variable #user
+  \ Holds the number of user variables that have been defined.
+TARGET-PARSER: user
+: user
+  create  #user @ cells ,  1 #user +!
+  does> @  U0 @ + ;
+
 
 \ -----------------------------------------------------------------------------
 \ User-facing terminal.
