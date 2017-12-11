@@ -137,13 +137,15 @@ $FFFF constant true  ( also abused as -1 below, since it's cheaper )
 \ Sometimes we want a clear separation between one instruction and the next.
 \ For example, if the second instruction is the target of control flow like a
 \ loop or if. The word freeze updates FREEZEP, preventing fusion of any
-\ instructions already present in the dictionary.
-: freeze  here FREEZEP ! ;
+\ instructions already present in the dictionary. It returns the value of here,
+\ because we basically always want that when using freeze.
+: freeze  ( -- addr )
+  here FREEZEP 2dup_!_drop ;
 
 \ Encloses a data cell in the dictionary. Prevents misinterpretation of the
 \ data as instructions by using freeze . Thus using , to assemble machine
 \ instructions will *work* but the results will have poor performance.
-: ,  ( x -- )  raw, freeze ;
+: ,  ( x -- )  raw, freeze drop ;
 
 \ -----------------------------------------------------------------------------
 \ Aside: IMMEDIATE and STATE manipulation.
@@ -220,7 +222,7 @@ $FFFF constant true  ( also abused as -1 below, since it's cheaper )
 
 \ Records the current location as the destination of a backwards branch, yet
 \ to be assembled by <resolve .
-: mark<  ( -- dest )  freeze here ;
+: mark<  ( -- dest )  freeze ;
 \ Assembles a backwards branch (using the given template) to a location left
 \ by mark< .
 : <resolve  ( dest template -- )
@@ -231,13 +233,14 @@ $FFFF constant true  ( also abused as -1 below, since it's cheaper )
 \ location. Leaves the address of the branch (the 'orig') on the stack for
 \ fixup via >resolve .
 : mark>  ( template -- orig )
-  mark<  ( lightly abused for its 'freeze here' definition )
+  freeze
   swap asm, ;
 \ Resolves a forward branch previously assembled by mark> by updating its
 \ destination field.
 : >resolve  ( orig -- )
-  freeze
-  dup_@  here u2/ or  swap ! ;
+  dup_@
+  freeze u2/ or
+  swap ! ;
 
 \ The host has been providing IF ELSE THEN until now. These definitions
 \ immediately shadow the host versions.
@@ -481,7 +484,7 @@ TARGET-PARSER: variable
 
 : does>
   \ End the defining code with a non-tail call to (does>)
-  [ ' (does>) ] literal compile, freeze
+  [ ' (does>) ] literal compile, freeze drop
   \ Control will reach this point from the call instruction at the start of the
   \ code field. We need to reveal the parameter field address by postponing r>
   [ ' r> compile, ]
