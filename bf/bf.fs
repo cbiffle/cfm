@@ -366,13 +366,13 @@ $FFFF constant true  ( also abused as -1 below, since it's cheaper )
 
 \ Introduces a quotation. May nest.
 : [:
-  [ ' ([:) ] literal compile,
+  postpone ([:)
   0 mark>
   ; immediate
 
 \ Ends a quotation.
 : ;]
-  [ ' exit compile, ]
+  postpone exit
   >resolve
   ; immediate
 
@@ -457,13 +457,13 @@ TARGET-PARSER: create
 
 : create
   (CREATE)
-  [ ' (dovar) ] literal compile, ;
+  postpone (dovar) ;
 
 TARGET-PARSER: constant
 
 : constant
   (CREATE)
-  [ ' (docon) ] literal compile,
+  postpone (docon)
   , ;
 
 TARGET-PARSER: variable
@@ -486,8 +486,8 @@ TARGET-PARSER: variable
 
 \ Alright, that said, let's go.
 : ;
-  [ ' exit compile, ]  \ aka POSTPONE exit
-  [ ' [    compile, ]  \ aka POSTPONE [
+  postpone exit
+  postpone [
 
   \ Now we have a condundrum. How do we end this definition? We've been using a
   \ host-emulated version of ; to end definitions 'till now. But now that a
@@ -514,7 +514,7 @@ TARGET-PARSER: variable
   ;] compile, freeze drop
   \ Control will reach this point from the call instruction at the start of the
   \ code field. We need to reveal the parameter field address by postponing r>
-  [ ' r> compile, ]
+  postpone r>
   ; immediate
 
 variable #user
@@ -658,7 +658,7 @@ user base  16 base !
     else  \ word unknown
       number
       STATE @ if
-        [ ' literal compile, ]
+        postpone literal
       then
     then
   repeat
@@ -716,7 +716,24 @@ TARGET-MASK: (
       >r
   ;] compile,
   s, ;  immediate
-  
+
+TARGET-MASK: postpone
+: postpone
+  parse-name dup if
+    sfind if  ( xt flags )
+      if  \ immediate
+        compile,
+      else  \ normal
+        postpone literal
+        postpone compile,
+      then
+      exit
+    then
+    type
+    $3F emit
+    cr
+  then
+  ABORT ;
 
 
 \ -----------------------------------------------------------------------------
@@ -936,7 +953,7 @@ create TIB 80 allot
 : rx! rx 0= if rx! exit then ;
 
 : quit
-  [ ' [ compile, ]
+  postpone [
   begin
     TIB 'SOURCE !
     80  'SOURCE cell + !

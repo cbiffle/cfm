@@ -382,6 +382,14 @@ compileOnly name = do
   s <- readState
   when (s /= Compiling) (throwError (BadState s Compiling name))
 
+requireWord' :: (MonadTarget m) => String -> BsT m (WordAddr, Word)
+requireWord' name = do
+  def <- lookupWord name
+  maybe (throwError (UnknownWord name)) pure def
+
+requireWord :: (MonadTarget m) => String -> BsT m WordAddr
+requireWord = fmap fst . requireWord'
+
 fallback :: (MonadIO m, MonadTarget m) => String -> BsT m ()
 fallback ":" = do
   interpretationOnly ":"
@@ -401,24 +409,18 @@ fallback "exit" = do
 fallback "constant" = do
   interpretationOnly "constant"
 
-  docon <- lookupWord "(docon)"
-  case docon of
-    Nothing -> throwError $ UnknownWord "(docon)"
-    Just (xt, _) -> do
-      v <- tpop
-      w <- nameFromString <$> takeWord
-      createHeader w 0
-      inst $ NotLit $ Call $ truncateB xt
-      comma v
+  xt <- requireWord "(docon)"
+  v <- tpop
+  w <- nameFromString <$> takeWord
+  createHeader w 0
+  inst $ NotLit $ Call $ truncateB xt
+  comma v
 
 fallback "variable" = do
   interpretationOnly "variable"
-  dovar <- lookupWord "(dovar)"
-  case dovar of
-    Nothing -> throwError $ UnknownWord "(dovar)"
-    Just (xt, _) -> do
-      mcreate
-      inst $ NotLit $ Call $ truncateB xt
+  xt <- requireWord "(dovar)"
+  mcreate
+  inst $ NotLit $ Call $ truncateB xt
   comma 0
 
 fallback "asm," = do
@@ -445,10 +447,22 @@ fallback ".(" = do
 fallback "'" = do
   interpretationOnly "'"
   w <- takeWord
-  me <- lookupWord w
-  case me of
-    Just (cfa, _) -> tpush (wa2word cfa)
-    Nothing -> throwError $ UnknownWord w
+  xt <- requireWord w
+  tpush (wa2word xt)
+
+fallback "postpone" = do
+  compileOnly "postpone"
+  w <- takeWord
+
+  compileXt <- requireWord "compile,"
+  (xt, flags) <- requireWord' w
+
+  if flags == 0
+    then do
+      literal $ wa2word xt
+      compile $ wa2word compileXt
+    else
+      compile $ wa2word xt
 
 fallback "if" = do
   compileOnly "if"
