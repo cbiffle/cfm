@@ -105,6 +105,12 @@ $FFFF constant true  ( also abused as -1 below, since it's cheaper )
 : cells  1 lshift ;
 : align  here  aligned  DP ! ;
 
+\ Access to the CFA/xt of the most recently defined word.
+: lastxt  ( -- xt )
+  LATEST @  cell +      ( nfa )
+  dup c@ + 1+ aligned   ( ffa )
+  cell + ;
+
 \ We've been calling the host's emulation of asm, for building words out of
 \ machine code. Here's the actual definition.
 : asm,
@@ -141,11 +147,6 @@ $FFFF constant true  ( also abused as -1 below, since it's cheaper )
 
 \ -----------------------------------------------------------------------------
 \ Aside: IMMEDIATE and STATE manipulation.
-
-: lastxt
-  LATEST @  cell +  ( nfa )
-  dup c@ + 1+ aligned
-  cell + ;
 
 \ Sets the flags on the most recent definition.
 : immediate
