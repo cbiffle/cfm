@@ -24,7 +24,7 @@ yosys -p "read_verilog ${VERILOG}/*.v ${SYN}/icestick-top.v" \
       -q
 
 arachne-pnr -d 1k -p "${SYN}/icestick.pcf" "${OUT}/syn1k.blif" \
-            -o "${OUT}/syn1k.asc"
+            -o "${OUT}/syn1k.asc" -s 2
 
 icepack "${OUT}/syn1k.asc" "${OUT}/syn1k.bin"
 icetime -md hx1k -c 48 "${OUT}/syn1k.asc"
