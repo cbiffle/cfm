@@ -90,6 +90,7 @@ $FFFF constant true  ( also abused as -1 below, since it's cheaper )
 : 2dup over over ;
 : 2drop drop drop ;
 : 1+ 1 + ;
+: u2/ 1 rshift ;
 
 \ -----------------------------------------------------------------------------
 \ The Dictionary and the Optimizing Assembler.
@@ -111,11 +112,11 @@ $FFFF constant true  ( also abused as -1 below, since it's cheaper )
     here cell - @   ( new-inst prev-inst )
 
     over $700C = if ( if we're assembling a bare return instruction... )
-      dup $F04C and $6000 = if  ( ...on a non-returning ALU instruction )
+      $F04C over_and $6000 = if  ( ...on a non-returning ALU instruction )
         true cells allot
         nip  $100C or  asm, exit
       then
-      dup $E000 and $4000 = if  ( ...on a call )
+      $E000 over_and $4000 = if  ( ...on a call )
         true cells allot
         nip $1FFF and  asm, exit
       then
@@ -141,10 +142,14 @@ $FFFF constant true  ( also abused as -1 below, since it's cheaper )
 \ -----------------------------------------------------------------------------
 \ Aside: IMMEDIATE and STATE manipulation.
 
-\ Sets the flags on the most recent definition.
-: immediate
+: lastxt
   LATEST @  cell +  ( nfa )
   dup c@ + 1+ aligned
+  cell + ;
+
+\ Sets the flags on the most recent definition.
+: immediate
+  lastxt cell -
   true swap ! ;
 
 \ Switches from compilation to interpretation.
@@ -173,11 +178,11 @@ $FFFF constant true  ( also abused as -1 below, since it's cheaper )
 \ Compiles code to insert a computed literal into a definition.
 : literal  ( C: x -- )  ( -- x )
   dup 0 < if  ( MSB set )
-    true swap invert
+    invert true
   else
-    false swap
+    false
   then
-  $8000 or asm,
+  swap $8000 or asm,
   if $6600 asm, then ; immediate
 
 
@@ -196,7 +201,7 @@ $FFFF constant true  ( also abused as -1 below, since it's cheaper )
     @ $EFF3 and
   else
     \ Convert the CFA into a call.
-    1 rshift $4000 or
+    u2/ $4000 or
   then
   asm, ;
 
@@ -218,7 +223,7 @@ $FFFF constant true  ( also abused as -1 below, since it's cheaper )
 \ Assembles a backwards branch (using the given template) to a location left
 \ by mark< .
 : <resolve  ( dest template -- )
-  swap 1 rshift  \ convert to word address
+  swap u2/  \ convert to word address
   or asm, ;
 
 \ Assembles a forward branch (using the given template) to a yet-unknown
@@ -231,7 +236,7 @@ $FFFF constant true  ( also abused as -1 below, since it's cheaper )
 \ destination field.
 : >resolve  ( orig -- )
   freeze
-  dup_@  here 1 rshift or  swap ! ;
+  dup_@  here u2/ or  swap ! ;
 
 \ The host has been providing IF ELSE THEN until now. These definitions
 \ immediately shadow the host versions.
@@ -308,15 +313,16 @@ $FFFF constant true  ( also abused as -1 below, since it's cheaper )
 : min  ( n1 n2 -- lesser )
   2dup < if drop else nip then ;  ( TODO could be optimized )
 
-: c!  dup >r
-      1 and if ( lsb set )
-        8 lshift
-        r@ @ $FF and or
-      else
-        $FF and
-        r@ @ $FF00 and or
-      then
-      r> ! ;
+: c!  ( c c-addr -- )
+  dup >r
+  1 and if  \ LSB set
+    8 lshift  \ position our bits
+    $FF       \ prepare the mask
+  else
+    $FF and   \ ensure top bits are clear
+    $FF00     \ prepare the mask
+  then
+  r@ @ and or r> ! ;
 
 : c,  here c!  1 allot ;
 
@@ -325,6 +331,8 @@ $FFFF constant true  ( also abused as -1 below, since it's cheaper )
 
 : :noname
   align here ] ;
+
+: bounds over + swap ;
 
 \ -----------------------------------------------------------------------------
 \ Support for VARIABLE .
@@ -376,7 +384,7 @@ variable >IN
 \ Encloses a string in the dictionary as a counted string.
 : s,  ( c-addr u -- )
   dup c,        ( Length byte )
-  over + swap   ( c-addr-end c-addr-start )
+  bounds   ( c-addr-end c-addr-start )
   begin
     2dup_xor    ( cheap inequality test )
   while
@@ -465,12 +473,10 @@ TARGET-PARSER: variable
   rot rot ; ( TODO could likely be cleverer )
 
 : (does>)
-  LATEST @  cell +  ( nfa )
-  dup c@ + 1+ aligned ( ffa )
-  cell + ( cfa )
+  lastxt
   
   \ Store a call to our return address into the code field.
-  r> 1 rshift $4000 or swap ! ;
+  r> u2/ $4000 or swap ! ;
 
 : does>
   \ End the defining code with a non-tail call to (does>)
@@ -512,7 +518,7 @@ $20 constant bl
   \ This assumes a traditional terminal and is a candidate for vectoring.
 
 : type  ( c-addr u -- )
-  over + swap
+  bounds
   begin
     2dup_xor
   while
@@ -582,7 +588,7 @@ variable 'ABORT
 
 : sfoldl  ( c-addr u x0 xt -- x )
   >r >r
-  over + swap
+  bounds
   begin
     2dup_xor
   while
@@ -691,39 +697,39 @@ here host.
 ( ----------------------------------------------------------- )
 ( Interrupt Controller )
 
-$F000 constant irqcon-st  ( status / enable trigger )
-$F002 constant irqcon-en  ( enable )
-$F004 constant irqcon-se  ( set enable )
-$F006 constant irqcon-ce  ( clear enable )
+$F000 constant IRQST  ( status / enable trigger )
+\ $F002 constant IRQEN  ( enable )
+$F004 constant IRQSE  ( set enable )
+$F006 constant IRQCE  ( clear enable )
 
 ( Atomically enables interrupts and returns. This is intended to be tail )
 ( called from the end of an ISR. )
-: enable-interrupts  irqcon-st 2dup_!_drop ;
+: ei  IRQST 2dup_!_drop ;
 
-: disable-irq  ( u -- )  #bit irqcon-ce ! ;
-: enable-irq   ( u -- )  #bit irqcon-se ! ;
+: irq-off  ( u -- )  #bit IRQCE ! ;
+: irq-on   ( u -- )  #bit IRQSE ! ;
 
-13 constant irq-timer-m1
-14 constant irq-timer-m0
-15 constant irq-inport-negedge
+13 constant irq#m1
+14 constant irq#m0
+15 constant irq#negedge
 
 ( ----------------------------------------------------------- )
 ( I/O ports )
 
-$8000 constant outport      ( literal value)
-$8002 constant outport-set  ( 1s set pins, 0s do nothing)
-$8004 constant outport-clr  ( 1s clear pins, 0s do nothing)
-$8006 constant outport-tog  ( 1s toggle pins, 0s do nothing)
+\ $8000 constant outport      ( literal value)
+$8002 constant OUTSET  ( 1s set pins, 0s do nothing)
+$8004 constant OUTCLR  ( 1s clear pins, 0s do nothing)
+$8006 constant OUTTOG  ( 1s toggle pins, 0s do nothing)
 
-$A000 constant inport
+$A000 constant IN
 
 ( ----------------------------------------------------------- )
 ( Timer )
 
-$C000 constant timer-ctr
-$C002 constant timer-flags
-$C004 constant timer-m0
-$C006 constant timer-m1
+$C000 constant TIMV
+$C002 constant TIMF
+$C004 constant TIMM0
+$C006 constant TIMM1
 
 ( ----------------------------------------------------------- )
 ( UART emulation )
@@ -731,8 +737,8 @@ $C006 constant timer-m1
 .( Compiling soft UART... )
 here
 
-2500 constant cycles/bit
-1250 constant cycles/bit/2
+2500 constant cyc/bit
+1250 constant cyc/bit/2
 
 variable uart-tx-bits
   \ Holds bits as they're shifted out.
@@ -740,20 +746,20 @@ variable uart-tx-bits
   \ this also serves as a "transmitter available" indicator when 0.
 
 : tx-isr
-  \ Acknowledge interrupt by writing 1 to bit 0 of timer-flags.
+  \ Acknowledge interrupt by writing 1 to bit 0 of TIMF.
   \ Keep the 1 around; we're going to use it to save cycles.
-  1 timer-flags 2dup_!_drop
+  1 TIMF 2dup_!_drop
   \ Read the transmit shift register, and derive its LSB using the 1.
   uart-tx-bits @  2dup_and  ( 1 bits lsb )
-  if outport-set else outport-clr then  ( 1 bits regaddr )
+  if OUTSET else OUTCLR then  ( 1 bits regaddr )
   1 swap !  ( 1 bits )
   swap rshift   ( bits' )
   uart-tx-bits 2dup_!_drop  ( bits' )
 
   if  \ bits remain
-    timer-ctr @ cycles/bit + timer-m1 !
+    TIMV @ cyc/bit + TIMM1 !
   else  \ bits all gone
-    irq-timer-m1 disable-irq
+    irq#m1 irq-off
   then ;
 
 : tx
@@ -763,7 +769,7 @@ variable uart-tx-bits
   1 lshift
   $200 or
   uart-tx-bits !
-  irq-timer-m1 enable-irq ;
+  irq#m1 irq-on ;
 
 variable uart-rx-bits
 
@@ -772,8 +778,8 @@ variable uart-rx-buf  uart-#rx 1 - cells allot
 variable uart-rx-hd
 variable uart-rx-tl
 
-: CTSon 2 outport-clr ! ;
-: CTSoff 2 outport-set ! ;
+: CTSon 2 OUTCLR ! ;
+: CTSoff 2 OUTSET ! ;
 
 : rxq-empty? uart-rx-hd @ uart-rx-tl @ = ;
 : rxq-full? uart-rx-hd @ uart-rx-tl @ - uart-#rx = ;
@@ -797,9 +803,9 @@ variable uart-rx-tl
 
 : uart-rx-init
   \ Clear any pending negedge condition
-  0 inport !
+  0 IN !
   \ Enable the initial negedge ISR to detect the start bit.
-  irq-inport-negedge enable-irq
+  irq#negedge irq-on
   CTSon ;
 
 \ Triggered when we're between frames and RX drops.
@@ -807,41 +813,41 @@ variable uart-rx-tl
   \ Set up the timer to interrupt us again halfway into the start bit.
   \ First, the timer may have rolled over while we were waiting for a new
   \ frame, so clear its pending interrupt status.
-  2 timer-flags !
+  2 TIMF !
   \ Next set the match register to the point in time we want.
-  timer-ctr @  cycles/bit/2 +  timer-m0 !
+  TIMV @  cyc/bit/2 +  TIMM0 !
   \ We don't need to clear the IRQ condition, because we won't be re-enabling
   \ it any time soon. Mask our interrupt.
-  irq-inport-negedge disable-irq
+  irq#negedge irq-off
 
   \ Prepare to receive a ten bit frame.
   10 #bit uart-rx-bits !
 
   \ Now enable its interrupt.
-  irq-timer-m0 enable-irq ;
+  irq#m0 irq-on ;
 
 \ Triggered at each sampling point during an RX frame.
 : rx-timer-isr
   \ Sample the input port into the high bit of a word.
-  inport @  15 lshift
+  IN @  15 lshift
   \ Reset the timer for the next sample point.
-  timer-ctr @  cycles/bit +  timer-m0 !
+  TIMV @  cyc/bit +  TIMM0 !
   \ Load this into the frame shift register.
-  uart-rx-bits @  1 rshift  or  uart-rx-bits 2dup_!_drop
+  uart-rx-bits @  u2/  or  uart-rx-bits 2dup_!_drop
   \ Check the LSB to see if we're done.
   1 and if  \ all done
-    irq-timer-m0 disable-irq
+    irq#m0 irq-off
     \ Enqueue the received frame
     uart-rx-bits @ >rxq
     \ Clear any pending negedge condition
-    0 inport !
+    0 IN !
     \ Enable the initial negedge ISR to detect the start bit.
-    irq-inport-negedge enable-irq
+    irq#negedge irq-on
     \ Conservatively deassert CTS to try and stop sender.
     CTSoff
   else  \ more bits to receive
     \ Clear the interrupt condition.
-    2 timer-flags !
+    2 TIMF !
   then ;
 
 \ Receives a byte from RX, returning the bits and a valid flag. The valid flag may
@@ -852,7 +858,7 @@ variable uart-rx-tl
   \ Dissect the frame and check for framing error. The frame is in the
   \ upper bits of the word.
   6 rshift
-  dup 1 rshift $FF and   \ extract the data bits
+  dup u2/ $FF and   \ extract the data bits
   swap $201 and          \ extract the start/stop bits.
   $200 =                 \ check for valid framing
   rxq-empty? if CTSon then  \ allow sender to resume if we've emptied the queue.
@@ -862,16 +868,16 @@ variable uart-rx-tl
 ( ----------------------------------------------------------- )
 ( Icestick board features )
 
-: ledtog  4 + #bit outport-tog ! ;
+: ledtog  4 + #bit OUTTOG ! ;
 
 
 ( ----------------------------------------------------------- )
 ( Demo wiring below )
 
-: delay 0 begin 1+ dup 0 = until drop ;
+: delay 0 begin 1+ dup 0= until drop ;
 
 : isr
-  irqcon-st @
+  IRQST @
   $4000 over_and if
     rx-timer-isr
   then
@@ -883,7 +889,7 @@ variable uart-rx-tl
   then
   drop
   r> 2 - >r
-  enable-interrupts ;
+  ei ;
 
 create TIB 80 allot
 
@@ -909,18 +915,18 @@ create TIB 80 allot
 ' quit 'ABORT !
 
 : cold
-  1 outport-set !   \ raise TX line soon after reset
+  1 OUTSET !   \ raise TX line soon after reset
   uart-rx-init
-  enable-interrupts
+  ei
   35 emit
   LATEST @ cell + 1 + 4 type
   35 emit
   quit ;
 
 ( install cold as the reset vector )
-' cold  1 rshift  0 !
+' cold  u2/  0 !
 ( install isr as the interrupt vector )
-' isr  1 rshift  2 !
+' isr  u2/  2 !
 
 .( Compilation complete. HERE is... )
 here host.
