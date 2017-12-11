@@ -374,11 +374,12 @@ variable >IN
 : isnotspace? isspace? 0= ;
 
 : parse-name
-  SOURCE  >IN @  /string
-  [ ' isspace? ] literal skip-while over >r
-  [ ' isnotspace? ] literal skip-while
-  2dup  1 min +  'SOURCE @ -  >IN !
-  drop r> tuck - ;
+  SOURCE  >IN @  /string    ( c-addr u )
+  [ ' isspace? ] literal skip-while over >r   ( c-addr' u' ) ( R: c-addr' )
+  [ ' isnotspace? ] literal skip-while  ( sp-addr sp-u ) ( R: token-addr )
+  1 min over +                          ( sp-addr rest-addr ) ( R: " )
+  'SOURCE @ -  >IN !
+  r> tuck - ;
 
 
 \ -----------------------------------------------------------------------------
