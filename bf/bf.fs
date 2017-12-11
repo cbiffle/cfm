@@ -264,26 +264,26 @@ $FFFF constant true  ( also abused as -1 below, since it's cheaper )
 \ -----------------------------------------------------------------------------
 \ Dictionary search.
 
-\ Compares a string to the name field of a definition.
-: name= ( c-addr u nfa -- ? )
-  >r  ( stash the NFA )
-  r@ c@ over = if  ( lengths equal )
-    r> 1+ swap   ( c-addr c-addr2 u )
-    begin
-      dup
-    while
-      >r
-      over c@ over c@ xor if
-        rdrop
-        2drop 0 exit
-      then
-      1+ swap 1+
-      r> 1 -
-    repeat
-    true
-  else
-    r> false
-  then nip nip nip ;
+: rot  ( x1 x2 x3 -- x2 x3 x1 )
+  >r swap r> swap ;
+
+: bounds over + swap ;
+
+\ Compares two strings.
+: s= ( c-addr1 u1 c-addr2 u2 -- ? )
+  rot over xor if drop 2drop false exit then
+  ( c-addr1 c-addr2 u )
+  >r  2dup -  ( c-addr1 c-addr2 1-2 ) ( R: u )
+  r> swap >r  ( c-addr1 c-addr2 u ) ( R: 1-2 )
+  nip         ( c-addr1 u ) ( R: 1-2 )
+  bounds      ( c-addrE c-addrS ) ( R: 1-2)
+  begin
+    2dup_xor
+  while
+    dup c@  over r@ - c@ xor if 2drop rdrop false exit then
+    1 +
+  repeat
+  2drop rdrop true ;
 
 \ Searches the dictionary for a definition with the given name. This is a
 \ variant of standard FIND, which uses a counted string for some reason.
@@ -295,7 +295,8 @@ $FFFF constant true  ( also abused as -1 below, since it's cheaper )
     >r  ( stash the LFA ) ( c-addr u )              ( R: lfa )
     2dup                  ( c-addr u c-addr u )     ( R: lfa )
     r@ cell +             ( c-addr u c-addr u nfa ) ( R: lfa )
-    name= if              ( c-addr u )              ( R: lfa )
+    dup 1+ swap c@        ( c-addr u c-addr u c-addr u ) ( R: lfa )
+    s= if                 ( c-addr u )              ( R: lfa )
       nip                 ( u )                     ( R: lfa )
       r> cell +           ( u nfa )
       1+  +  aligned      ( ffa )
@@ -335,8 +336,6 @@ $FFFF constant true  ( also abused as -1 below, since it's cheaper )
 
 : :noname
   align here ] ;
-
-: bounds over + swap ;
 
 \ -----------------------------------------------------------------------------
 \ Support for VARIABLE .
@@ -470,11 +469,6 @@ TARGET-PARSER: variable
 
 \ -----------------------------------------------------------------------------
 \ More useful Forth words.
-
-: rot  ( x1 x2 x3 -- x2 x3 x1 )
-  >r swap r> swap ;
-: -rot  ( x1 x2 x3 -- x3 x1 x2 )
-  rot rot ; ( TODO could likely be cleverer )
 
 : (does>)
   lastxt
