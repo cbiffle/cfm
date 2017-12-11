@@ -349,6 +349,34 @@ $FFFF constant true  ( also abused as -1 below, since it's cheaper )
   align here ] ;
 
 \ -----------------------------------------------------------------------------
+\ Quotations (inline anonymous definitions).
+
+\ A quotation is a nameless function nested within another function.
+\ At compile time, we generate code to skip over the inlined quotation code,
+\ and push its CFA / XT. Thus at runtime it acts as an XT literal for an
+\ unfindable word.
+
+\ Runtime implementation for [:
+: ([:)
+  \ Compute the CFA of the definition from the return address, and stack it.
+  r@ cell +
+  \ Adjust the return address to skip the definition.
+  r> @ 1 lshift >r
+  ;
+
+\ Introduces a quotation. May nest.
+: [:
+  [ ' ([:) ] literal compile,
+  0 mark>
+  ; immediate
+
+\ Ends a quotation.
+: ;]
+  [ ' exit compile, ]
+  >resolve
+  ; immediate
+
+\ -----------------------------------------------------------------------------
 \ Support for VARIABLE .
 
 \ Because we don't need VARIABLE until much later in bootstrap, we can write
@@ -381,13 +409,10 @@ variable >IN
   repeat
   rdrop ;
 
-: isspace? $21 u< ;
-: isnotspace? isspace? 0= ;
-
 : parse-name
   SOURCE  >IN @  /string    ( c-addr u )
-  [ ' isspace? ] literal skip-while over >r   ( c-addr' u' ) ( R: c-addr' )
-  [ ' isnotspace? ] literal skip-while  ( sp-addr sp-u ) ( R: token-addr )
+  [: $21 u< ;] skip-while over >r   ( c-addr' u' ) ( R: c-addr' )
+  [: $20 swap u< ;] skip-while  ( sp-addr sp-u ) ( R: token-addr )
   1 min over +                          ( sp-addr rest-addr ) ( R: " )
   'SOURCE @ -  >IN !
   r> tuck - ;
@@ -482,15 +507,11 @@ TARGET-PARSER: variable
 \ -----------------------------------------------------------------------------
 \ More useful Forth words.
 
-: (does>)
-  lastxt
-  
-  \ Store a call to our return address into the code field.
-  r> u2/ $4000 or swap ! ;
-
 : does>
   \ End the defining code with a non-tail call to (does>)
-  [ ' (does>) ] literal compile, freeze drop
+  [:  ( R: tail-addr -- )
+      lastxt  r> u2/ $4000 or  swap !
+  ;] compile, freeze drop
   \ Control will reach this point from the call instruction at the start of the
   \ code field. We need to reveal the parameter field address by postponing r>
   [ ' r> compile, ]
@@ -605,10 +626,6 @@ user base  16 base !
   9 over u< 7 and -
   base @ 1 - over u< if ABORT then ;
 
-: nstep  ( c n -- n' )
-  base @ u* swap
-  digit + ;
-
 : sfoldl  ( c-addr u x0 xt -- x )
   >r >r
   bounds
@@ -621,7 +638,7 @@ user base  16 base !
   2drop r> rdrop ;
 
 : number  ( c-addr u -- x )
-  0 [ ' nstep ] literal sfoldl ;
+  0 [: base @ u*  swap digit + ;] sfoldl ;
 
 : interpret
   begin
@@ -674,30 +691,30 @@ TARGET-MASK: \
   SOURCE nip >IN ! ;  immediate
 
 TARGET-MASK: (
-: isnotparen?  $29 <> ;
 \ Block comments look for a matching paren.
 : (
   SOURCE  >IN @  /string  ( c-addr u )
-  [ ' isnotparen? ] literal skip-while  ( c-addr' u' )
+  [: $29 <> ;] skip-while  ( c-addr' u' )
   1 min +  \ consume the trailing paren
   'SOURCE @ -  >IN ! ;  immediate
 
-: (S")
-  r>        ( addr )
-  dup 1+
-  swap c@   ( c-addr u )
-  2dup_+ aligned  ( c-addr u end )
-  >r ;
-
-: isnotquote?  $22 <> ;
 : S"
   SOURCE  >IN @  /string
   over >r
-  [ ' isnotquote? ] literal skip-while
+  [: $22 <> ;] skip-while
   2dup  1 min +  'SOURCE @ -  >IN !
   drop r> tuck -
 
-  [ ' (S") ] literal compile,
+  [:  ( -- c-addr u )
+      \ Uses its return address to locate a string literal. Pushes the
+      \ literal onto the stack and updates the return address to skip
+      \ it.
+      r>        ( addr )
+      dup 1+
+      swap c@   ( c-addr u )
+      2dup_+ aligned  ( c-addr u end )
+      >r
+  ;] compile,
   s, ;  immediate
   
 
