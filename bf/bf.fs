@@ -587,13 +587,26 @@ $20 constant bl
 variable 'ABORT
 : ABORT  'ABORT @ execute ;
 
+: u*
+  >r 0    ( a 0 ) ( R: b )
+  begin
+    over
+  while
+    r@ 1 and if over + then
+    swap 1 lshift swap
+    r> 1 rshift >r
+  repeat
+  rdrop nip ;
+
+user base  16 base !
+
 : digit  ( c -- x )
   $30 -
   9 over u< 7 and -
-  15 over u< if ABORT then ;
+  base @ 1 - over u< if ABORT then ;
 
-: nstep  ( n c -- n' )
-  4 lshift swap
+: nstep  ( c n -- n' )
+  base @ u* swap
   digit + ;
 
 : sfoldl  ( c-addr u x0 xt -- x )
@@ -928,6 +941,7 @@ create TIB 80 allot
   1 OUTSET !   \ raise TX line soon after reset
   uart-rx-init
   ei
+  16 base !
   35 emit
   LATEST @ cell + 1 + 4 type
   35 emit
@@ -937,6 +951,8 @@ create TIB 80 allot
 ' cold  u2/  0 !
 ( install isr as the interrupt vector )
 ' isr  u2/  2 !
+( adjust U0 to mapped RAM for the Icestick )
+$1700 U0 !
 
 .( Compilation complete. HERE is... )
 here host.
