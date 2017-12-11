@@ -334,6 +334,14 @@ rawInst i = do
         _ | (pi .&. 0x704C) == 0x6000 && i == 0x700C -> fuse (pi .|. 0x100C)
         -- (call) - (return) fusion
         _ | (pi .&. 0xE000) == 0x4000 && i == 0x700C -> fuse (pi .&. 0x1FFF)
+        _ | (i .&. 0xF0FF) == 0x6003
+            && ((i .&. 0xF00) - 0x200 < 0x400 || (i .&. 0xF00) == 0x700)
+            && pi == 0x6180
+            -> fuse i
+        _ | (i .&. 0xF0FF) == 0x6003
+            && ((i .&. 0xF00) - 0x200 < 0x400 || (i .&. 0xF00) == 0x700)
+            && pi == 0x6181
+            -> fuse (i - 3)
         _ -> rawComma i
 
 fuse :: (MonadTarget m) => Word -> BsT m ()

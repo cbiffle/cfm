@@ -34,9 +34,7 @@
 : 2dup_!_drop  ( x addr -- x )  [ $6123 asm, ] ;
 : dup_@        ( addr -- addr x )  [ $6c81 asm, ] ;
 : 2dup_xor     ( a b -- a b a^b )  [ $6581 asm, ] ;
-: over_and     ( a b -- a b&a )  [ $6300 asm, ] ;
 : 2dup_and     ( a b -- a b b&a )  [ $6381 asm, ] ;
-: over_=       ( a b -- a b=a )  [ $6700 asm, ] ;
 : 2dup_+       ( a b -- a b b+a )  [ $6281 asm, ] ;
 
 \ -----------------------------------------------------------------------------
@@ -77,7 +75,7 @@ $FFFF constant true  ( also abused as -1 below, since it's cheaper )
 : tuck  ( a b -- b a b )  swap over ;
 : !  ( x addr -- )  2dup_!_drop drop ;
 : +!  ( x addr -- )  tuck @ + swap ! ;
-: aligned  ( addr -- a-addr )  1 over_and + ;
+: aligned  ( addr -- a-addr )  1 over and + ;
 
 : c@  ( c-addr -- c )
   dup_@
@@ -118,13 +116,26 @@ $FFFF constant true  ( also abused as -1 below, since it's cheaper )
     here cell - @   ( new-inst prev-inst )
 
     over $700C = if ( if we're assembling a bare return instruction... )
-      $F04C over_and $6000 = if  ( ...on a non-returning ALU instruction )
+      $F04C over and $6000 = if  ( ...on a non-returning ALU instruction )
         true cells allot
         nip  $100C or  asm, exit
       then
-      $E000 over_and $4000 = if  ( ...on a call )
+      $E000 over and $4000 = if  ( ...on a call )
         true cells allot
         nip $1FFF and  asm, exit
+      then
+    then
+
+    over $F0FF and $6003 = if \ adding a simple ALU op
+      over $0F00 and  dup $200 - $400 u< swap $700 = or if  \ commutes
+        $6180 over = if  \ swap
+          true cells allot
+          drop asm, exit
+        then
+        $6181 over = if  \ over
+          true cells allot
+          drop 3 - asm, exit
+        then
       then
     then
 
@@ -364,7 +375,7 @@ variable >IN
   >r
   begin
     over c@ r@ execute
-    over_and
+    over and
   while
     1 /string
   repeat
@@ -543,12 +554,12 @@ $20 constant bl
       then
     then
 
-    3 over_= if   \ ^C - abort
+    3 over = if   \ ^C - abort
       2drop 0     \ Reset buffer to zero
       $D          \ act like a CR
     then
 
-    8 over_= if   \ Backspace
+    8 over = if   \ Backspace
       drop
       dup if  \ Not at start of line
         8 emit  space  8 emit   \ rub out character
@@ -877,13 +888,13 @@ variable uart-rx-tl
 
 : isr
   IRQST @
-  $4000 over_and if
+  $4000 over and if
     rx-timer-isr
   then
-  $8000 over_and if
+  $8000 over and if
     rx-negedge-isr
   then
-  $2000 over_and if
+  $2000 over and if
     tx-isr
   then
   drop
