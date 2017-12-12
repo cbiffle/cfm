@@ -32,7 +32,6 @@
 \ Useful compound instructions are named for the equivalent sequence of Forth
 \ words:
 : 2dup_!_drop  ( x addr -- x )  [ $6123 asm, ] ;
-: dup_@        ( addr -- addr x )  [ $6c81 asm, ] ;
 
 \ -----------------------------------------------------------------------------
 \ Support for CONSTANT. CONSTANT is implemented as if written with DOES>, but
@@ -75,7 +74,7 @@ $FFFF constant true  ( also abused as -1 below, since it's cheaper )
 : aligned  ( addr -- a-addr )  1 over and + ;
 
 : c@  ( c-addr -- c )
-  dup_@
+  dup @
   swap 1 and if ( lsb set )
     8 rshift
   else
@@ -140,6 +139,14 @@ $FFFF constant true  ( also abused as -1 below, since it's cheaper )
           true cells allot
           asm, exit
         then
+      then
+    then
+
+    $6081 over = if   \ previous instruction is DUP
+      over $6C00 = if   \ just @ for now, others aren't used
+        $FF and or
+        true cells allot
+        asm, exit
       then
     then
 
@@ -214,7 +221,7 @@ $FFFF constant true  ( also abused as -1 below, since it's cheaper )
 : compile,  ( xt -- )
   \ Check if the instruction at the start of the target code field is a
   \ fused operate-return instruction.
-  dup_@  $F04C and  $700C = if
+  dup @  $F04C and  $700C = if
     \ Retrieve it and mask out its return effect.
     @ $EFF3 and
   else
@@ -253,7 +260,7 @@ $FFFF constant true  ( also abused as -1 below, since it's cheaper )
 \ Resolves a forward branch previously assembled by mark> by updating its
 \ destination field.
 : >resolve  ( orig -- )
-  dup_@
+  dup @
   freeze u2/ or
   swap ! ;
 
@@ -395,7 +402,7 @@ $FFFF constant true  ( also abused as -1 below, since it's cheaper )
 \ Address and length of current input SOURCE.
 variable 'SOURCE  cell allot
 \ Returns the current input as a string.
-: SOURCE  ( -- c-addr u )  'SOURCE dup_@ swap cell + @ ;
+: SOURCE  ( -- c-addr u )  'SOURCE dup @ swap cell + @ ;
 
 \ Holds the number of characters consumed from SOURCE so far.
 variable >IN

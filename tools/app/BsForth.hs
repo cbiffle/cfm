@@ -334,12 +334,18 @@ rawInst i = do
         _ | (pi .&. 0x704C) == 0x6000 && i == 0x700C -> fuse (pi .|. 0x100C)
         -- (call) - (return) fusion
         _ | (pi .&. 0xE000) == 0x4000 && i == 0x700C -> fuse (pi .&. 0x1FFF)
+        -- (OVER/SWAP) - COMMUTATIVE fusion
         _ | ((i .&. 0xF0FF) == 0x6003 || (i .&. 0xF0FF) == 0x6000)
             && ((i .&. 0xF00) - 0x200 < 0x400 || (i .&. 0xF00) == 0x700)
             && (pi .&. 0xFFFE) == 0x6180
             -> let i' = (i + (pi .&. 1)) .&. 0xFFF3
                    i'' = if (i' .&. 3) == 1 then i' .|. 0x80 else i'
                in fuse i''
+        -- DUP - UNARY fusion
+        _ | pi == 0x6081  -- dup
+            && (i .&. 0xF0FF) == 0x6000  -- ALU w/o stack effect
+            && (i .&. 0x0F00) `elem` [0, 0x0600, 0x0C00]  -- unary op
+            -> fuse (i .|. 0x81)
         _ -> rawComma i
 
 fuse :: (MonadTarget m) => Cell -> BsT m ()
