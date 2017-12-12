@@ -1,0 +1,152 @@
+set_io clk_100mhz R9
+
+set_io sram_ce_n        M7
+set_io sram_we_n        T7
+set_io sram_oe_n        L5
+
+set_io sram_lb_n        J4
+set_io sram_ub_n        J3
+
+set_io sram_a_21a       N2
+set_io sram_a_20a       K5
+set_io sram_a_13a       J5
+set_io sram_a_25b       M5
+set_io sram_a_54        P4
+set_io sram_a_56        N5
+set_io sram_a_58        P5
+set_io sram_a_77        P7
+
+set_io sram_a_22a       M6
+set_io sram_a_67        P6
+set_io sram_a_76        T8
+set_io sram_a_53        T1
+set_io sram_a_25a       P2
+set_io sram_a_26a       R1
+set_io sram_a_23b       N3
+set_io sram_a_24a       P1
+
+set_io sram_a_72        P8
+set_io sram_a_86        P10
+set_io sram_a_93        M11
+
+set_io sram_d_57        T2
+set_io sram_d_59        R3
+set_io sram_d_61        T3
+set_io sram_d_63        R4
+set_io sram_d_60        R5
+set_io sram_d_69        T5
+set_io sram_d_71        R6
+set_io sram_d_73        T6
+
+set_io sram_d_26b       N4
+set_io sram_d_24b       M4
+set_io sram_d_19a       L6
+set_io sram_d_22b       M3
+set_io sram_d_17a       L4
+set_io sram_d_19b       L3
+set_io sram_d_18a       K4
+set_io sram_d_16b       K3
+
+set_io pmod1_1    D8
+set_io pmod1_2    B9
+set_io pmod1_3    B10
+set_io pmod1_4    B11
+set_io pmod1_7    B8
+set_io pmod1_8    A9
+set_io pmod1_9    A10
+set_io pmod1_10   A11
+
+set_io pmod2_1    A5
+set_io pmod2_2    A2
+set_io pmod2_3    C3
+set_io pmod2_4    B4
+set_io pmod2_7    B7
+set_io pmod2_8    B6
+set_io pmod2_9    B3
+set_io pmod2_10   B5
+
+set_io pmod3_1    L9
+set_io pmod3_2    G5
+set_io pmod3_3    L7
+set_io pmod3_4    N6
+set_io pmod3_7    N9
+set_io pmod3_8    P9
+set_io pmod3_9    M8
+set_io pmod3_10   N7
+
+set_io pmod4_1    T15
+set_io pmod4_2    T14
+set_io pmod4_3    T11
+set_io pmod4_4    R10
+set_io pmod4_7    R14
+set_io pmod4_8    T13
+set_io pmod4_9    T10
+set_io pmod4_10   T9
+
+set_io matrix_00  C13
+set_io matrix_01  E9
+set_io matrix_02  B14
+set_io matrix_03  A16
+set_io matrix_04  D15
+set_io matrix_05  D16
+set_io matrix_06  F16
+set_io matrix_07  G15
+set_io matrix_08  G10
+set_io matrix_09  J10
+set_io matrix_0a  G16
+set_io matrix_0b  H16
+set_io matrix_0c  F15
+set_io matrix_0d  E16
+set_io matrix_0e  D14
+set_io matrix_0f  C16
+
+set_io matrix_10  A15
+set_io matrix_11  C11
+set_io matrix_12  E10
+set_io matrix_13  F9
+set_io matrix_14  E13
+set_io matrix_15  G11
+set_io matrix_16  D10
+set_io matrix_17  D11
+set_io matrix_18  E11
+set_io matrix_19  F12
+set_io matrix_1a  E14
+set_io matrix_1b  F11
+set_io matrix_1c  G12
+set_io matrix_1d  B13
+set_io matrix_1e  C12
+set_io matrix_1f  B12
+
+set_io matrix_20  L12
+set_io matrix_21  P14
+set_io matrix_22  T16
+set_io matrix_23  F14
+set_io matrix_24  G13
+set_io matrix_25  K15
+set_io matrix_26  H14
+set_io matrix_27  M16
+set_io matrix_28  M15
+set_io matrix_29  J11
+set_io matrix_2a  J13
+set_io matrix_2b  K13
+set_io matrix_2c  L11
+set_io matrix_2d  N12
+set_io matrix_2e  M12
+set_io matrix_2f  R15
+
+set_io matrix_30  J16
+set_io matrix_31  J15
+set_io matrix_32  J14
+set_io matrix_33  K16
+set_io matrix_34  G14
+set_io matrix_35  L16
+set_io matrix_36  H13
+set_io matrix_37  H12
+set_io matrix_38  N16
+set_io matrix_39  R16
+set_io matrix_3a  K12
+set_io matrix_3b  K14
+set_io matrix_3c  M9
+set_io matrix_3d  L14
+set_io matrix_3e  M14
+set_io matrix_3f  L10
