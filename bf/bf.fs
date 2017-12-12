@@ -105,6 +105,9 @@ $FFFF constant true  ( also abused as -1 below, since it's cheaper )
   dup c@ + 1+ aligned   ( ffa )
   cell + ;
 
+\ "Un-comma" rewinds HERE by 1 cell. It's an implementation factor of asm, .
+: -,  ( -- )  true cells allot ;
+
 \ We've been calling the host's emulation of asm, for building words out of
 \ machine code. Here's the actual definition.
 : asm,
@@ -113,11 +116,11 @@ $FFFF constant true  ( also abused as -1 below, since it's cheaper )
 
     over $700C = if ( if we're assembling a bare return instruction... )
       $F04C over and $6000 = if  ( ...on a non-returning ALU instruction )
-        true cells allot
+        -,
         nip  $100C or  asm, exit
       then
       $E000 over and $4000 = if  ( ...on a call )
-        true cells allot
+        -,
         nip $1FFF and  asm, exit
       then
     then
@@ -136,7 +139,7 @@ $FFFF constant true  ( also abused as -1 below, since it's cheaper )
           \ fields by allowing overflow into Radj and then clearing it.
           1 and + $FFF3 and
           dup 3 and 1 = $80 and or \ Set TN if Dadj > 0
-          true cells allot
+          -,
           asm, exit
         then
       then
@@ -145,7 +148,7 @@ $FFFF constant true  ( also abused as -1 below, since it's cheaper )
     $6081 over = if   \ previous instruction is DUP
       over $6C00 = if   \ just @ for now, others aren't used
         $FF and or
-        true cells allot
+        -,
         asm, exit
       then
     then
