@@ -33,9 +33,6 @@
 \ words:
 : 2dup_!_drop  ( x addr -- x )  [ $6123 asm, ] ;
 : dup_@        ( addr -- addr x )  [ $6c81 asm, ] ;
-: 2dup_xor     ( a b -- a b a^b )  [ $6581 asm, ] ;
-: 2dup_and     ( a b -- a b b&a )  [ $6381 asm, ] ;
-: 2dup_+       ( a b -- a b b+a )  [ $6281 asm, ] ;
 
 \ -----------------------------------------------------------------------------
 \ Support for CONSTANT. CONSTANT is implemented as if written with DOES>, but
@@ -126,15 +123,22 @@ $FFFF constant true  ( also abused as -1 below, since it's cheaper )
       then
     then
 
-    over $F0FF and $6003 = if \ adding a simple ALU op
+    over $F0FF and  ( new-inst prev-inst masked )
+        $6003 over = ( new-inst prev-inst masked =destr? )
+        swap $6000 = ( new-inst prev-inst =destr? =nd? )
+        or if \ adding a simple ALU op, destructive or not
+      ( new-inst prev-inst )
       over $0F00 and  dup $200 - $400 u< swap $700 = or if  \ commutes
-        $6180 over = if  \ swap
+        $FFFE over and $6180 = if  \ swap or over, Dadj=0 or 1
+          \ Add the two-bit Dadj field of the two instructions.
+          \ We know the swap/over Dadj field is zero or 1 from the test above.
+          \ We know the ALU op's Dadj is 0 or -1 from the entry test.
+          \ We know that bit 2 (in Radj) is zero. So we can add the two-bit
+          \ fields by allowing overflow into Radj and then clearing it.
+          1 and + $FFF3 and
+          dup 3 and 1 = $80 and or \ Set TN if Dadj > 0
           true cells allot
-          drop asm, exit
-        then
-        $6181 over = if  \ over
-          true cells allot
-          drop 3 - asm, exit
+          asm, exit
         then
       then
     then
@@ -289,7 +293,7 @@ $FFFF constant true  ( also abused as -1 below, since it's cheaper )
   nip         ( c-addr1 u ) ( R: 1-2 )
   bounds      ( c-addrE c-addrS ) ( R: 1-2)
   begin
-    2dup_xor
+    over over xor
   while
     dup c@  over r@ - c@ xor if 2drop rdrop false exit then
     1 +
@@ -426,7 +430,7 @@ variable >IN
   dup c,        ( Length byte )
   bounds   ( c-addr-end c-addr-start )
   begin
-    2dup_xor    ( cheap inequality test )
+    over over xor    ( cheap inequality test )
   while
     dup c@ c,
     1+
@@ -551,7 +555,7 @@ $20 constant bl
 : type  ( c-addr u -- )
   bounds
   begin
-    2dup_xor
+    over over xor
   while
     dup c@ emit
     1+
@@ -567,7 +571,7 @@ $20 constant bl
     $1F over u< if  \ Printable character
       over r@ u< if   \ in bounds
         dup emit  \ echo character
-        >r 2dup_+ r>  ( c-addr pos dest c )
+        >r over over + r>  ( c-addr pos dest c )
         swap c! 1+    ( c-addr pos' )
         0  \ "key" for code above
       else  \ buffer full
@@ -630,7 +634,7 @@ user base  16 base !
   >r >r
   bounds
   begin
-    2dup_xor
+    over over xor
   while
     dup c@ r> r@ execute >r
     1+
@@ -712,7 +716,7 @@ TARGET-MASK: (
       r>        ( addr )
       dup 1+
       swap c@   ( c-addr u )
-      2dup_+ aligned  ( c-addr u end )
+      over over + aligned  ( c-addr u end )
       >r
   ;] compile,
   s, ;  immediate
@@ -807,7 +811,7 @@ variable uart-tx-bits
   \ Keep the 1 around; we're going to use it to save cycles.
   1 TIMF 2dup_!_drop
   \ Read the transmit shift register, and derive its LSB using the 1.
-  uart-tx-bits @  2dup_and  ( 1 bits lsb )
+  uart-tx-bits @  over over and  ( 1 bits lsb )
   if OUTSET else OUTCLR then  ( 1 bits regaddr )
   1 swap !  ( 1 bits )
   swap rshift   ( bits' )
