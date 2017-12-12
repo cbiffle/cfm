@@ -6,7 +6,7 @@
 -- | Structural model for ICE40 synthesis.
 module RTL.Str where
 
-import Clash.Prelude hiding (Word, read)
+import Clash.Prelude hiding (read)
 
 import CFM.Inst
 import CFM.Types
@@ -24,7 +24,7 @@ datapath (MS dptr rptr pc t lf lastSpace) (IS m i n r) =
 
       -- Common stack logic. Preserves stack during load, otherwise applies the
       -- delta and write operation.
-      stack :: SP -> (SDelta, Maybe Word) -> (SP, SDelta, Maybe Word)
+      stack :: SP -> (SDelta, Maybe Cell) -> (SP, SDelta, Maybe Cell)
       stack ptr ~(d, wr) = (ptr, 0, Nothing) `duringLoadElse`
                            (ptr + pack (signExtend d), d, wr)
 

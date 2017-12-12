@@ -15,10 +15,10 @@ import CFM.Inst
 import Target
 import Target.RTL
 
-stubAddr :: WordAddr
+stubAddr :: CellAddr
 stubAddr = 0x3E00 `div` 2
 
-newtype AvoidStub = AvoidStub WordAddr deriving (Eq, Show)
+newtype AvoidStub = AvoidStub CellAddr deriving (Eq, Show)
 
 instance Arbitrary AvoidStub where
   arbitrary = AvoidStub <$>

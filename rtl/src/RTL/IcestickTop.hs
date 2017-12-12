@@ -6,7 +6,7 @@
 {-# LANGUAGE BinaryLiterals #-}
 module RTL.IcestickTop where
 
-import Clash.Prelude hiding (Word, readIO, read)
+import Clash.Prelude hiding (readIO, read)
 import CFM.Types
 import RTL.IOBus
 import RTL.IRQ
@@ -16,8 +16,8 @@ import RTL.Core
 
 system :: (HasClockReset dom gated synchronous)
        => FilePath
-       -> Signal dom Word
-       -> Signal dom Word
+       -> Signal dom Cell
+       -> Signal dom Cell
 system raminit ins = outs
   where
     (ioreq, fetch) = coreWithRAM ram ioresp
@@ -43,6 +43,6 @@ system raminit ins = outs
                           }) #-}
 topEntity :: Clock System 'Source
           -> Reset System 'Asynchronous
-          -> Signal System Word
-          -> Signal System Word
+          -> Signal System Cell
+          -> Signal System Cell
 topEntity c r = withClockReset c r $ system "random-3k.readmemb"

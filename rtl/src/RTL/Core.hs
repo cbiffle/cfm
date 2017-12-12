@@ -5,7 +5,7 @@
 {-# LANGUAGE BinaryLiterals #-}
 module RTL.Core where
 
-import Clash.Prelude hiding (Word, readIO, read)
+import Clash.Prelude hiding (readIO, read)
 import Control.Lens hiding ((:>), (:<), op)
 import CFM.Types
 import RTL.Str
@@ -20,8 +20,8 @@ core = mealy datapath def
 -- the local bus interface.
 coreWithStacks
   :: (HasClockReset dom gated synchronous)
-  => Signal dom Word    -- ^ read response from memory
-  -> Signal dom Word    -- ^ read response from I/O
+  => Signal dom Cell    -- ^ read response from memory
+  -> Signal dom Cell    -- ^ read response from I/O
   -> ( Signal dom BusReq
      , Signal dom Bool
      )  -- ^ Bus request and fetch signal, respectively.
@@ -36,7 +36,7 @@ coreWithStacks mresp ioresp = (busReq, fetch)
     r = stack "R" $ coreOuts <&> (^. osROp)
 
 stack :: (HasClockReset d g s)
-      => String -> Signal d (SP, SDelta, Maybe Word) -> Signal d Word
+      => String -> Signal d (SP, SDelta, Maybe Cell) -> Signal d Cell
 stack name op = readNew (blockRamPow2 (repeat $ errorX name))
                         (op <&> (^. _1) <&> unpack)
                         (op <&> repackStack)
@@ -48,10 +48,10 @@ stack name op = readNew (blockRamPow2 (repeat $ errorX name))
 -- an I/O bridge, exposing the I/O bus.
 coreWithRAM
   :: (HasClockReset dom gated synchronous)
-  => (Signal dom SAddr -> Signal dom (Maybe (SAddr, Word)) -> Signal dom Word)
+  => (Signal dom SAddr -> Signal dom (Maybe (SAddr, Cell)) -> Signal dom Cell)
     -- ^ RAM constructor
-  -> Signal dom Word    -- ^ I/O read response, valid when addressed.
-  -> ( Signal dom (Maybe (SAddr, Maybe Word))
+  -> Signal dom Cell    -- ^ I/O read response, valid when addressed.
+  -> ( Signal dom (Maybe (SAddr, Maybe Cell))
      , Signal dom Bool
      ) -- ^ I/O bus outputs and fetch signal, respectively.
 coreWithRAM ram ioresp = (ioreq, fetch)

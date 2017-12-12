@@ -7,7 +7,7 @@
 {-# LANGUAGE TypeFamilies #-}
 module RTL.Beh where
 
-import Clash.Prelude hiding (Word, cycle)
+import Clash.Prelude hiding (cycle)
 
 import Data.Tuple (swap)
 import Control.Lens

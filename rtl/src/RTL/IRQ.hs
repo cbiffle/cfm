@@ -6,7 +6,7 @@
 -- | Interrupt support.
 module RTL.IRQ where
 
-import Clash.Prelude hiding (Word)
+import Clash.Prelude
 
 import CFM.Types
 import CFM.Inst
@@ -23,8 +23,8 @@ singleIrqController
   => Signal d Bool    -- ^ Interrupt input, active high, level-sensitive.
   -> Signal d Bool    -- ^ CPU fetch signal, active high.
   -> Signal d (Maybe (t, Maybe w))   -- ^ I/O bus request.
-  -> ( Signal d Word -> Signal d Word
-     , Signal d Word
+  -> ( Signal d Cell -> Signal d Cell
+     , Signal d Cell
      )  -- ^ Memory-to-CPU alteration constructor and I/O response,
         -- respectively.
 singleIrqController irqS fetchS reqS = (memCtor, respS)
@@ -52,7 +52,7 @@ singleIrqController irqS fetchS reqS = (memCtor, respS)
           Just (_, Just _) -> True
           _                -> False
 
-    datapathO :: (Bool, Bool) -> (Bool, Word)
+    datapathO :: (Bool, Bool) -> (Bool, Cell)
     datapathO (en, entry) = (entry, zeroExtend (pack en))
 
 data MIS = MIS
@@ -76,9 +76,9 @@ multiIrqController
   => Vec Width (Signal d Bool)
       -- ^ Interrupt inputs, active high, level-sensitive.
   -> Signal d Bool    -- ^ CPU fetch signal, active high.
-  -> Signal d (Maybe (BitVector 2, Maybe Word))   -- ^ I/O bus request.
-  -> ( Signal d Word -> Signal d Word
-     , Signal d Word
+  -> Signal d (Maybe (BitVector 2, Maybe Cell))   -- ^ I/O bus request.
+  -> ( Signal d Cell -> Signal d Cell
+     , Signal d Cell
      )  -- ^ Memory-to-CPU alteration constructor and I/O response,
         -- respectively.
 multiIrqController irqS fetchS reqS = (memCtor, respS)

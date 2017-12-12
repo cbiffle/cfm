@@ -6,7 +6,7 @@
 
 module RTL.GPIO where
 
-import Clash.Prelude hiding (Word)
+import Clash.Prelude
 
 import CFM.Types
 
@@ -17,13 +17,13 @@ import CFM.Types
 --
 -- Reading from any address gets the current pin status.
 outport :: (HasClockReset d g s)
-        => Signal d (Maybe (BitVector 2, Maybe Word))
-        -> ( Signal d Word
-           , Signal d Word
+        => Signal d (Maybe (BitVector 2, Maybe Cell))
+        -> ( Signal d Cell
+           , Signal d Cell
            )
 outport = unbundle . moore outportT outportO 0
   where
-    outportT :: Word -> Maybe (BitVector 2, Maybe Word) -> Word
+    outportT :: Cell -> Maybe (BitVector 2, Maybe Cell) -> Cell
     -- Writes
     outportT v (Just (a, Just v')) = case a of
       0 -> v'
@@ -33,7 +33,7 @@ outport = unbundle . moore outportT outportO 0
     -- Reads or unselected
     outportT v _ = v
 
-    outportO :: Word -> (Word, Word)
+    outportO :: Cell -> (Cell, Cell)
     outportO v = (v, v)
 
 -- | An input port. This is currently rather specialized.
@@ -44,14 +44,14 @@ outport = unbundle . moore outportT outportO 0
 -- It also produces an interrupt on negative edges of bit 0. The interrupt
 -- condition can be cleared by any write to the port's address space.
 inport :: (HasClockReset d g s)
-       => Signal d Word
-       -> Signal d (Maybe (t, Maybe Word))
-       -> ( Signal d Word
+       => Signal d Cell
+       -> Signal d (Maybe (t, Maybe Cell))
+       -> ( Signal d Cell
           , Signal d Bool
           )
 inport = curry $ mooreB inportT id (0, False)
   where
-    inportT :: (Word, Bool) -> (Word, Maybe (t, Maybe Word)) -> (Word, Bool)
+    inportT :: (Cell, Bool) -> (Cell, Maybe (t, Maybe Cell)) -> (Cell, Bool)
     inportT (reg, irq) (port, req) = (port, irq')
       where
         irq' = case req of

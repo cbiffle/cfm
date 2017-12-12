@@ -9,7 +9,7 @@
 -- | IO bus support and interfacing
 module RTL.IOBus where
 
-import Clash.Prelude hiding (Word, read)
+import Clash.Prelude hiding (read)
 
 import Control.Monad (join)
 import Control.Arrow (first)
@@ -21,8 +21,8 @@ import CFM.Types
 type IOAddr = BitVector 14
 
 -- | Bridges the core's outgoing bus to the narrower I/O bus
-coreToIO :: Signal d WordAddr                       -- ^ read address from core
-         -> Signal d (Maybe (WordAddr, t))          -- ^ write command from core
+coreToIO :: Signal d CellAddr                       -- ^ read address from core
+         -> Signal d (Maybe (CellAddr, t))          -- ^ write command from core
          -> ( Signal d (Maybe (IOAddr, Maybe t))    -- ^ combined I/O interface
             , Signal d Bool                         -- ^ I/O write active signal
             )

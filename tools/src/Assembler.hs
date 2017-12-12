@@ -4,8 +4,6 @@
 {-# LANGUAGE TupleSections #-}
 module Assembler where
 
-import Prelude hiding (Word)
-
 import Clash.Class.BitPack
 
 import Data.Bits
@@ -273,7 +271,7 @@ asm tops = do
   create "!" $ Immediate macroBang
   forM_ tops run
 
-asmString :: String -> Either String [Word]
+asmString :: String -> Either String [Cell]
 asmString input = result
   where
     pr = parse sourceFile "(string literal)" input

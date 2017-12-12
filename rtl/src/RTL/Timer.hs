@@ -5,7 +5,7 @@
 
 module RTL.Timer where
 
-import Clash.Prelude hiding (Word)
+import Clash.Prelude
 import Control.Arrow (first)
 
 import CFM.Types
@@ -32,15 +32,15 @@ type Ctr = BitVector CtrWidth
 --
 -- The match bits in the status register are also exposed as IRQs.
 timer :: (HasClockReset d g s)
-      => Signal d (Maybe (Addr, Maybe Word))
+      => Signal d (Maybe (Addr, Maybe Cell))
       -> ( Vec MatchCount (Signal d Bool)
-         , Signal d Word
+         , Signal d Cell
          )
 timer = first unbundle . unbundle . moore timerT timerO (0, repeat False, repeat 0, 0)
 
 -- | Transition function for timer state.
 timerT :: (Ctr, Vec MatchCount Bool, Vec MatchCount Ctr, Addr)
-       -> Maybe (Addr, Maybe Word)
+       -> Maybe (Addr, Maybe Cell)
        -> (Ctr, Vec MatchCount Bool, Vec MatchCount Ctr, Addr)
 timerT (ctr, irqs, matches, lastAddr) req = (ctr', irqs', matches', lastAddr')
   where
@@ -60,7 +60,7 @@ timerT (ctr, irqs, matches, lastAddr) req = (ctr', irqs', matches', lastAddr')
 
 -- | Exposes the IRQs and the delayed register reads.
 timerO :: (Ctr, Vec MatchCount Bool, Vec MatchCount Ctr, Addr)
-       -> (Vec MatchCount Bool, Word)
+       -> (Vec MatchCount Bool, Cell)
 timerO (ctr, irqs, matches, lastAddr) = (irqs, rs !! lastAddr)
   where
     rs = zeroExtend ctr :> zeroExtend (pack irqs) :> map zeroExtend matches

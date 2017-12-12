@@ -6,7 +6,7 @@
 {-# LANGUAGE TypeFamilies #-}
 module RTL.CoreInterface where
 
-import Clash.Prelude hiding (Word, cycle)
+import Clash.Prelude hiding (cycle)
 import GHC.Generics
 
 import Control.DeepSeq (NFData)
@@ -26,7 +26,7 @@ instance BitPack Space where
 instance Arbitrary Space where
   arbitrary = arbitraryBoundedEnum
 
-data BusReq = MReq SAddr (Maybe (Space, SAddr, Word))
+data BusReq = MReq SAddr (Maybe (Space, SAddr, Cell))
                 -- ^ An M-type request specifies a memory read and a write to
                 -- either memory or I/O space.
             | IReq SAddr
@@ -39,10 +39,10 @@ instance Arbitrary BusReq where
                     ]
 
 data IS = IS
-  { _isMData :: Word  -- ^ Response from M port
-  , _isIData :: Word  -- ^ Response from I port
-  , _isDData :: Word  -- ^ Response from data stack
-  , _isRData :: Word  -- ^ Response from return stack
+  { _isMData :: Cell  -- ^ Response from M port
+  , _isIData :: Cell  -- ^ Response from I port
+  , _isDData :: Cell  -- ^ Response from data stack
+  , _isRData :: Cell  -- ^ Response from return stack
   } deriving (Show, Generic, ShowX, NFData)
 makeLenses ''IS
 
@@ -50,7 +50,7 @@ data MS = MS
   { _msDPtr :: SP
   , _msRPtr :: SP
   , _msPC :: SAddr
-  , _msT :: Word
+  , _msT :: Cell
   , _msLoadFlag :: Bool
   , _msLastSpace :: Space
     -- Note: if loads don't corrupt T, this value is present in the MSB.
@@ -72,8 +72,8 @@ instance Default MS where
 
 data OS = OS
   { _osBusReq :: BusReq
-  , _osDOp :: (SP, SDelta, Maybe Word)
-  , _osROp :: (SP, SDelta, Maybe Word)
+  , _osDOp :: (SP, SDelta, Maybe Cell)
+  , _osROp :: (SP, SDelta, Maybe Cell)
   , _osFetch :: Bool
   } deriving (Show, Generic, ShowX, NFData)
 makeLenses ''OS

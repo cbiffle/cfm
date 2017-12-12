@@ -13,12 +13,13 @@ module CFM.Inst
   , canonicalInst
   ) where
 
-import Clash.Prelude hiding (Word)
+import Clash.Prelude
 import Test.QuickCheck
 
 -- | CFM instructions. This type is designed so that its default SOP bit
 -- encoding in Clash exactly matches the CFM instruction encoding. (There is
--- also a 'BitPack' instance for moving between this type and 'Word' explicitly.)
+-- also a 'BitPack' instance for moving between this type and 'Cell'
+-- explicitly.)
 data Inst = NotLit FlowOrALUInst
               -- ^ Instructions other than 'Lit' -- MSB 0.
           | Lit (BitVector 15)

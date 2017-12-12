@@ -1,7 +1,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 module Main where
 
-import Prelude hiding (Word, pi)
+import Prelude hiding (pi)
 
 import Clash.Class.Resize (truncateB, zeroExtend)
 import Clash.Class.BitPack (pack, unpack)
@@ -42,7 +42,7 @@ main = do
         liftIO $ hClose out
   putStrLn $ "Cycles: " ++ show c
 
-type Name = [Word]
+type Name = [Cell]
 
 nameFromString :: String -> Name
 
@@ -55,12 +55,12 @@ nameFromString (c : cs) = w0 : packS cs
     packS [x] = [c2w x]
     packS [] = []
 
--- | Converts a 'Word' into the 'WordAddr' it would dereference as, by dropping
+-- | Converts a 'Cell' into the 'CellAddr' it would dereference as, by dropping
 -- the LSB.
-word2wa :: Word -> WordAddr
+word2wa :: Cell -> CellAddr
 word2wa x = truncateB (x `shiftR` 1)
 
-wa2word :: WordAddr -> Word
+wa2word :: CellAddr -> Cell
 wa2word x = zeroExtend x `shiftL` 1
 
 dropWhile' :: (a -> Bool) -> [a] -> [a]
@@ -72,7 +72,7 @@ ret, invert :: Inst
 ret = NotLit $ ALU True T False False False (Res 0) (-1) 0
 invert = NotLit $ ALU False NotT False False False (Res 0) 0 0
 
-parseHex :: String -> Word
+parseHex :: String -> Cell
 parseHex = foldl' (\n c -> n * 16 + fromIntegral (digitToInt c)) 0
 
 newtype BsT m x = BsT { unBsT :: StateT FS (ExceptT ForthErr m) x }
@@ -98,7 +98,7 @@ data ForthState = Interpreting | Compiling
 
 data FS = FS
   { fsInput :: String
-  , fsCache :: M.Map KnownXT WordAddr
+  , fsCache :: M.Map KnownXT CellAddr
   , fsFallbacks :: M.Map String Int
   , fsParsers :: S.Set String
   , fsMasked :: S.Set String
@@ -129,7 +129,7 @@ hostlog :: (MonadIO m) => String -> BsT m ()
 hostlog m = liftIO $ putStrLn m
 
 bootstrap :: (MonadTarget m, MonadIO m)
-          => BsT m () -> String -> m (Either ForthErr WordAddr)
+          => BsT m () -> String -> m (Either ForthErr CellAddr)
 bootstrap a source = do
   r <- runExceptT $ runStateT (unBsT (initializeTarget >> a)) s
   case r of
@@ -165,7 +165,7 @@ initializeTarget = do
 
 cached_1_0 :: (MonadTarget m)
            => KnownXT
-           -> Word
+           -> Cell
            -> BsT m ()
            -> BsT m ()
 cached_1_0 name arg impl = do
@@ -197,19 +197,19 @@ takeWord = do
   pure w
 
 -- | Reads the vocabulary head cell, giving the LFA of the latest definition.
-readLatest :: (MonadTarget m) => m WordAddr
+readLatest :: (MonadTarget m) => m CellAddr
 readLatest = word2wa <$> tload 2
 
-writeLatest :: (MonadTarget m) => WordAddr -> m ()
+writeLatest :: (MonadTarget m) => CellAddr -> m ()
 writeLatest = tstore 2 . wa2word
 
 -- | Reads the dictionary pointer cell, giving the next free cell after the end
 -- of the dictionary.
-readHere :: (MonadTarget m) => m Word
+readHere :: (MonadTarget m) => m Cell
 readHere = tload 3
 
 -- | Writes the dictionary pointer cell.
-writeHere :: (MonadTarget m) => Word -> m ()
+writeHere :: (MonadTarget m) => Cell -> m ()
 writeHere = tstore 3
 
 readState :: (MonadTarget m) => m ForthState
@@ -224,10 +224,10 @@ writeState s = tstore 5 $ case s of
   Interpreting -> 0
   Compiling -> -1
 
-readFreeze :: (MonadTarget m) => m Word
+readFreeze :: (MonadTarget m) => m Cell
 readFreeze = tload 6
 
-writeFreeze :: (MonadTarget m) => Word -> m ()
+writeFreeze :: (MonadTarget m) => Cell -> m ()
 writeFreeze = tstore 6
 
 freeze :: (MonadTarget m) => m ()
@@ -235,7 +235,7 @@ freeze = readHere >>= writeFreeze
 
 -- | Searches for a word in the target dictionary. Returns its code field
 -- address and flags word if found.
-lookupWord :: (MonadTarget m) => String -> BsT m (Maybe (WordAddr, Word))
+lookupWord :: (MonadTarget m) => String -> BsT m (Maybe (CellAddr, Cell))
 lookupWord name = do
   mxt <- gets $ M.lookup SfindXT . fsCache
   case mxt of
@@ -243,7 +243,7 @@ lookupWord name = do
     Just xt -> lookupWordT name xt
 
 -- | Host-emulated version of lookupWord.
-lookupWordH :: (MonadTarget m) => String -> m (Maybe (WordAddr, Word))
+lookupWordH :: (MonadTarget m) => String -> m (Maybe (CellAddr, Cell))
 lookupWordH nameS = readLatest >>= lookupWordFrom
   where
     name = nameFromString nameS
@@ -267,7 +267,7 @@ lookupWordH nameS = readLatest >>= lookupWordFrom
         else pure False
 
 -- | Target-implemented version of lookupWord based on SFind.
-lookupWordT :: (MonadTarget m) => String -> WordAddr -> m (Maybe (WordAddr, Word))
+lookupWordT :: (MonadTarget m) => String -> CellAddr -> m (Maybe (CellAddr, Cell))
 lookupWordT name xt = do
   h <- (80 +) . aligned <$> readHere
   zipWithM_ tstore [word2wa h ..] $ nameFromString name
@@ -284,26 +284,26 @@ lookupWordT name xt = do
 
 -- | Encloses a cell into the dictionary. The cell is treated as data and is
 -- frozen from fusion.
-comma :: (MonadTarget m) => Word -> BsT m ()
+comma :: (MonadTarget m) => Cell -> BsT m ()
 comma x = cached_1_0 CommaXT x $ do
   rawComma x
   freeze
 
 -- | Encloses a cell into the dictionary without having an opinion on whether
 -- it's data or code.
-rawComma :: (MonadTarget m) => Word -> BsT m ()
+rawComma :: (MonadTarget m) => Cell -> BsT m ()
 rawComma x = do
   h <- readHere
   writeHere (h + 2)
   tstore (word2wa h) x
 
 -- | Compiles instructions for materializing a literal value.
-literal :: (MonadTarget m) => Word -> BsT m ()
+literal :: (MonadTarget m) => Cell -> BsT m ()
 literal w = do
   inst $ Lit $ truncateB $ if w >= 0x8000 then complement w else w
   when (w >= 0x8000) $ inst invert
 
-compile :: (MonadTarget m) => Word -> BsT m ()
+compile :: (MonadTarget m) => Cell -> BsT m ()
 compile w = cached_1_0 CompileCommaXT w $ do
   -- Fetch the instruction on the far end of the call.
   dst <- unpack <$> tload (word2wa w)
@@ -320,7 +320,7 @@ compile w = cached_1_0 CompileCommaXT w $ do
 --
 -- This is where simple peephole optimizations can occur, subject to the freeze
 -- line.
-rawInst :: (MonadTarget m) => Word -> BsT m ()
+rawInst :: (MonadTarget m) => Cell -> BsT m ()
 rawInst i = do
   h <- readHere
   fp <- readFreeze
@@ -344,7 +344,7 @@ rawInst i = do
             -> fuse (i - 3)
         _ -> rawComma i
 
-fuse :: (MonadTarget m) => Word -> BsT m ()
+fuse :: (MonadTarget m) => Cell -> BsT m ()
 fuse i = do
   h <- readHere
   writeHere (h - 2)
@@ -353,7 +353,7 @@ fuse i = do
 inst :: (MonadTarget m) => Inst -> BsT m ()
 inst = rawInst . pack
 
-aligned :: Word -> Word
+aligned :: Cell -> Cell
 aligned x = x + (x .&. 1)
 
 align :: (MonadTarget m) => BsT m ()
@@ -363,7 +363,7 @@ align = do
     then writeHere (h + 1)
     else pure ()
 
-createHeader :: (MonadTarget m) => Name -> Word -> BsT m ()
+createHeader :: (MonadTarget m) => Name -> Cell -> BsT m ()
 createHeader name flags = do
   align
   h <- readHere
@@ -382,12 +382,12 @@ compileOnly name = do
   s <- readState
   when (s /= Compiling) (throwError (BadState s Compiling name))
 
-requireWord' :: (MonadTarget m) => String -> BsT m (WordAddr, Word)
+requireWord' :: (MonadTarget m) => String -> BsT m (CellAddr, Cell)
 requireWord' name = do
   def <- lookupWord name
   maybe (throwError (UnknownWord name)) pure def
 
-requireWord :: (MonadTarget m) => String -> BsT m WordAddr
+requireWord :: (MonadTarget m) => String -> BsT m CellAddr
 requireWord = fmap fst . requireWord'
 
 fallback :: (MonadIO m, MonadTarget m) => String -> BsT m ()
@@ -530,7 +530,7 @@ mcreate = do
   createHeader w 0
 
 callParser :: (MonadIO m, MonadTarget m)
-           => WordAddr
+           => CellAddr
            -> BsT m ()
 callParser xt = do
   tsourcem <- gets $ M.lookup TickSourceXT . fsCache

@@ -7,16 +7,16 @@
 
 module RTL.Shifter where
 
-import Clash.Prelude hiding (Word)
+import Clash.Prelude
 
 import CFM.Types
 
-leftShift :: Word -> BitVector 4 -> Word
+leftShift :: Cell -> BitVector 4 -> Cell
 leftShift input d = revbits $ rightShift (revbits input) d
   where
     revbits = pack . reverse . unpack @(Vec _ Bit)
 
-rightShift :: Word -> BitVector 4 -> Word
+rightShift :: Cell -> BitVector 4 -> Cell
 rightShift input (unpack -> (s3, s2, s1, s0)) = mux1
   where
     mux1 = if s0 then zeroExtend (slice d15 d1 mux2) else mux2

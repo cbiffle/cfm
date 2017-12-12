@@ -7,19 +7,19 @@
 -- bidirectional "host interface."
 module RTL.TargetTop where
 
-import Clash.Prelude hiding (Word, readIO, read)
+import Clash.Prelude hiding (readIO, read)
 import Data.Maybe (fromMaybe, isJust, isNothing)
 import CFM.Types
 import RTL.IOBus
 import RTL.Core
 
 host :: (HasClockReset d g s)
-     => Signal d (Maybe Word)   -- ^ Host-to-target data
+     => Signal d (Maybe Cell)   -- ^ Host-to-target data
      -> Signal d Bool           -- ^ Host "take" signal clears the T2H buffer
-     -> Signal d (Maybe (BitVector 2, Maybe Word))  -- ^ ioreq
-     -> ( Signal d (Maybe Word)
+     -> Signal d (Maybe (BitVector 2, Maybe Cell))  -- ^ ioreq
+     -> ( Signal d (Maybe Cell)
         , Signal d Bool
-        , Signal d Word
+        , Signal d Cell
         )  -- ^ Target-to-host channel, H2T buffer empty, and ioresp.
 host h2tS htakeS reqS = mooreB hostT hostO def (h2tS, htakeS, reqS)
   where
@@ -48,10 +48,10 @@ host h2tS htakeS reqS = mooreB hostT hostO def (h2tS, htakeS, reqS)
         h2tEmpty = isNothing h2t
 
 target :: (HasClockReset dom gated synchronous, KnownNat n)
-       => Vec n Word                -- ^ RAM image
-       -> Signal dom (Maybe Word)   -- ^ Host-to-target channel
+       => Vec n Cell                -- ^ RAM image
+       -> Signal dom (Maybe Cell)   -- ^ Host-to-target channel
        -> Signal dom Bool           -- ^ Host "take" or ready signal
-       -> ( Signal dom (Maybe Word)
+       -> ( Signal dom (Maybe Cell)
           , Signal dom Bool
           ) -- ^ Target-to-host channel, and H2T empty signal, respectively.
 target raminit h2t htake = (t2h, h2tEmpty)
@@ -60,13 +60,13 @@ target raminit h2t htake = (t2h, h2tEmpty)
     (t2h, h2tEmpty, ioresp) = host h2t htake (partialDecode ioreq)
 
 targetTop :: (KnownNat n)
-          => Vec n Word                -- ^ RAM image
+          => Vec n Cell                -- ^ RAM image
           -> Clock System 'Source
           -> Reset System 'Asynchronous
-          -> ( Signal System (Maybe Word)
+          -> ( Signal System (Maybe Cell)
              , Signal System Bool
              )
-          -> ( Signal System (Maybe Word)
+          -> ( Signal System (Maybe Cell)
              , Signal System Bool
              )
 targetTop img c r = withClockReset c r $

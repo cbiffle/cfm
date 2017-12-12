@@ -1,7 +1,5 @@
 module InstInfo where
 
-import Prelude hiding (Word)
-
 import Clash.Class.BitPack
 import Clash.Class.Resize (zeroExtend)
 
@@ -15,7 +13,7 @@ import CFM.Inst
 import CFM.Types
 
 data Expr = V !Int
-          | L !Word
+          | L !Cell
           | Bin !Expr !BOp !Expr
           | Un !UOp !Expr
           | CondZ !Expr !Expr !Expr

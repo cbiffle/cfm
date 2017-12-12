@@ -5,7 +5,6 @@
 -- | A target that runs the actual processor RTL in an isolated context.
 module Target.RTL where
 
-import Prelude hiding (Word)
 import qualified Clash.Signal as C
 import Clash.Sized.Vector (Vec(..))
 import Clash.Sized.BitVector ((++#))
@@ -27,21 +26,21 @@ import qualified RTL.TargetTop as R
 -- We'll then apply the circuit to it and stash its unconsumed output as State.
 
 data IORTLS = IORTLS
-  { iortlsInp :: [(Maybe Word, Bool)]
+  { iortlsInp :: [(Maybe Cell, Bool)]
   , iortlsCnt :: Int
   } deriving (Show)
 
 -- | IO monad wrapper for interacting with the RTL target while performing I/O.
-newtype IORTL x = IORTL (ReaderT (Chan (Maybe Word, Bool))
+newtype IORTL x = IORTL (ReaderT (Chan (Maybe Cell, Bool))
                         (StateT IORTLS IO) x)
         deriving (Functor, Applicative, Monad,
-                  MonadReader (Chan (Maybe Word, Bool)),
+                  MonadReader (Chan (Maybe Cell, Bool)),
                   MonadState IORTLS,
                   MonadIO)
 
 -- | Advances the simulation one cycle, providing host-to-target signals, and
 -- returns the target-to-host response.
-tick :: Maybe Word -> Bool -> IORTL (Maybe Word, Bool)
+tick :: Maybe Cell -> Bool -> IORTL (Maybe Cell, Bool)
 tick w b = do
   c <- ask
   liftIO $ writeChan c (w, b)
@@ -61,7 +60,7 @@ runIORTL (IORTL a) = do
   pure (x, iortlsCnt s')
 
 -- | Transmits a word to the target system via the H2T buffer.
-tput :: Word -> IORTL ()
+tput :: Cell -> IORTL ()
 tput w = do
   _ <- tick (Just w) False
   awaitTake
@@ -76,7 +75,7 @@ awaitTake = do
 
 -- | Receives a word from the target via the T2H buffer, spinning until one is
 -- available.
-tget :: IORTL Word
+tget :: IORTL Cell
 tget = do
   (t2h, _) <- tick Nothing True
   case t2h of
@@ -134,13 +133,13 @@ instance MonadTarget IORTL where
 -- The actual target and implementation of the debug protocol.
 
 target :: (KnownNat n)
-       => Vec n Word
-       -> [(Maybe Word, Bool)]
-       -> [(Maybe Word, Bool)]
+       => Vec n Cell
+       -> [(Maybe Cell, Bool)]
+       -> [(Maybe Cell, Bool)]
 target img = C.simulateB_lazy $
              R.targetTop img C.systemClockGen C.systemResetGen
 
-debugStub :: Vec 8192 Word
+debugStub :: Vec 8192 Cell
 debugStub = V.replace (0 :: Int) 0x1f58 $
             foldl' (\v (a, i) -> V.replace a i v)
                    (V.repeat 0xDEAD) $
