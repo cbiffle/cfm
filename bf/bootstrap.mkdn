@@ -1,0 +1,81 @@
+Forth Bootstrapping Notes
+=========================
+
+> This doc reflects the state of BsForth on 2017-12-12. If you want to follow
+> along it might be useful to check out the corresponding sources, as `master`
+> may have changed since this doc was updated.
+
+I wrote BsForth to explore some ideas around bringing up a Forth system. My
+goals were:
+
+1. To erase the distinction between cross-compilers (which generate a Forth for
+   a different CPU) and re-compilers (which generate a new version of the same
+   Forth).
+
+2. To allow for the target's Forth dialect being wildly different from the
+   host's, to support experimentation.
+
+3. To avoid having some of the system written in a restricted "assembly" dialect
+   and some in "real" Forth.
+
+4. To draw a clear distinction between the host and target system, and avoid
+   accidental inter-mingling of host and target data.
+
+5. To support both compilation to an image (in memory or on disk) and tethered
+   compilation on an embedded device -- with the same code.
+
+
+A Target API
+------------
+
+The host is the system where the compiler tools are running. The target is the
+system containing the output of the compiler. The target cannot access the
+host's memory directly; the host may or may not have direct access to target
+memory.
+
+In an extreme example, the host could be a PC, and the target an embedded device
+connected over a serial port. The traditional Forth approach in this case is to
+initialize the target with a small code fragment, a "talker," that responds to
+commands received over the serial line. [Frank Sergeant's "three-instruction
+Forth"](http://pygmy.utoh.org/3ins4th.html) is an influential example. His
+talker provides three operations:
+
+- Read a unit (e.g. a byte) from memory.
+- Write a unit to memory.
+- Call a subroutine.
+ 
+By gradually poking machine code into memory and calling it, these operations
+are sufficient to bootstrap a Forth implementation.
+
+> Note: these operations are sufficient, but not *necessary*. Assuming the
+> talker contains code to exchange bytes with the host at predictable addresses,
+> the "call subroutine" command is sufficient on its own. This introduces more
+> dependence on the target interface, however, so I haven't gone this route.
+
+On the CFM specifically, the stacks are not part of memory. This means we also
+need operations for manipulating the stacks. In all, seven operations suffice:
+read and write on each address space (where each stack is effectively a separate
+address space), and call.
+
+These seven operations form an API for a target system. If the host software is
+written in terms of the abstract API, we can implement targets in a variety of
+ways:
+
+- **With a serial talker,** as discussed above.
+
+- **Through a hardware debug interface.** If the target CPU has e.g. a JTAG
+  interface, the host can perform each operation without requiring *any*
+  software support on the target. (I've previously done this using SWD to a
+  Cortex-M0.)
+
+- **With an emulator.** Running the emulator against a dedicated area of RAM,
+  the host can build up a target system for an entirely different language model
+  and CPU, with no risk of intermingling.
+
+Not all chips have a high-quality emulator available, and coding against a
+low-quality emulator can introduce assumptions that fail on real hardware. But
+the CFM's RTL is written in a high-level language. We can simply run it to get
+a correct (but slow) emulator for free.
+
+
+
