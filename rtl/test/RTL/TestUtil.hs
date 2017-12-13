@@ -247,7 +247,7 @@ genspec sf = do
           go' 12 s x d r ^. _2 . osFetch `shouldBe` False
 
       it "N << T" $ t'n 13 $ \t n -> n `shiftL` fromIntegral (slice d3 d0 t)
-      it "depth"  $ t'  14 $ \s _ _ -> zeroExtend (s ^. msDPtr)
+      it "depth"  $ t'  14 $ \s _ _ -> (s ^. msRPtr) ++# (s ^. msDPtr)
       it "N U< T"  $ t'n 15 $ \t n -> pack $ repeat $ n < t
 
   where

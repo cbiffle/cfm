@@ -85,7 +85,7 @@ datapath (MS dptr rptr pc t lf lastSpace) (IS m i n r) =
             R        -> r
             MemAtT   -> errorX "value will be loaded next cycle"
             NLshiftT -> n `leftShift` slice d3 d0 t
-            Depth    -> zeroExtend dptr
+            Depth    -> rptr ++# dptr
             NULtT    -> signExtend lessThan
       -- Bus output.
       write = Nothing `duringLoadElse` case inst of

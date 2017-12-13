@@ -108,6 +108,7 @@ executeNormally = do
       msLastSpace .= space
 
       depth <- use msDPtr
+      rdepth <- use msRPtr
 
       msDPtr += pack (signExtend dd)
       msRPtr += pack (signExtend rd)
@@ -127,7 +128,7 @@ executeNormally = do
         R        -> r
         MemAtT   -> errorX "value will be loaded next cycle"
         NLshiftT -> n `shiftL` fromIntegral (slice d3 d0 t)
-        Depth    -> zeroExtend depth
+        Depth    -> rdepth ++# depth
         NULtT    -> signExtend $ pack $ n < t
 
       outputs

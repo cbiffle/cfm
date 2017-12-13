@@ -143,7 +143,7 @@ The `Tmux` field controls a multiplexer that chooses the next value for T.
     11 -> r
     12 -> memoryAt (t `shiftR` 1)
     13 -> n `shiftL` fromIntegral t
-    14 -> zeroExtend depth
+    14 -> pack (rdepth, depth)
     15 -> signExtend $ pack $ n < t
 
 Notes on those options:
@@ -182,7 +182,6 @@ due to Bowman's J1 paper. Omitted fields are zero.
     swap    ALU    Tmux=1  TN
     nip     ALU                             Dadj=-1
     drop    ALU    Tmux=1                   Dadj=-1
-    depth   ALU    Tmux=14                  Dadj=+1
 
     2nip    ALU                             Dadj=-2
 
@@ -217,7 +216,3 @@ Follow this with `drop` to complete the Forth-style store.
 
 `exit` can be folded into previous ALU operations that don't otherwise use the
 return stack, by setting `RP` and `Radj=-1`.
-
-The fastest way to negate a number appears to cost two cycles:
-
-    1- invert
