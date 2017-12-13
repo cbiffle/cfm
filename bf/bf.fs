@@ -882,6 +882,25 @@ TARGET-MASK: postpone
   then
   ?? ;
 
+\ -----------------------------------------------------------------------------
+\ Programming tools.
+
+TARGET-PARSER: remarker
+\ Variant on ANS MARKER that takes a flag on stack indicating whether to
+\ preserve itself.
+: remarker  ( ? "name" -- )
+  if
+    create LATEST @ , here cell + ,
+  else
+    here LATEST @ create , ,
+  then
+  does> dup @ LATEST !  cell + @ DP ! ;
+
+TARGET-PARSER: marker
+\ 'marker foo' creates a word 'foo' that, when executed, restores the
+\ dictionary and search order to the state they had before 'foo' was defined,
+\ forgetting 'foo' in the process.
+: marker  ( "name" -- )  false remarker ;
 
 \ -----------------------------------------------------------------------------
 \ END OF GENERAL KERNEL CODE
@@ -1144,6 +1163,8 @@ create TIB 80 allot
 ' isr  u2/  2 !
 ( adjust U0 to mapped RAM for the Icestick )
 $1700 U0 !
+
+true remarker empty
 
 .( Compilation complete. HERE is... )
 here host.
