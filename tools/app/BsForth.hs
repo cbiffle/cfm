@@ -512,6 +512,12 @@ fallback "TARGET-MASK:" = do
   liftIO $ putStrLn $ "TARGET-MASK: " ++ w
   modify $ \s -> s { fsMasked = S.insert w (fsMasked s) }
 
+fallback ['\'', c, '\''] = do
+  s <- readState
+  case s of
+    Interpreting -> tpush $ fromIntegral $ ord c
+    Compiling -> literal $ fromIntegral $ ord c
+
 fallback ('$' : hnum) | all isHexDigit hnum = do
   s <- readState
   case s of

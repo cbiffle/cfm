@@ -709,7 +709,7 @@ $20 constant bl
     1 - swap
     base @ u/mod  ( c-addr rem quot )
     >r            ( c-addr rem ) ( R: quot )
-    9 over u< 7 and + $30 +  over c!  ( c-addr ) ( R: quot )
+    9 over u< 7 and + '0' +  over c!  ( c-addr ) ( R: quot )
     r>            ( c-addr quot )
     ?dup          ( c-addr quot quot )
   while
@@ -719,7 +719,7 @@ $20 constant bl
   type
   space ;
 
-: .  dup 0< if  $2D emit  negate  then u. ;
+: .  dup 0< if  '-' emit  negate  then u. ;
 
 \ -----------------------------------------------------------------------------
 \ Text interpreter.
@@ -739,7 +739,7 @@ $20 constant bl
 
 
 : digit  ( c -- x )
-  $30 -
+  '0' -
   9 over u< 7 and -
   base @ 1 - over u< -13 and throw ;
 
@@ -758,17 +758,24 @@ $20 constant bl
 \ base prefixes $ (hex) and # (decimal). Throws -13 (undefined word) if parsing
 \ fails.
 : number  ( c-addr u -- x )
+  3 over = if   \ string is exactly three characters, check for char literal
+    over  dup c@ ''' =  swap 2 + c@ ''' =  and if
+      drop 1+ c@ exit
+    then
+  then
   1 over u< if  \ string is at least two characters, check for prefix
-    over c@ $2D = if  \ negative
+    over c@ '-' = if  \ negative
       1 /string
       number
       negate exit
     then
-    over c@ $23 - 2 u< if  \ number prefix
+    over c@ '#' - 2 u< if  \ number prefix
+      \ Note: this exploits the fact that the decimal prefix '#' and the
+      \ hex prefix '$' are adjacent numerically.
       \ TODO: this will leave the base set on ABORT.
-      \ We really need exceptions.
+      \ Should catch / throw.
       base @ >r
-      over c@ $23 - 6 u* 10 + base !
+      over c@ '#' - 6 u* 10 + base !
       1 /string
       number
       r> base !
@@ -796,7 +803,7 @@ $20 constant bl
       2dup >r >r  \ save string
       [ ' number ] literal catch
       ?dup if \ failed
-        r> r> type  $3F emit  cr  throw
+        r> r> type  '?' emit  cr  throw
       else
         rdrop rdrop   \ discard saved string
         STATE @ if  \ compile it as a literal
@@ -824,7 +831,7 @@ TARGET-MASK: '
     then
     \ Got input, but the input was bogus:
     type
-    $3F emit
+    '?' emit
     cr
   then \ Bogus input or end-of-input:
   ABORT ;
@@ -838,14 +845,14 @@ TARGET-MASK: (
 \ Block comments look for a matching paren.
 : (
   SOURCE  >IN @  /string  ( c-addr u )
-  [: $29 <> ;] skip-while  ( c-addr' u' )
+  [: ')' <> ;] skip-while  ( c-addr' u' )
   1 min +  \ consume the trailing paren
   'SOURCE @ -  >IN ! ;  immediate
 
 : S"
   SOURCE  >IN @  /string
   over >r
-  [: $22 <> ;] skip-while
+  [: '"' <> ;] skip-while
   2dup  1 min +  'SOURCE @ -  >IN !
   drop r> tuck -
 
@@ -873,9 +880,7 @@ TARGET-MASK: postpone
       then
       exit
     then
-    type
-    $3F emit
-    cr
+    type '?' emit cr
   then
   ABORT ;
 
@@ -1112,11 +1117,11 @@ create TIB 80 allot
         \ abort isn't supposed to print
         drop
       else 
-        . $21 emit
+        . '!' emit
       then
     else
       STATE @ 0= if  
-        $6F emit $6B emit
+        'o' emit 'k' emit
       then
     then
     cr
