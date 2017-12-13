@@ -1,0 +1,113 @@
+
+To implement exceptions I need to implement a way to check the return stack
+depth. Easy enough.
+
+Let's assume that I alter the "depth" ALU result to contain both SP and RSP.
+
+But I cannot *write* them, at least not in the current system. So moving the
+stack pointers would be linear-time. I'm willing to accept this for now.
+
+
+If the stack pointer needs to be adjusted up (i.e. the depth at throw is less
+than the depth at catch), we can safely trash the values. If it needs to be
+adjusted down, trashing would be rude. Note that this means these operations are
+only suitable for exception handling, not switching between sections of stack
+RAM.
+
+
+  : SP!  ( tgt -- )
+    depth -  dup 0< if   \ SP going up
+      negate
+      begin
+        ?dup
+      while
+        1 -
+        dup
+      repeat
+    else  \ SP going down or staying the same
+      begin
+        ?dup
+      while
+        1 -
+        nip
+      repeat
+    then ;
+
+  : RSP!  ( tgt -- )
+    rdepth -  dup 0< if   \ RSP going up
+      negate
+      begin
+        ?dup
+      while
+        1 -
+        0 >r
+      repeat
+    else  \ RSP going down or staying the same
+      begin
+        ?dup
+      while
+        1 -
+        rdrop
+      repeat
+    then ;
+
+I can derive catch and throw from the reference implementations in the standard:
+
+  user handler  0 handler !
+
+  : catch
+    depth >r
+    handler @ >r
+    rdepth handler !
+    execute
+    r> handler !
+    rdrop
+    0 ;
+
+  : throw
+    ?dup if
+      handler @ RSP!
+      r> handler !
+      r> swap >r
+      SP! drop r>
+    then ;
+
+Hm.
+
+Those are great and all, but I need to be able to mess with the stacks before
+control structures are defined. (The odd life of a bootstrapper.) I should be
+able to do this without using loops.
+
+    : ndrop  ( u*x u -- )
+      ?dup if
+        nip 1 - ndrop exit
+      then ;
+
+    : ncrap  ( x u -- x u*x )
+      ?dup if
+        dup 1 - ncrap exit
+      then ;
+
+    : SP!   ( tgt -- * )
+      1 + depth - dup 0< if   \ going down
+        negate ndrop exit
+      else  \ going up
+        ncrap exit
+      then ;
+
+    : nrdrop  ( u -- ) ( R: u*x a -- )
+      ?dup if
+        r> rdrop >r 1 - nrdrop exit
+      then ;
+
+    : nrcrap  ( u -- ) ( R: -- u*??? )
+      ?dup if
+        r@ >r 1 - nrcrap exit
+      then ;
+
+    : RSP!   ( tgt -- * )
+      rdepth 1 - - dup 0< if   \ going down
+        negate nrdrop exit
+      else  \ going up
+        nrcrap exit
+      then ;

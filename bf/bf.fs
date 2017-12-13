@@ -33,6 +33,11 @@
 \ words:
 : 2dup_!_drop  ( x addr -- x )  [ $6123 asm, ] ;
 
+\ Odd CFM instructions:
+\ Pushes a word containing the depth of the parameter stack in bits 7:0, and
+\ the depth of the return stack in bits 15:8.
+: depths  ( -- x )  [ $6E81 asm, ] ;
+
 \ -----------------------------------------------------------------------------
 \ Support for CONSTANT. CONSTANT is implemented as if written with DOES>, but
 \ we need to start slinging constants before we have DOES> (or CREATE or : for
@@ -72,6 +77,8 @@ $FFFF constant true  ( also abused as -1 below, since it's cheaper )
 : !  ( x addr -- )  2dup_!_drop drop ;
 : +!  ( x addr -- )  tuck @ + swap ! ;
 : aligned  ( addr -- a-addr )  1 over and + ;
+: depth  depths $FF and ;
+: rdepth  depths 8 rshift 1 - ;
 
 : c@  ( c-addr -- c )
   dup @
@@ -85,6 +92,12 @@ $FFFF constant true  ( also abused as -1 below, since it's cheaper )
 : 2drop drop drop ;
 : 1+ 1 + ;
 : u2/ 1 rshift ;
+: ?dup dup if dup then ;
+: negate 0 swap - ;
+: 0= 0 = ;
+: 0< 0 < ;
+: <> = invert ;
+
 
 \ -----------------------------------------------------------------------------
 \ The Dictionary and the Optimizing Assembler.
@@ -201,11 +214,79 @@ $FFFF constant true  ( also abused as -1 below, since it's cheaper )
 : exit  $700c asm, ; immediate
 
 \ -----------------------------------------------------------------------------
+\ Support for VARIABLE .
+
+\ Because we don't need VARIABLE until much later in bootstrap, we can write
+\ its code fragment more clearly than (docon) .
+
+: (dovar) r> ;
+
+\ -----------------------------------------------------------------------------
+\ Exception handling.
+
+: execute  ( i*x xt -- j*x )  >r ; ( NOINLINE )
+
+: ndrop  ( u*x u -- )
+  ?dup if
+    nip 1 - ndrop exit
+  then ;
+
+: ncrap  ( x u -- x u*x )
+  ?dup if
+    dup 1 - ncrap exit
+  then ;
+
+: SP!   ( tgt -- * )
+  1 + depth - dup 0< if   \ going down
+    negate ndrop exit
+  else  \ going up
+    ncrap exit
+  then ;
+
+: nrdrop  ( u -- ) ( R: u*x a -- )
+  ?dup if
+    r> rdrop >r 1 - nrdrop exit
+  then ;
+
+: nrcrap  ( u -- ) ( R: -- u*??? )
+  ?dup if
+    r@ >r 1 - nrcrap exit
+  then ;
+
+: RSP!   ( tgt -- * )
+  rdepth 1 - - dup 0< if   \ going down
+    negate nrdrop exit
+  else  \ going up
+    nrcrap exit
+  then ;
+
+variable 'handler
+: handler 'handler @ execute ;
+
+: catch
+  depth >r
+  handler @ >r
+  rdepth handler !
+  execute
+  r> handler !
+  rdrop
+  0 ;
+
+: throw
+  ?dup if
+    handler @ RSP!
+    r> handler !
+    r> swap >r
+    SP! drop r>
+  then ;
+
+
+\ -----------------------------------------------------------------------------
 \ LITERAL
 
 \ Compiles code to insert a computed literal into a definition.
 : literal  ( C: x -- )  ( -- x )
-  dup 0 < if  ( MSB set )
+  dup 0< if  ( MSB set )
     invert true
   else
     false
@@ -339,7 +420,6 @@ $FFFF constant true  ( also abused as -1 below, since it's cheaper )
 \ -----------------------------------------------------------------------------
 \ More useful Forth words.
 
-: execute  ( i*x xt -- j*x )  >r ; ( NOINLINE )
 : min  ( n1 n2 -- lesser )
   2dup < if drop else nip then ;  ( TODO could be optimized )
 
@@ -355,9 +435,6 @@ $FFFF constant true  ( also abused as -1 below, since it's cheaper )
   r@ @ and or r> ! ;
 
 : c,  here c!  1 allot ;
-
-: 0= 0 = ;
-: <> = invert ;
 
 : :noname
   align here ] ;
@@ -389,15 +466,6 @@ $FFFF constant true  ( also abused as -1 below, since it's cheaper )
   postpone exit
   >resolve
   ; immediate
-
-\ -----------------------------------------------------------------------------
-\ Support for VARIABLE .
-
-\ Because we don't need VARIABLE until much later in bootstrap, we can write
-\ its code fragment more clearly than (docon) .
-
-: (dovar) r> ;
-
 
 \ -----------------------------------------------------------------------------
 \ Basic source code input support and parsing.
@@ -538,8 +606,10 @@ TARGET-PARSER: user
   create  #user @ cells ,  1 #user +!
   does> @  U0 @ + ;
 
+user (handler)
+' (handler) 'handler !
+
 : u<= swap u< 0= ;
-: negate 0 swap - ;
 
 : u/mod  ( num denom -- quotient remainder )
   0 0 16
@@ -641,22 +711,20 @@ $20 constant bl
     >r            ( c-addr rem ) ( R: quot )
     9 over u< 7 and + $30 +  over c!  ( c-addr ) ( R: quot )
     r>            ( c-addr quot )
-    dup           ( c-addr quot quot )
+    ?dup          ( c-addr quot quot )
   while
     swap          ( u' c-addr )
   repeat
-  drop
   here 16 + over -
   type
   space ;
 
-: .  dup 0 < if  $2D emit  negate  then u. ;
+: .  dup 0< if  $2D emit  negate  then u. ;
 
 \ -----------------------------------------------------------------------------
 \ Text interpreter.
 
-variable 'ABORT
-: ABORT  'ABORT @ execute ;
+: ABORT true throw ;
 
 : u*
   >r 0    ( a 0 ) ( R: b )
@@ -673,7 +741,7 @@ variable 'ABORT
 : digit  ( c -- x )
   $30 -
   9 over u< 7 and -
-  base @ 1 - over u< if ABORT then ;
+  base @ 1 - over u< -13 and throw ;
 
 : sfoldl  ( c-addr u x0 xt -- x )
   >r >r
@@ -686,6 +754,9 @@ variable 'ABORT
   repeat
   2drop r> rdrop ;
 
+\ Converts the given string into a number, in the current base, but respecting
+\ base prefixes $ (hex) and # (decimal). Throws -13 (undefined word) if parsing
+\ fails.
 : number  ( c-addr u -- x )
   1 over u< if  \ string is at least two characters, check for prefix
     over c@ $2D = if  \ negative
@@ -709,7 +780,7 @@ variable 'ABORT
 : interpret
   begin
     parse-name
-  dup while
+  ?dup while
     sfind if  \ word found
       ( xt flags )
       if  \ immediate
@@ -728,7 +799,7 @@ variable 'ABORT
       then
     then
   repeat
-  2drop ;
+  drop ;
 
 \ -----------------------------------------------------------------------------
 \ Parsing words and target syntax.
@@ -1019,6 +1090,8 @@ create TIB 80 allot
 : rx! rx 0= if rx! exit then ;
 
 : quit
+  0 RSP!
+  0 handler !
   postpone [
   begin
     TIB 'SOURCE !
@@ -1026,16 +1099,24 @@ create TIB 80 allot
     0 >IN !
     SOURCE accept  'SOURCE cell + !
     space
-    interpret
-    STATE @ 0= if  
-      $6F emit $6B emit
+    [ ' interpret ] literal catch
+    ?dup if
+      true over = if
+        \ abort isn't supposed to print
+        drop
+      else 
+        . $21 emit
+      then
+    else
+      STATE @ 0= if  
+        $6F emit $6B emit
+      then
     then
     cr
   again ;
 
 ' tx 'emit !
 ' rx! 'key !
-' quit 'ABORT !
 
 : cold
   1 OUTSET !   \ raise TX line soon after reset
