@@ -793,9 +793,16 @@ $20 constant bl
         then
       then
     else  \ word unknown
-      number
-      STATE @ if
-        postpone literal
+      2dup >r >r  \ save string
+      [ ' number ] literal catch
+      ?dup if \ failed
+        r> r> type  $3F emit  cr  throw
+      else
+        rdrop rdrop   \ discard saved string
+        STATE @ if  \ compile it as a literal
+          postpone literal
+        then
+        \ otherwise just leave it on the stack.
       then
     then
   repeat
