@@ -772,14 +772,12 @@ $20 constant bl
     over c@ '#' - 2 u< if  \ number prefix
       \ Note: this exploits the fact that the decimal prefix '#' and the
       \ hex prefix '$' are adjacent numerically.
-      \ TODO: this will leave the base set on ABORT.
-      \ Should catch / throw.
       base @ >r
       over c@ '#' - 6 u* 10 + base !
       1 /string
-      number
+      [ ' number ] literal catch
       r> base !
-      exit
+      throw exit
     then
   then
   0 [: base @ u*  swap digit + ;] sfoldl ;
