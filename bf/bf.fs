@@ -782,6 +782,10 @@ $20 constant bl
   then
   0 [: base @ u*  swap digit + ;] sfoldl ;
 
+\ Reports an unknown word.
+: ??  ( c-addr u -- * )
+  type  '?' emit  cr  -13 throw ;
+
 : interpret
   begin
     parse-name
@@ -801,7 +805,7 @@ $20 constant bl
       2dup >r >r  \ save string
       [ ' number ] literal catch
       ?dup if \ failed
-        r> r> type  '?' emit  cr  throw
+        r> r> ??
       else
         rdrop rdrop   \ discard saved string
         STATE @ if  \ compile it as a literal
@@ -827,12 +831,9 @@ TARGET-MASK: '
     sfind if  ( xt flags )
       drop exit
     then
-    \ Got input, but the input was bogus:
-    type
-    '?' emit
-    cr
-  then \ Bogus input or end-of-input:
-  ABORT ;
+    \ Got input, but the input was bogus.
+  then
+  ?? ;
 
 TARGET-MASK: \
 \ Line comments simply discard the rest of input.
@@ -878,9 +879,8 @@ TARGET-MASK: postpone
       then
       exit
     then
-    type '?' emit cr
   then
-  ABORT ;
+  ?? ;
 
 
 \ -----------------------------------------------------------------------------
