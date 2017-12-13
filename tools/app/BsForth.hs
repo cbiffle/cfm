@@ -518,11 +518,23 @@ fallback ('$' : hnum) | all isHexDigit hnum = do
     Interpreting -> tpush $ parseHex hnum
     Compiling -> literal $ parseHex hnum
 
+fallback ('$' : '-' : hnum) | all isHexDigit hnum = do
+  s <- readState
+  case s of
+    Interpreting -> tpush $ negate $ parseHex hnum
+    Compiling -> literal $ negate $ parseHex hnum
+
 fallback num | all isDigit num = do
   s <- readState
   case s of
     Interpreting -> tpush $ fromIntegral (read num :: Integer)
     Compiling -> literal $ fromIntegral (read num :: Integer)
+  
+fallback ('-' : num) | all isDigit num = do
+  s <- readState
+  case s of
+    Interpreting -> tpush $ negate $ fromIntegral (read num :: Integer)
+    Compiling -> literal $ negate $ fromIntegral (read num :: Integer)
   
 fallback unk = throwError (UnknownWord unk)
 
