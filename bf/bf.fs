@@ -538,6 +538,29 @@ TARGET-PARSER: user
   create  #user @ cells ,  1 #user +!
   does> @  U0 @ + ;
 
+: u<= swap u< 0= ;
+: negate 0 swap - ;
+
+: u/mod  ( num denom -- quotient remainder )
+  0 0 16
+  begin                   ( n d r q i )
+    >r                    ( n d r q ) ( R: i )
+    >r >r                 ( n d ) ( R: i q r )
+    over 15 rshift        ( n d n[15] ) ( R: i q r )
+    r> 1 lshift or        ( n d 2*r+n[15] )  ( R: i q )
+    >r >r                 ( n ) ( R: i q 2*r+n[15] d )
+    1 lshift              ( 2*n ) ( R: i q 2*r+n[15] d )
+    r> r>                 ( 2*n d 2*r+n[15] ) ( R: i q )
+    r> 1 lshift >r        ( 2*n d 2*r+n[15] ) ( R: i 2*q )
+    2dup u<= if
+      over -
+      r> 1 or >r
+    then
+    r> r>
+    1 -
+    dup 0=
+  until ( n d r q i )
+  drop >r nip nip r> ;
 
 \ -----------------------------------------------------------------------------
 \ User-facing terminal.
@@ -551,6 +574,7 @@ TARGET-PARSER: user
 \ using DEFER and should probably get changed later.
 variable 'key
 variable 'emit
+user base  10 base !
 
 : key 'key @ execute ;
 : emit 'emit @ execute ;
@@ -609,12 +633,24 @@ $20 constant bl
   until
   rdrop nip ;
 
-: .
-  begin
-    dup  12 rshift  9 over u< 7 and +  $30 +  emit
-    4 lshift
-    dup 0=
-  until drop space ;
+: u.
+  here 16 +   \ get a transient buffer big enough for even base 2
+  begin  ( u c-addr )
+    1 - swap
+    base @ u/mod  ( c-addr rem quot )
+    >r            ( c-addr rem ) ( R: quot )
+    9 over u< 7 and + $30 +  over c!  ( c-addr ) ( R: quot )
+    r>            ( c-addr quot )
+    dup           ( c-addr quot quot )
+  while
+    swap          ( u' c-addr )
+  repeat
+  drop
+  here 16 + over -
+  type
+  space ;
+
+: .  dup 0 < if  $2D emit  negate  then u. ;
 
 \ -----------------------------------------------------------------------------
 \ Text interpreter.
@@ -633,7 +669,6 @@ variable 'ABORT
   repeat
   rdrop nip ;
 
-user base  16 base !
 
 : digit  ( c -- x )
   $30 -
@@ -652,6 +687,23 @@ user base  16 base !
   2drop r> rdrop ;
 
 : number  ( c-addr u -- x )
+  1 over u< if  \ string is at least two characters, check for prefix
+    over c@ $2D = if  \ negative
+      1 /string
+      number
+      negate exit
+    then
+    over c@ $23 - 2 u< if  \ number prefix
+      \ TODO: this will leave the base set on ABORT.
+      \ We really need exceptions.
+      base @ >r
+      over c@ $23 - 6 u* 10 + base !
+      1 /string
+      number
+      r> base !
+      exit
+    then
+  then
   0 [: base @ u*  swap digit + ;] sfoldl ;
 
 : interpret
