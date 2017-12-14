@@ -229,6 +229,12 @@ compile' (If trueBody melse) = do
 
     Nothing -> resolve (NotLit . JumpZ . fromIntegral) if_
 
+compile' (Tick name) = do
+  d <- find name 
+  case d of
+    Compiled a -> compile (InlineLit (2 * a))
+    _ -> throwError $ "cannot tick word " ++ name
+
 compile :: Def -> Asm()
 compile (Compiled a)
   | a < 8192 = cComma $ NotLit $ Call $ fromIntegral a

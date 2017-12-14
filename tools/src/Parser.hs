@@ -53,6 +53,8 @@ data AsmFrag = Word String
              | FusionBreak
                 -- ^ Explicitly prevents fusion of two adjacent instructions.
                 -- Useful mostly for nefarious purposes.
+             | Tick String
+                -- ^ Address of a word as a literal.
              deriving (Show)
 
 -- | A loop ending.
@@ -89,7 +91,7 @@ aluprim = sic "alu:" >> ALUPrim <$> lexeme
 
 interp = Interp <$> frag
 
-frag = comment <|> loop <|> ifThen <|> charLit <|> fusionBreak <|> word
+frag = comment <|> loop <|> ifThen <|> charLit <|> fusionBreak <|> tick <|> word
 
 comment = Comment <$> (do sic "\\"
                           c <- many (noneOf "\n")
@@ -113,6 +115,8 @@ thenOrElse = (sic "then" >> pure Nothing)
 charLit = CharLit . head <$> (sic "[char]" *> lexeme)
 
 fusionBreak = sic "|" >> pure FusionBreak
+
+tick = Tick <$> (sic "[']" *> lexeme)
 
 word = do
   w <- lexeme
