@@ -140,8 +140,7 @@ target img = C.simulateB_lazy $
              R.targetTop img C.systemClockGen C.systemResetGen
 
 debugStub :: Vec 8192 Cell
-debugStub = V.replace (0 :: Int) 0x1f58 $
-            foldl' (\v (a, i) -> V.replace a i v)
+debugStub = foldl' (\v (a, i) -> V.replace a i v)
                    (V.repeat 0xDEAD) $
             zip [0 :: Int ..] $
             [asmQQ|
