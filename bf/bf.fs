@@ -1153,8 +1153,8 @@ create TIB 80 allot
   ei
   16 base !
   35 emit
-  LATEST @ cell + 1 + 4 type
-  35 emit
+  LATEST @ cell + dup 1 + swap c@ type
+  35 emit cr
   quit ;
 
 ( install cold as the reset vector )
