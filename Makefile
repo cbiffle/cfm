@@ -1,12 +1,21 @@
-all: build/icestick-3k-prog.bin
+all: syn bits
 
 clean:
 	-rm -f build/*
 
-syn: build/icestick-3k.asc
+syn: syn-ico syn-icestick
+syn-ico: build/ico.asc
+syn-icestick: build/icestick.asc
 
-program: build/icestick-3k-prog.bin
+bits: bits-ico bits-icestick
+bits-ico: build/ico-prog.bin
+bits-icestick: build/icestick-prog.bin
+
+program-icestick: build/icestick-prog.bin
 	iceprog $<
+
+program-ico: build/ico-prog.bin
+	icoprog -p < $<
 
 build/test.hex: tools/test.fs
 	mkdir -p build
@@ -19,21 +28,28 @@ build/test.hex: tools/test.fs
 	  < $< \
 	  > $@
 
-build/icestick-3k.asc:
+build/ico.asc:
+	mkdir -p build
+	stack --silent setup && \
+	  stack --silent build --only-dependencies
+	rtl/syn/syn-8k.sh
+	cp rtl/syn/out/syn8k.asc build/ico.asc
+
+build/icestick.asc:
 	mkdir -p build
 	stack --silent setup && \
 	  stack --silent build --only-dependencies
 	rtl/syn/syn-1k.sh
-	cp rtl/syn/out/syn1k.asc build/icestick-3k.asc
+	cp rtl/syn/out/syn1k.asc build/icestick.asc
 
-build/icestick-3k-prog.asc: build/icestick-3k.asc build/test.hex
+%-prog.asc: %.asc build/test.hex
 	icebram -v rtl/syn/random-3k.hex build/test.hex \
-	  < build/icestick-3k.asc \
-	  > build/icestick-3k-prog.asc
+	  < $< \
+	  > $@
 
 %.bin: %.asc
 	icepack < $< > $@
 
 FORCE:
 
-.PHONY: all clean syn
+.PHONY: all clean syn syn-ico syn-icestick bits bits-ico bits-icestick
