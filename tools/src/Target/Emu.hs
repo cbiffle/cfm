@@ -189,14 +189,6 @@ instance MonadTarget IOEmu where
     tput 3
     checkResponse (fromIntegral <$> tget)
 
-  tpushR value = do
-    tput 4
-    tput $ fromIntegral value
-
-  tpopR = do
-    tput 5
-    checkResponse (fromIntegral <$> tget)
-
   tcall addr = do
-    tput 6
+    tput 4
     tput (2 * fromIntegral addr)

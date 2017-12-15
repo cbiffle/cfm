@@ -76,17 +76,7 @@ debugStub = foldl' (\v (a, i) -> V.replace a i v)
                 >host
                 debug-loop exit
               then
-              4 over = if drop  ( >r )
-                host>
-                >r
-                debug-loop exit
-              then
-              5 over = if drop  ( r> )
-                0 >host
-                r> >host
-                debug-loop exit
-              then
-              6 over = if drop  ( execute )
+              4 over = if drop  ( execute )
                 host>
                 execute
                 debug-loop exit

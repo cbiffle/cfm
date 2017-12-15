@@ -18,10 +18,5 @@ class (Monad m) => MonadTarget m where
   -- | Pop a word from the parameter stack
   tpop :: m Cell
 
-  -- | Push a word onto the return stack.
-  tpushR :: Cell -> m ()
-  -- | Pop a word from the return stack.
-  tpopR :: m Cell
-
   -- | Call a subroutine at the given address for its side effects.
   tcall :: CellAddr -> m ()

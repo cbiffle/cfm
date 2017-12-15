@@ -36,8 +36,6 @@ spec = do
   context "popping what was pushed" $ do
     it "on the parameter stack" $ property $ \v ->
       runIORTL (tpush v >> tpop) >>= (`shouldBe` v) . fst
-    it "on the return stack" $ property $ \v ->
-      runIORTL (tpushR v >> tpopR) >>= (`shouldBe` v) . fst
 
   context "calling routines" $ do
     let assemble insts = zipWithM_ tstore [0..] $ map pack insts
@@ -46,14 +44,11 @@ spec = do
         guardedCall :: IORTL () -> IORTL x -> IORTL x
         guardedCall setup teardown = do
           tpush 0xBEEF
-          tpushR 0xCAFE
           setup
           tcall 0
           r <- teardown
           pguard <- tpop
-          rguard <- tpopR
           liftIO $ pguard `shouldBe` 0xBEEF
-          liftIO $ rguard `shouldBe` 0xCAFE
           pure r
 
     it "can simply return" $ fmap fst $ runIORTL $ do

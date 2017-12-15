@@ -109,16 +109,8 @@ instance MonadTarget IORTL where
     tput 3
     checkResponse tget
 
-  tpushR value = do
-    tput 4
-    tput value
-
-  tpopR = do
-    tput 5
-    checkResponse tget
-
   tcall addr = do
-    tput 6
+    tput 4
     tput (addr ++# 0)
 
 

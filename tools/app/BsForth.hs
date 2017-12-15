@@ -86,11 +86,9 @@ instance MonadTrans BsT where
 instance (MonadTarget m) => MonadTarget (BsT m) where
   tload = lift . tload
   tpush = lift . tpush
-  tpushR = lift . tpushR
   tcall = lift . tcall
 
   tpop = lift tpop
-  tpopR = lift tpopR
 
   tstore a = lift . tstore a
 
