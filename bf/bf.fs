@@ -77,8 +77,6 @@ $FFFF constant true  ( also abused as -1 below, since it's cheaper )
 : !  ( x addr -- )  2dup_!_drop drop ;
 : +!  ( x addr -- )  tuck @ + swap ! ;
 : aligned  ( addr -- a-addr )  1 over and + ;
-: depth  depths $FF and ;
-: rdepth  depths 8 rshift 1 - ;
 
 : c@  ( c-addr -- c )
   dup @
@@ -91,6 +89,9 @@ $FFFF constant true  ( also abused as -1 below, since it's cheaper )
 : 2dup over over ;
 : 2drop drop drop ;
 : 1+ 1 + ;
+: 1- 1 - ;
+: 2* 1 lshift ;
+: cell+ cell + ;
 : u2/ 1 rshift ;
 : ?dup dup if dup then ;
 : negate 0 swap - ;
@@ -98,6 +99,8 @@ $FFFF constant true  ( also abused as -1 below, since it's cheaper )
 : 0< 0 < ;
 : <> = invert ;
 
+: depth  depths $FF and ;
+: rdepth  depths 8 rshift 1- ;
 
 \ -----------------------------------------------------------------------------
 \ The Dictionary and the Optimizing Assembler.
@@ -109,14 +112,14 @@ $FFFF constant true  ( also abused as -1 below, since it's cheaper )
 : here  ( -- addr )  DP @ ;
 : allot  DP +! ;
 : raw,  here !  cell allot ;
-: cells  1 lshift ;
+: cells  2* ;
 : align  here  aligned  DP ! ;
 
 \ Access to the CFA/xt of the most recently defined word.
 : lastxt  ( -- xt )
-  LATEST @  cell +      ( nfa )
+  LATEST @  cell+      ( nfa )
   dup c@ + 1+ aligned   ( ffa )
-  cell + ;
+  cell+ ;
 
 \ "Un-comma" rewinds HERE by 1 cell. It's an implementation factor of asm, .
 : -,  ( -- )  true cells allot ;
@@ -228,16 +231,16 @@ $FFFF constant true  ( also abused as -1 below, since it's cheaper )
 
 : ndrop  ( u*x u -- )
   ?dup if
-    nip 1 - ndrop exit
+    nip 1- ndrop exit
   then ;
 
 : ncrap  ( x u -- x u*x )
   ?dup if
-    dup 1 - ncrap exit
+    dup 1- ncrap exit
   then ;
 
 : SP!   ( tgt -- * )
-  1 + depth - dup 0< if   \ going down
+  1+ depth - dup 0< if   \ going down
     negate ndrop exit
   else  \ going up
     ncrap exit
@@ -245,16 +248,16 @@ $FFFF constant true  ( also abused as -1 below, since it's cheaper )
 
 : nrdrop  ( u -- ) ( R: u*x a -- )
   ?dup if
-    r> rdrop >r 1 - nrdrop exit
+    r> rdrop >r 1- nrdrop exit
   then ;
 
 : nrcrap  ( u -- ) ( R: -- u*??? )
   ?dup if
-    r@ >r 1 - nrcrap exit
+    r@ >r 1- nrcrap exit
   then ;
 
 : RSP!   ( tgt -- * )
-  rdepth 1 - - dup 0< if   \ going down
+  rdepth 1- - dup 0< if   \ going down
     negate nrdrop exit
   else  \ going up
     nrcrap exit
@@ -361,10 +364,11 @@ variable 'handler
 : again  ( C: dest -- )  0 <resolve ; immediate
 : until  ( C: dest -- )  $2000 <resolve ; immediate
 : while  ( C: dest -- orig dest )
-  $2000 mark> swap ; immediate
+  postpone if
+  swap ; immediate
 : repeat  ( C: orig dest -- )
-  $0000 <resolve
-  >resolve ; immediate
+  postpone again
+  postpone then ; immediate
 
 
 \ -----------------------------------------------------------------------------
@@ -387,7 +391,7 @@ variable 'handler
     over over xor
   while
     dup c@  over r@ - c@ xor if 2drop rdrop false exit then
-    1 +
+    1+
   repeat
   2drop rdrop true ;
 
@@ -400,13 +404,13 @@ variable 'handler
   while
     >r  ( stash the LFA ) ( c-addr u )              ( R: lfa )
     2dup                  ( c-addr u c-addr u )     ( R: lfa )
-    r@ cell +             ( c-addr u c-addr u nfa ) ( R: lfa )
+    r@ cell+              ( c-addr u c-addr u nfa ) ( R: lfa )
     dup 1+ swap c@        ( c-addr u c-addr u c-addr u ) ( R: lfa )
     s= if                 ( c-addr u )              ( R: lfa )
       nip                 ( u )                     ( R: lfa )
-      r> cell +           ( u nfa )
+      r> cell+            ( u nfa )
       1+  +  aligned      ( ffa )
-      dup cell +          ( ffa cfa )
+      dup cell+           ( ffa cfa )
       swap @              ( cfa flags )
       true exit           ( cfa flags true )
     then    ( c-addr u ) ( R: lfa )
@@ -450,9 +454,9 @@ variable 'handler
 \ Runtime implementation for [:
 : ([:)
   \ Compute the CFA of the definition from the return address, and stack it.
-  r@ cell +
+  r@ cell+
   \ Adjust the return address to skip the definition.
-  r> @ 1 lshift >r
+  r> @ 2* >r
   ;
 
 \ Introduces a quotation. May nest.
@@ -473,7 +477,7 @@ variable 'handler
 \ Address and length of current input SOURCE.
 variable 'SOURCE  cell allot
 \ Returns the current input as a string.
-: SOURCE  ( -- c-addr u )  'SOURCE dup @ swap cell + @ ;
+: SOURCE  ( -- c-addr u )  'SOURCE dup @ swap cell+ @ ;
 
 \ Holds the number of characters consumed from SOURCE so far.
 variable >IN
@@ -617,17 +621,17 @@ user (handler)
     >r                    ( n d r q ) ( R: i )
     >r >r                 ( n d ) ( R: i q r )
     over 15 rshift        ( n d n[15] ) ( R: i q r )
-    r> 1 lshift or        ( n d 2*r+n[15] )  ( R: i q )
+    r> 2* or              ( n d 2*r+n[15] )  ( R: i q )
     >r >r                 ( n ) ( R: i q 2*r+n[15] d )
-    1 lshift              ( 2*n ) ( R: i q 2*r+n[15] d )
+    2*                    ( 2*n ) ( R: i q 2*r+n[15] d )
     r> r>                 ( 2*n d 2*r+n[15] ) ( R: i q )
-    r> 1 lshift >r        ( 2*n d 2*r+n[15] ) ( R: i 2*q )
+    r> 2* >r              ( 2*n d 2*r+n[15] ) ( R: i 2*q )
     2dup u<= if
       over -
       r> 1 or >r
     then
     r> r>
-    1 -
+    1-
     dup 0=
   until ( n d r q i )
   drop >r nip nip r> ;
@@ -692,7 +696,7 @@ $20 constant bl
       drop
       dup if  \ Not at start of line
         8 emit  space  8 emit   \ rub out character
-        1 -
+        1-
       else    \ At start of line
         beep
       then
@@ -706,7 +710,7 @@ $20 constant bl
 : u.
   here 16 +   \ get a transient buffer big enough for even base 2
   begin  ( u c-addr )
-    1 - swap
+    1- swap
     base @ u/mod  ( c-addr rem quot )
     >r            ( c-addr rem ) ( R: quot )
     9 over u< 7 and + '0' +  over c!  ( c-addr ) ( R: quot )
@@ -732,8 +736,8 @@ $20 constant bl
     over
   while
     r@ 1 and if over + then
-    swap 1 lshift swap
-    r> 1 rshift >r
+    swap 2* swap
+    r> u2/ >r
   repeat
   rdrop nip ;
 
@@ -741,7 +745,7 @@ $20 constant bl
 : digit  ( c -- x )
   '0' -
   9 over u< 7 and -
-  base @ 1 - over u< -13 and throw ;
+  base @ 1- over u< -13 and throw ;
 
 : sfoldl  ( c-addr u x0 xt -- x )
   >r >r
@@ -890,11 +894,11 @@ TARGET-PARSER: remarker
 \ preserve itself.
 : remarker  ( ? "name" -- )
   if
-    create LATEST @ , here cell + ,
+    create LATEST @ , here cell+ ,
   else
     here LATEST @ create , ,
   then
-  does> dup @ LATEST !  cell + @ DP ! ;
+  does> dup @ LATEST !  cell+ @ DP ! ;
 
 TARGET-PARSER: marker
 \ 'marker foo' creates a word 'foo' that, when executed, restores the
@@ -989,7 +993,7 @@ variable uart-tx-bits
   ( Wait for transmitter to be free )
   begin uart-tx-bits @ 0= until
   ( Frame the byte )
-  1 lshift
+  2*
   $200 or
   uart-tx-bits !
   irq#m1 irq-on ;
@@ -997,7 +1001,7 @@ variable uart-tx-bits
 variable uart-rx-bits
 
 8 constant uart-#rx
-variable uart-rx-buf  uart-#rx 1 - cells allot
+variable uart-rx-buf  uart-#rx 1- cells allot
 variable uart-rx-hd
 variable uart-rx-tl
 
@@ -1014,14 +1018,14 @@ variable uart-rx-tl
   rxq-full? if
     drop
   else
-    uart-rx-buf  uart-rx-hd @ [ uart-#rx 1 - 1 lshift ] literal and +  !
+    uart-rx-buf  uart-rx-hd @ [ uart-#rx 1- 2* ] literal and +  !
     2 uart-rx-hd +!
   then ;
 
 ( Takes a cell from the receive queue. If the queue is empty, spin. )
 : rxq>
   begin rxq-empty? 0= until
-  uart-rx-buf  uart-rx-tl @ [ uart-#rx 1 - 1 lshift ] literal and +  @
+  uart-rx-buf  uart-rx-tl @ [ uart-#rx 1- 2* ] literal and +  @
   2 uart-rx-tl +! ;
 
 : uart-rx-init
@@ -1124,9 +1128,9 @@ create TIB 80 allot
   postpone [
   begin
     TIB 'SOURCE !
-    80  'SOURCE cell + !
+    80  'SOURCE cell+ !
     0 >IN !
-    SOURCE accept  'SOURCE cell + !
+    SOURCE accept  'SOURCE cell+ !
     space
     [ ' interpret ] literal catch
     ?dup if
@@ -1153,7 +1157,7 @@ create TIB 80 allot
   ei
   16 base !
   35 emit
-  LATEST @ cell + dup 1 + swap c@ type
+  LATEST @ cell+ dup 1+ swap c@ type
   35 emit cr
   quit ;
 
