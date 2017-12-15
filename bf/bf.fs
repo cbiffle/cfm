@@ -973,6 +973,7 @@ variable uart-tx-bits
   \ this also serves as a "transmitter available" indicator when 0.
 
 : tx-isr
+  TIMV @ cyc/bit + TIMM1 !
   \ Acknowledge interrupt by writing 1 to bit 0 of TIMF.
   \ Keep the 1 around; we're going to use it to save cycles.
   1 TIMF 2dup_!_drop
@@ -983,9 +984,7 @@ variable uart-tx-bits
   swap rshift   ( bits' )
   uart-tx-bits 2dup_!_drop  ( bits' )
 
-  if  \ bits remain
-    TIMV @ cyc/bit + TIMM1 !
-  else  \ bits all gone
+  0= if \ bits all gone
     irq#m1 irq-off
   then ;
 
@@ -996,6 +995,8 @@ variable uart-tx-bits
   2*
   $200 or
   uart-tx-bits !
+  TIMV @ cyc/bit + TIMM1 !
+  1 TIMF !
   irq#m1 irq-on ;
 
 variable uart-rx-bits
@@ -1038,11 +1039,12 @@ variable uart-rx-tl
 \ Triggered when we're between frames and RX drops.
 : rx-negedge-isr
   \ Set up the timer to interrupt us again halfway into the start bit.
-  \ First, the timer may have rolled over while we were waiting for a new
+  \ First, update the match register to the point in time we want, and
+  \ ensure it won't fire while we're working.
+  TIMV @  cyc/bit/2 +  TIMM0 !
+  \ Next, the timer may have rolled over while we were waiting for a new
   \ frame, so clear its pending interrupt status.
   2 TIMF !
-  \ Next set the match register to the point in time we want.
-  TIMV @  cyc/bit/2 +  TIMM0 !
   \ We don't need to clear the IRQ condition, because we won't be re-enabling
   \ it any time soon. Mask our interrupt.
   irq#negedge irq-off
