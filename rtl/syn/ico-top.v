@@ -4,13 +4,13 @@ module top(
   input clk_100mhz,
   output TX,
   input RX,
+  input S1,
   output cts_n,
   output [3:0] led);
 
 wire clk_core;
 wire pll_locked;
-
-wire dtr = 1'b1;
+wire reset_n = ~S1;
 
         SB_PLL40_CORE #(
                 .FEEDBACK_PATH("SIMPLE"),
@@ -28,13 +28,13 @@ wire dtr = 1'b1;
                 .PLLOUTGLOBAL (clk_core  ),
                 .LOCK         (pll_locked),
                 .BYPASS       (1'b0      ),
-                .RESETB       (dtr       )
+                .RESETB       (reset_n   )
         );
         reg [3:0] pll_lock_window = 0;
 	reg pll_stable = 0;
 
-	always @(posedge clk_core or negedge dtr) begin
-          if (~dtr) begin
+	always @(posedge clk_core or negedge reset_n) begin
+          if (~reset_n) begin
               pll_stable <= 0;
               pll_lock_window <= 0;
           end else begin
@@ -46,8 +46,8 @@ wire dtr = 1'b1;
         reg [7:0] reset_delay = 0;
         reg core_reset_n = 0;
 
-        always @(posedge clk_core or negedge dtr)
-          if (~dtr) begin
+        always @(posedge clk_core or negedge reset_n)
+          if (~reset_n) begin
             core_reset_n <= 0;
             reset_delay <= 0;
           end else if (pll_stable) begin

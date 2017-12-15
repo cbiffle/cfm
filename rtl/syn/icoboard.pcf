@@ -9,6 +9,9 @@ set_io TX A9
 set_io RX A10
 set_io --warn-no-port rts_n B8
 
+set_io --warn-no-port S1 K11
+set_io --warn-no-port S2 P13
+
 set_io --warn-no-port sram_ce_n        M7
 set_io --warn-no-port sram_we_n        T7
 set_io --warn-no-port sram_oe_n        L5
