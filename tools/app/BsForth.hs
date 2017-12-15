@@ -20,14 +20,14 @@ import System.IO (hClose, IOMode(WriteMode), openFile)
 import CFM.Types
 import CFM.Inst
 import Target
-import Target.RTL
+import Target.Emu
 
 main :: IO ()
 main = do
   [inputPath, outputPath] <- getArgs
   input <- readFile inputPath
   putStrLn "Bootstrapping..."
-  (_, c) <- runIORTL $ do
+  c <- runIOEmu emuStub $ do
     r <- bootstrap interpreter input
     case r of
       Left e -> liftIO $ do
@@ -40,6 +40,7 @@ main = do
           x <- tload a
           liftIO $ hPrintf out "%04x\n" (fromIntegral x :: Int)
         liftIO $ hClose out
+        cycles
   putStrLn $ "Cycles: " ++ show c
 
 type Name = [Cell]
