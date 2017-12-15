@@ -14,7 +14,7 @@ import Control.Monad.Reader
 import Control.Monad.State
 import Control.Concurrent.Chan
 
-import RTL.Str as R
+import RTL.Beh as R
 import RTL.CoreInterface
 import Target (MonadTarget(..))
 import Target.Stub (debugStub)
