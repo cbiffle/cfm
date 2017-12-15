@@ -180,12 +180,10 @@ instance MonadTarget IOEmu where
     tput 1
     tput $ fromIntegral value
     tput (2 * fromIntegral addr)
-    checkResponse (pure ())
 
   tpush value = do
     tput 2
     tput $ fromIntegral value
-    checkResponse (pure ())
 
   tpop = do
     tput 3
@@ -194,7 +192,6 @@ instance MonadTarget IOEmu where
   tpushR value = do
     tput 4
     tput $ fromIntegral value
-    checkResponse (pure ())
 
   tpopR = do
     tput 5
@@ -203,5 +200,3 @@ instance MonadTarget IOEmu where
   tcall addr = do
     tput 6
     tput (2 * fromIntegral addr)
-    -- Calls expect *two* responses, before and after execution.
-    checkResponse $ checkResponse $ pure ()

@@ -100,12 +100,10 @@ instance MonadTarget IORTL where
     tput 1
     tput value
     tput (addr ++# 0)
-    checkResponse (pure ())
 
   tpush value = do
     tput 2
     tput value
-    checkResponse (pure ())
 
   tpop = do
     tput 3
@@ -114,7 +112,6 @@ instance MonadTarget IORTL where
   tpushR value = do
     tput 4
     tput value
-    checkResponse (pure ())
 
   tpopR = do
     tput 5
@@ -123,8 +120,6 @@ instance MonadTarget IORTL where
   tcall addr = do
     tput 6
     tput (addr ++# 0)
-    -- Calls expect *two* responses, before and after execution.
-    checkResponse $ checkResponse $ pure ()
 
 
 --------------------------------------------------------------------------
