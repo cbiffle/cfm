@@ -39,6 +39,9 @@ debugStub = foldl' (\v (a, i) -> V.replace a i v)
 
             0x3E00 org  ( leave most of RAM available )
 
+            variable last-error
+            : err? last-error @ ;
+
             0x8000 constant in-ready?   ( reads non-zero when a word awaits )
             0x8002 constant in-value    ( reads as last word from host, clears in-ready)
             0x8004 constant out-ready?  ( reads non-zero when no outgoing word waits )
@@ -58,36 +61,45 @@ debugStub = foldl' (\v (a, i) -> V.replace a i v)
               host>
               0 over = if drop  ( peek )
                 host>
-                0 >host   ( command valid )
-                @ >host   ( result of load )
+                err? dup >host
+                if drop
+                else @ >host
+                then
                 debug-loop exit
               then
               1 over = if drop  ( poke )
                 host> host>
-                !
+                err? if drop drop
+                else !
+                then
                 debug-loop exit
               then
               2 over = if drop  ( push )
                 host>
+                err? if drop then
                 debug-loop exit
               then
               3 over = if drop  ( pop )
-                0 >host
-                >host
+                err? dup >host
+                if ( nothing )
+                else >host
+                then
                 debug-loop exit
               then
               4 over = if drop  ( execute )
                 host>
-                execute
+                err?
+                if drop
+                else execute
+                then
                 debug-loop exit
               then
 
               drop
-              1 >host ( command not recognized)
+              0xFFFF last-error !
               debug-loop ;
 
             : debug
-              0 0 !   ( clear the reset vector )
               debug-loop ;
 
             0 org
