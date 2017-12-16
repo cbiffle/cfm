@@ -27,4 +27,4 @@ arachne-pnr -d 8k -p "${SYN}/icoboard.pcf" "${OUT}/syn8k.blif" \
             -o "${OUT}/syn8k.asc" -s 2
 
 icepack "${OUT}/syn8k.asc" "${OUT}/syn8k.bin"
-icetime -md hx8k -c 48 "${OUT}/syn8k.asc"
+icetime -md hx8k -c 40 "${OUT}/syn8k.asc"

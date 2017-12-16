@@ -19,10 +19,10 @@ wire reset_n = ~S1;
                 .PLLOUT_SELECT("GENCLK"),
                 .FDA_FEEDBACK(4'b1111),
                 .FDA_RELATIVE(4'b1111),
-                .DIVR(2),
-                .DIVF(22),
+                .DIVR(4),
+                .DIVF(31),
                 .DIVQ(4),
-                .FILTER_RANGE(3),
+                .FILTER_RANGE(2),
         ) pll (
                 .REFERENCECLK (clk_100mhz),
                 .PLLOUTGLOBAL (clk_core  ),

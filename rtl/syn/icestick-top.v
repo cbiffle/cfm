@@ -25,7 +25,7 @@ wire dtr = ~dtr_n;
                 .FDA_FEEDBACK(4'b1111),
                 .FDA_RELATIVE(4'b1111),
                 .DIVR(0),
-                .DIVF(63),
+                .DIVF(52),
                 .DIVQ(4),
                 .FILTER_RANGE(1),
         ) pll (

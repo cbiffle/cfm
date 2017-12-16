@@ -964,8 +964,8 @@ $C006 constant TIMM1
 .( Compiling soft UART... )
 here
 
-2500 constant cyc/bit
-1250 constant cyc/bit/2
+2083 constant cyc/bit
+1042 constant cyc/bit/2
 
 variable uart-tx-bits
   \ Holds bits as they're shifted out.
