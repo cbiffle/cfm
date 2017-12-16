@@ -21,6 +21,7 @@ import CFM.Types
 import CFM.Inst
 import Target
 import Target.Emu
+import Target.H2T (cycles)
 
 main :: IO ()
 main = do

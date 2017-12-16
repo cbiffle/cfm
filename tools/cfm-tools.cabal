@@ -19,6 +19,7 @@ library
                        Target.Stub
                        Target.RTL
                        Target.Emu
+                       Target.H2T
   build-depends:       base >= 4.7 && < 5
                      , clash-prelude
                      , parsec

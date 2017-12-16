@@ -27,15 +27,15 @@ instance Arbitrary AvoidStub where
 spec = do
   context "initialization state" $
     it "initializes the bottom of RAM to 0xDEAD" $ property $
-      \(AvoidStub addr) -> runIORTL (tload addr) >>= (`shouldBe` 0xDEAD) . fst
+      \(AvoidStub addr) -> runIORTL (tload addr) >>= (`shouldBe` 0xDEAD)
 
   it "remembers the effect of stores" $ property $
     \(AvoidStub addr) value ->
-      runIORTL (tstore addr value >> tload addr) >>= (`shouldBe` value) . fst
+      runIORTL (tstore addr value >> tload addr) >>= (`shouldBe` value)
 
   context "popping what was pushed" $ do
     it "on the parameter stack" $ property $ \v ->
-      runIORTL (tpush v >> tpop) >>= (`shouldBe` v) . fst
+      runIORTL (tpush v >> tpop) >>= (`shouldBe` v)
 
   context "calling routines" $ do
     let assemble insts = zipWithM_ tstore [0..] $ map pack insts
@@ -51,11 +51,11 @@ spec = do
           liftIO $ pguard `shouldBe` 0xBEEF
           pure r
 
-    it "can simply return" $ fmap fst $ runIORTL $ do
+    it "can simply return" $ runIORTL $ do
       assemble [ ret ]
       guardedCall (pure ()) (pure ())
 
-    it "can push and return" $ fmap fst $ runIORTL $ do
+    it "can push and return" $ runIORTL $ do
       assemble [ Lit 0x7FFF
                , ret
                ]
