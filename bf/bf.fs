@@ -924,10 +924,10 @@ here host.
 ( ----------------------------------------------------------- )
 ( Interrupt Controller )
 
-$F000 constant IRQST  ( status / enable trigger )
-\ $F002 constant IRQEN  ( enable )
-$F004 constant IRQSE  ( set enable )
-$F006 constant IRQCE  ( clear enable )
+$B000 constant IRQST  ( status / enable trigger )
+\ $B002 constant IRQEN  ( enable )
+$B004 constant IRQSE  ( set enable )
+$B006 constant IRQCE  ( clear enable )
 
 ( Atomically enables interrupts and returns. This is intended to be tail )
 ( called from the end of an ISR. )
@@ -948,15 +948,15 @@ $8002 constant OUTSET  ( 1s set pins, 0s do nothing)
 $8004 constant OUTCLR  ( 1s clear pins, 0s do nothing)
 $8006 constant OUTTOG  ( 1s toggle pins, 0s do nothing)
 
-$A000 constant IN
+$9000 constant IN
 
 ( ----------------------------------------------------------- )
 ( Timer )
 
-$C000 constant TIMV
-$C002 constant TIMF
-$C004 constant TIMM0
-$C006 constant TIMM1
+$A000 constant TIMV
+$A002 constant TIMF
+$A004 constant TIMM0
+$A006 constant TIMM1
 
 ( ----------------------------------------------------------- )
 ( UART emulation )

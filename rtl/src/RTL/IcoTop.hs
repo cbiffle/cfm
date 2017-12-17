@@ -27,8 +27,8 @@ system raminit ins = (outs, hsync, vsync, vid)
   where
     (ioreq, fetch) = coreWithRAM ram ioresp
 
-    (ioreq0 :> ioreq1 :> ioreq2 :> ioreq3 :> Nil, ioch) = ioDecoder @2 ioreq
-    ioresp = responseMux (ioresp0 :> ioresp1 :> ioresp2 :> ioresp3 :> Nil) ioch
+    (ioreq0 :> ioreq1 :> ioreq2 :> ioreq3 :> _, ioch) = ioDecoder @3 ioreq
+    ioresp = responseMux (ioresp0 :> ioresp1 :> ioresp2 :> ioresp3 :> repeat (pure 0)) ioch
 
     ram r w = ramRewrite $ blockRamFile (SNat @3072) raminit r w
 
