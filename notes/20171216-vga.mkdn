@@ -1,0 +1,100 @@
+I've attached the XESS VGA PMOD to ports 3 and 4 on the icoboard. Time to
+indirect a bunch of pinout sheets!
+
+
+    XESS STK1 bot     6bit  name        10bit
+    HSYNC#            N9    pmod3_7     R14   pmod4_7
+    R4                P9    pmod3_8     T13   pmod4_8
+    B4                M8    pmod3_9     T10   pmod4_9
+    G3                N7    pmod3_10    T9    pmod4_10
+    gnd
+    -
+    
+    XESS STK1 top
+    VSYNC#            L9    pmod3_1     T15   pmod4_1
+    G4                G5    pmod3_2     T14   pmod4_2
+    R3                L7    pmod3_3     T11   pmod4_3
+    B3                N6    pmod3_4     R10   pmod4_4
+    gnd
+    -
+    
+    XESS STK2 bot
+    R2                -                 N9    pmod3_7
+    G2                -                 P9    pmod3_8
+    B2                -                 M8    pmod3_9
+    G1                -                 N7    pmod3_10
+    gnd
+    -
+
+    XESS STK2 top not connected?
+    Yeah, apparently one of XESS's other boards has a pin conflict between
+    PMOD connectors so they didn't route the other four color bits. :-(
+
+
+Generating HSYNC/VSYNC in a recognizable pattern would be enough to cause a
+monitor to come out of sleep and indicate mode, which would be a nice first
+step. What pattern/mode?
+
+Factors affecting mode choice down the road:
+- I will likely use the core clock as the pixel clock for now, so pixel clocks
+  between about 30 and 48 MHz would be ideal. (Could go slower, but that would
+  start affecting performance)
+
+- I'm mostly imagining a text display, due to RAM constraints, so modes that are
+  convenient multiples of desirable text display sizes sound nice.
+
+My old standby, 800x600@60, meets these:
+- 80 columns using 8-bit glyphs in 10-pixel boxes.
+- 60 rows using the same packing; 50 rows using 10 / 12
+
+Do I have the RAM, though?
+
+80 x 24 attributed characters, at 16 bits per character, costs 1920 words, or
+7.5 BRAMs.
+
+80 x 60 such characters costs 18.75 BRAMs (!)
+
+An 8x10 font for a full 8-bit charset costs 20,480 bytes (!), or 40 BRAMs.
+
+
+So, without bringing up external memory, no -- I do not have the RAM.
+
+
+There's Swetland and Pointer's 4x6 font, which reduces the cost of a 7-bit
+charset to less than one BRAM.
+
+A Forth-style 64x16 display costs exactly 1 kiB, or 2 BRAMs. If I discard
+attributes other than the 8th character bit (which could be, say, inverse color)
+we now need 3 BRAMs.
+
+And how many pixels?
+
+64 x 4 = 256 across
+16 x 6 = 96 high
+
+That's seriously widescreen. If we take 64x4 across as a given, a more
+traditional aspect ratio would have 192 pixel rows, or 32 lines, increasing the
+charbuffer to 2048 bytes / 4 BRAMs.
+
+Note that 80 x 25 characters costs about the same, and is a more traditional
+mode.
+
+At 80x25 we'd have 320 across by 150 down. If I padded the font to a 4x8 cell
+instead of 4x6, that gives 320x200, which is starting to sound like something I
+can work with. Doubled in both directions gives 640x400, which I could present
+in a 640x480 mode (since monitors don't seem to support 640x400 anymore).
+
+Could also switch that to an 8x8 font easily.
+
+Problem is, 640x480 modes tend to have low clock rates. There's a 640x480@100
+mode with a 43-and-change-MHz clock, but I don't have a sense for how well
+supported it is. I'm guessing that random televisions are unlikely to support a
+100Hz mode.
+
+Best to stick to 60.
+
+-------
+
+Okay. That pretty much shoves me toward 800x600@60. I could even draw a 640x480
+image in a crop in the center, if need be.
+

@@ -24,6 +24,7 @@ library
                        RTL.IcestickTop
                        RTL.IcoTop
                        RTL.TargetTop
+                       RTL.VGA
   build-depends:       base >= 4.7 && < 5
                      , cfm-arch
                      , ghc-typelits-extra

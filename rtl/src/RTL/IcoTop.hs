@@ -13,12 +13,17 @@ import RTL.IRQ
 import RTL.GPIO
 import RTL.Timer
 import RTL.Core
+import RTL.VGA
 
 system :: (HasClockReset dom gated synchronous)
        => FilePath
        -> Signal dom Cell
-       -> Signal dom Cell
-system raminit ins = outs
+       -> ( Signal dom Cell
+          , Signal dom Bool
+          , Signal dom Bool
+          , Signal dom (BitVector 6)
+          )
+system raminit ins = (outs, hsync, vsync, vid)
   where
     (ioreq, fetch) = coreWithRAM ram ioresp
 
@@ -34,15 +39,26 @@ system raminit ins = outs
     (ramRewrite, ioresp3) = multiIrqController irqs fetch $ partialDecode ioreq3
     irqs = irq0 :> irq1 :> irq2 :> repeat (pure False)
 
+    (hsync, vsync, vid) = unbundle (framegen vesa800x600x60)
+
 {-# ANN topEntity (defTop { t_name = "ico_soc"
                           , t_inputs = [ PortName "clk_core"
                                        , PortName "reset"
                                        , PortName "inport"
                                        ]
-                          , t_output = PortName "out1"
+                          , t_output = PortField ""
+                                       [ PortName "out1"
+                                       , PortName "hsync"
+                                       , PortName "vsync"
+                                       , PortName "vid"
+                                       ]
                           }) #-}
 topEntity :: Clock System 'Source
           -> Reset System 'Asynchronous
           -> Signal System Cell
-          -> Signal System Cell
+          -> ( Signal System Cell
+             , Signal System Bool
+             , Signal System Bool
+             , Signal System (BitVector 6)
+             )
 topEntity c r = withClockReset c r $ system "random-3k.readmemb"

@@ -6,7 +6,15 @@ module top(
   input RX,
   input S1,
   output cts_n,
-  output [3:0] led);
+  output [3:0] led,
+  output pmod3_7,
+  output pmod3_1,
+  output pmod3_8,
+  output pmod3_9,
+  output pmod3_10,
+  output pmod3_2,
+  output pmod3_3,
+  output pmod3_4);
 
 wire clk_core;
 wire pll_locked;
@@ -57,15 +65,21 @@ wire reset_n = ~S1;
 
         wire [15:0] out1;
         wire [15:0] in;
+        wire [5:0] vid;
 
         ico_soc _inst(
           .clk_core(clk_core),
           .reset(~core_reset_n),
           .out1(out1),
           .inport(in),
+          .hsync(pmod3_7),
+          .vsync(pmod3_1),
+          .vid(vid),
         );
 
         assign led = out1[7:4];
         assign {cts_n, TX} = out1[1:0];
         assign in = {15'b0, RX};
+
+        assign {pmod3_8, pmod3_9, pmod3_10, pmod3_2, pmod3_3, pmod3_4} = vid;
 endmodule
