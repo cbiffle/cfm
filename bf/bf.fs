@@ -1163,7 +1163,7 @@ create TIB 80 allot
   1 OUTSET !   \ raise TX line soon after reset
   uart-rx-init
   ei
-  16 base !
+  10 base !
   35 emit
   LATEST @ cell+ dup 1+ swap c@ type
   35 emit cr
