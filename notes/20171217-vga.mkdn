@@ -87,7 +87,8 @@ cycles.
 
 Strawman register map:
 
-- VIA[1:0]: interrupt acknowledge. 1 bits clear corresponding interrupt conditions.
+- VIA[1:0]: interrupt acknowledge. 1 bits clear corresponding interrupt
+  conditions.
 - VCA[6:0]: character address. Incremented every 8 pixels during visible area.
 - VFB[3:0]: font base. Read/write from software only.
 - VTHV[9:0]: horizontal visible pixels.
@@ -104,3 +105,22 @@ address, and one that keeps getting advanced during hblank to control sync and
 start of next line. Since the character addressing one can be arbitrary, it
 won't match against the timing values.
 
+
+---------
+
+Okay, I have a sketch implemented. No character generation, but it's most of a
+CRTC.
+
+For my reference, here are some test programs.
+
+    \ Rewind pixel count at hblank. Switches from zig-zag to stripes.
+    : hbl 2 VIA !  0 VPX ! ;
+    \ Toggle LED 0 at vblank.
+    : vbl 1 VIA ! 0 ledtog ;
+
+    ' hbl  vectors 12 cells +  !
+    ' vbl  vectors 11 cells +  !
+
+    \ These interrupts can be independently toggled.
+    11 irq-on
+    12 irq-on

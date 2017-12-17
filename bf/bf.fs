@@ -1100,6 +1100,30 @@ variable uart-rx-tl
 : ledtog  4 + #bit OUTTOG ! ;
 
 
+$C000 constant VTH  \ video - timing - horizontal
+$C008 constant VTV  \ video - timing - vertical
+$C010 constant VPX  \ video - pixel count
+$C012 constant VIA  \ video - interrupt acknowledge
+$C014 constant VFB  \ video - font base
+
+: hblank
+  2 VIA !
+  scanlines @
+  1 -
+  dup if
+    scanlines !
+    VPX @  800 -  VPX !
+    1 VFB +!
+  else
+    drop 8 scanlines !
+    0 VFB !
+  then ;
+
+: vblank
+  1 VIA !
+  0 VPX ! ;
+
+
 ( ----------------------------------------------------------- )
 ( Demo wiring below )
 
