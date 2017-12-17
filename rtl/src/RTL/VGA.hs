@@ -1,102 +1,168 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE ViewPatterns #-}
+{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE TypeFamilies #-}
 module RTL.VGA where
 
 import Clash.Prelude
+import Control.Lens hiding ((:>))
+import CFM.Types
 
--- Horizontal and vertical timing are very similar, albeit at different rates.
--- Each consists of four phases:
--- - A sync pulse.
--- - The "back porch" idle area.
--- - Active video.
--- - The "front porch" idle area.
---
--- Together, the porches and the sync pulse determine the blanking interval.
--- We can model the overall display timing as a set of two nested state
--- machines. The horizontal timing machine is the faster of the two, driven at
--- the pixel clock. The vertical timing machine is slower, and is advanced by
--- the horizontal machine at the start of its blanking interval. (The precise
--- point where the horizontal timing advances the vertical is vague in the
--- standard, and monitors try to adjust to variations there. I've chosen the
--- start of blanking because it's also a useful moment for generating an
--- interrupt.)
+-------------------------------------------------------------------------------
+-- Timing and sync generation
 
--- | The state machines go through this cycle.
-data ScanState = FrontPorch
-               | SyncPulse
-               | BackPorch
-               | VisibleArea
-               deriving (Show, Eq, Ord, Enum, Bounded)
+-- | Timing machine state, either horizontal or vertical. This contains the
+-- state with gated updates; the timing control registers, which can be written
+-- at any time, are external.
+data TState n = TState
+  { _tsPhase :: Phase
+    -- ^ Current phase of the state machine.
+  , _tsCycLeft :: BitVector n
+    -- ^ Cycles remaining within current phase.
+  }
 
--- | States advance cyclicly. Note that since they're a 2-bit quantity, we ought
--- to be able to do this without a carry chain. Not tested.
-nextState :: ScanState -> ScanState
-nextState = toEnum . (.&. 3) . (+ 1) . fromEnum
+data Phase = FrontPorch
+           | SyncPulse
+           | BackPorch
+           | VisibleArea
+           deriving (Show, Eq, Ord, Enum, Bounded)
+
+makeLenses ''TState
+
+-- | Phases advance cyclicly. Note that since they're a 2-bit quantity, we
+-- ought to be able to do this without a carry chain. Not tested.
+nextPhase :: Phase -> Phase
+nextPhase = toEnum . (.&. 3) . (+ 1) . fromEnum
+
+instance Default (TState n) where def = TState VisibleArea def
 
 -- | We maintain the number of sub-cycles to spend in each state in a simple
--- vector, indexed by the 'ScanState'. The values themselves are sized by 'n'.
+-- vector, indexed by the 'Phase'. The values themselves are sized by 'n'.
 type Timing n = Vec 4 (BitVector n)
-
--- | State machine driver function. Produces the next state, next counter value,
--- and a transition signal that can be used to gate a higher-level state machine
--- or produce interrupts.
-advance :: (KnownNat n)
-        => Timing n     -- ^ configuration
-        -> ScanState    -- ^ current state
-        -> BitVector n  -- ^ counter value
-        -> Bool         -- ^ gating
-        -> (ScanState, BitVector n, Bool)
-advance _   s                 c False = (s, c, False)
-advance cfg (nextState -> s') 0 _     = (s', cfg !! s', True)
-advance _   s                 c _     = (s, pred c, False)
-
--- | Generates the sync signal from the state. Note that the actual sync output
--- needs to be inverted for some modes.
-sync :: ScanState -> Bool
-sync = (== SyncPulse)
-
-active :: ScanState -> Bool
-active = (== VisibleArea)
-
-data S = S
-  { sTiming :: Timing 10
-  , sCtr :: BitVector 10
-  , sState :: ScanState
-  } deriving (Show)
-
-syncgen :: (HasClockReset d g s)
-        => Timing 10
-        -> Signal d Bool
-        -> ( Signal d Bool
-           , Signal d Bool
-           , Signal d Bool
-           , Signal d (BitVector 6)
-           )
-syncgen tm = unbundle . mealy syncgenT (S tm 0 FrontPorch)
-  where
-    syncgenT :: S -> Bool -> (S, (Bool, Bool, Bool, BitVector 6))
-    syncgenT s g =
-      let (state', ctr', tx) = advance (sTiming s) (sState s) (sCtr s) g
-      in ( S { sTiming = sTiming s
-             , sCtr = ctr'
-             , sState = state'
-             }
-         , (tx, sync (sState s), active (sState s), truncateB (sCtr s))
-         )
-
-framegen :: (HasClockReset d g s)
-         => (Timing 10, Timing 10)
-         -> Signal d (Bool, Bool, BitVector 6)
-framegen (htm, vtm) = bundle (hsync, vsync, vid)
-  where
-    (htx, hsync, hact, hout) = syncgen htm (pure True)
-    (_, vsync, vact, vout) = syncgen vtm ((&&) <$> htx <*> hsync)
-    vid = mux ((&&) <$> hact <*> vact)
-              (xor <$> hout <*> vout)
-              (pure 0)
 
 vesa800x600x60 :: (Timing 10, Timing 10)
 vesa800x600x60 = ( 39 :> 127 :> 87 :> 799 :> Nil
                  , 0 :> 3 :> 22 :> 599 :> Nil
                  )
+
+timingT :: Maybe (BitVector 2, Maybe (BitVector n)) -> Timing n -> Timing n
+timingT (Just (a, Just x)) = replace a x
+timingT _ = id
+
+-- | Transition function for updating the state of a timing machine.
+tstateT :: (KnownNat n)
+        => TState n
+        -> (Bool, Timing n)
+        -> TState n
+tstateT s (False, _) = s  -- maintain state when gated
+tstateT s (_, tm) = s & tsPhase .~ phase'
+                      & tsCycLeft .~ cyc'
+  where
+    zero = s ^. tsCycLeft == 0
+    phase = s ^. tsPhase
+    next = nextPhase phase
+    phase' | zero = next
+           | otherwise = phase
+    cyc' | zero = tm !! next
+         | otherwise = pred (s ^. tsCycLeft)
+
+-- | Timing machine output function.
+--
+-- The blanking output signal can be used to produce interrupts, and also to
+-- gate the vertical machine from the horizontal.
+tstateO :: (KnownNat n)
+        => TState n
+        -> (Bool, Bool, Bool)
+tstateO s = (blank, sync, active)
+  where
+    blank = s ^. tsCycLeft == 0 && s ^.tsPhase == VisibleArea
+    sync = s ^. tsPhase == SyncPulse
+    active = s ^. tsPhase == VisibleArea
+
+
+-------------------------------------------------------------------------------
+-- CRTC frame control and pixel addressing
+
+data GState = GState
+  { _gsH :: (TState 10, Timing 10)
+    -- ^ Horizontal timing configuration and state.
+  , _gsV :: (TState 10, Timing 10)
+    -- ^ Vertical timing configuration and state.
+  , _gsPixels :: BitVector 14
+    -- ^ Pixel addressing counter.
+  , _gsHIF :: Bool
+    -- ^ Hblank Interrupt Flag
+  , _gsVIF :: Bool
+    -- ^ Vblank Interrupt Flag
+  , _gsFB :: BitVector 4
+    -- ^ Font Base
+  }
+
+makeLenses ''GState
+
+instance Default GState where
+  def = GState (def, fst vesa800x600x60)
+               (def, snd vesa800x600x60)
+               def False False def
+
+-- | Mealy function for the framegen circuit.
+--
+-- This is responsible for applying updates from the I/O bus to the state, and
+-- generating the outputs. (Phrasing this as a Moore machine was duplicative.)
+framegenT :: GState
+          -> Maybe (BitVector 4, Maybe Cell)
+          -> ( GState
+             , ( Bool -- hsync
+               , Bool -- vsync
+               , Bool -- HIF
+               , Bool -- VIF
+               , BitVector 14 -- pixel address
+               , BitVector 4  -- font base
+               ))
+framegenT s iowr = (s', (hsync, vsync, s ^. gsHIF, s ^. gsVIF, vid, s ^. gsFB))
+  where
+    s' = s & gsH . _1 %~ flip tstateT (True, s ^. gsH . _2)
+           & gsH . _2 %~ timingT hwr
+           & gsV . _1 %~ flip tstateT (hblank, s ^. gsV . _2)
+           & gsV . _2 %~ timingT vwr
+           & gsPixels .~ pixels'
+           & gsHIF %~ ((&& not hack) . (|| hblank))
+           & gsVIF %~ ((&& not vack) . (|| vblank))
+           & gsFB .~ fb'
+
+    iosplit (Just (split -> (t, a), x)) = case t of
+      0 -> (Just (a, truncateB <$> x), Nothing, Nothing)
+      1 -> (Nothing, Just (a, truncateB <$> x), Nothing)
+      _ -> (Nothing, Nothing, Just (a, truncateB <$> x))
+    iosplit _ = (Nothing, Nothing, Nothing)
+
+    (hwr, vwr, rwr) = iosplit iowr
+
+    pixels' | Just (0, Just v) <- rwr = v
+            | hactive && vactive = s ^. gsPixels + 1
+            | otherwise = s ^. gsPixels
+
+    (hack, vack) | Just (1, Just v) <- rwr = unpack (slice d1 d0 v)
+                 | otherwise = (False, False)
+
+    fb' | Just (2, Just v) <- rwr = truncateB v
+        | otherwise = s ^. gsFB
+
+    (hblank, hsync, hactive) = tstateO (s ^. gsH . _1)
+    (vblank, vsync, vactive) = tstateO (s ^. gsV . _1)
+    vid = if hactive && vactive
+            then s ^. gsPixels
+            else 0
+
+framegen :: (HasClockReset d g s)
+         => Signal d (Maybe (BitVector 4, Maybe Cell))
+         -> ( Signal d Bool   -- hsync
+            , Signal d Bool   -- vsync
+            , Signal d Bool   -- hblank interrupt
+            , Signal d Bool   -- vblank interrupt
+            , Signal d (BitVector 14) -- pixel address
+            , Signal d (BitVector 4)  -- glyph base
+            )
+framegen = unbundle . mealy framegenT def

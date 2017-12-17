@@ -23,11 +23,11 @@ system :: (HasClockReset dom gated synchronous)
           , Signal dom Bool
           , Signal dom (BitVector 6)
           )
-system raminit ins = (outs, hsync, vsync, vid)
+system raminit ins = (outs, hsync, vsync, truncateB <$> vid)
   where
     (ioreq, fetch) = coreWithRAM ram ioresp
 
-    (ioreq0 :> ioreq1 :> ioreq2 :> ioreq3 :> _, ioch) = ioDecoder @3 ioreq
+    (ioreq0 :> ioreq1 :> ioreq2 :> ioreq3 :> ioreq4 :> _, ioch) = ioDecoder @3 ioreq
     ioresp = responseMux (ioresp0 :> ioresp1 :> ioresp2 :> ioresp3 :> repeat (pure 0)) ioch
 
     ram r w = ramRewrite $ blockRamFile (SNat @3072) raminit r w
@@ -37,9 +37,9 @@ system raminit ins = (outs, hsync, vsync, vid)
     (ioresp1, irq0) = inport ins ioreq1
     (irq1 :> irq2 :> Nil, ioresp2) = timer $ partialDecode @2 ioreq2
     (ramRewrite, ioresp3) = multiIrqController irqs fetch $ partialDecode ioreq3
-    irqs = irq0 :> irq1 :> irq2 :> repeat (pure False)
+    irqs = irq0 :> irq1 :> irq2 :> hirq :> virq :> repeat (pure False)
 
-    (hsync, vsync, vid) = unbundle (framegen vesa800x600x60)
+    (hsync, vsync, hirq, virq, vid, _) = framegen $ partialDecode ioreq4
 
 {-# ANN topEntity (defTop { t_name = "ico_soc"
                           , t_inputs = [ PortName "clk_core"

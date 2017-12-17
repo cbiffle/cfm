@@ -98,3 +98,77 @@ Best to stick to 60.
 Okay. That pretty much shoves me toward 800x600@60. I could even draw a 640x480
 image in a crop in the center, if need be.
 
+-------
+
+So! Character display mechanics in hardware. I haven't done this before!
+
+Let's do monochrome first.
+
+At every pixel clock, we need a pixel. The pixel doesn't come from a
+framebuffer. It comes from glyph RAM.
+
+Assuming 8-pixel-wide glyphs, each column of eight pixels will need a different
+bit of the same slice of the same glyph at each successive pixel clock. There
+are two ways to do this that come to mind.
+
+First, there could be an 8-pixel shift register, loaded with a slice every 8
+cycles.
+
+Second, we could configure character RAM as a 1-bit-wide RAM, and read from 8
+successive addresses. It doesn't look like the ICE40 BRAMs can be configured as
+4096x1 RAMs, so I think that's out.
+
+So, every 8 pixels, starting on the cycle just before the start of active video,
+we need to load a new glyph-slice into this shift register.
+
+The glyph-slice is addressed by the concatenation of two things:
+1. The slice-index, which is the line number mod glyph height, and
+2. The character number we're trying to display.
+
+The character number comes from text RAM. It must have been read at least one
+cycle before we need the glyph.
+
+So in each 8-pixel column,
+- We read the character for the next column during cycle 6.
+- We read the glyph for the next column during cycle 7.
+
+To blank the display outside of active video, the shift register could simply
+stop reloading in the final column, and shift in zeroes.
+
+
+Hm. Alternatively, we could use the RAM outputs as the register, and "shift" by
+muxing. I'm not sure whether this would be cheaper, as I don't have a strong
+intuition on how shift registers are best implemented on ICE40.
+
+-------
+
+Having taken a couple hours away, I think I've simplified some things.
+
+I can rephrase the timing logic into a simple signal and address generator,
+analogous to the MC6845. But the MC6845 is designed for asynchronous RAMs, and
+our RAMs are synchronous. No biggie: add pipelining registers to delay signals
+like vsync by two cycles, to synchronize them with the RAM reads.
+
+This seems waaaay simpler than the "action happens at cycle 6" crap I was
+thinking above.
+
+-----
+
+A review of late 70s CRT controllers.
+
+The '6845 is probably a decent example, as I suspected, though I note that the
+MOS 6545 clone enables the CPU to read graphics memory *through* the CRTC,
+avoiding bus contention. This is important for CFM since the bus can't have wait
+states.
+
+It seems like we'll want the following output signals from the control circuit:
+
+- vsync, hsync
+- active
+- character memory address
+- glyph line address
+- cursor
+
+If the display has a power-of-two width in columns, the glyph line can be the
+top bits of the address counter. But this doesn't seem likely, since 80 columns
+is a comfortable standard.

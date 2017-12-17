@@ -1,0 +1,106 @@
+
+It would be logically simpler if there were a single pixel counter and several
+comparators:
+
+- Start of blanking interval.
+- Start of sync pulse.
+- End of sync pulse.
+- End of scanline.
+
+Hmmm. The comparators trigger in a predictable order, and not on the same cycle.
+So a single comparator muxed from several registers would do.
+
+
+Addr - to - shadow at beginning of visible.
+Shadow - to - addr at end of visible except on last scanline.
+
+
+-----
+
+Hm. I should think carefully about software-based approaches.
+
+I think I've convinced myself that providing a simple pixel shift register,
+loaded from software, would be too much load on a single-core system.
+Particularly given the current state where the CPU clock is the pixel clock. The
+UART receive implementation is really intolerant of having interrupts masked.
+(Though replacing it with hardware might be the right solution to that.)
+
+What if software were responsible for maintaining the address at each line,
+though?
+
+During the blanking interval, software would either rewind the character RAM
+address and advance the font, or rewind the font and leave character RAM
+advanced.
+
+This would need to occur at a rate of 37.9 kHz, but each update could happen any
+time within the 6.4 us hblank, so it's not suuuuper jitter-sensitive. It could
+enable nesting of UART interrupts. On the other hand, the hblank is only 256
+cycles, so the UART probably won't even notice.
+
+
+In this version, the hardware would maintain circuits for generating framing and
+sync. During the visible area it would generate a pixel count; the bottom 3 bits
+would select a bit in the glyph, and the top N would address character RAM.
+
+The count would be suppressed during blanking. It is writable by software (or at
+least the top N bits are) to change the character RAM address.
+
+The hardware also maintains a font RAM address, which is basically just a
+register. It gets combined with the output of character RAM to select a byte in
+font RAM. It could get combined as LSBs or MSBs. Doesn't much matter to this
+part of the circuit.
+
+Interrupts would be generated at start-of-hblank and at start-of-vblank. To do a
+normal text display, the software needs to respond to both.
+
+At hblank:
+- Advance a row counter.
+- If the row counter indicates that we're moving on to a new line of characters,
+  rewind the font address to address the top scanline of the glyphs.
+- Otherwise, rewind the pixel counter to re-address the same row of characters,
+  and advance the font address to address the next scanline.
+
+Concretely,
+
+    : text-hblank-isr
+      slices @ 1- 2dup_!_drop
+      if  \ slices remain in this character row
+        VCA @  80 -  VCA !  \ rewind character address
+        VFB @ 1+ VFB !      \ advance font base
+      else  \ next character row
+        font-base VFB !   \ reset the font address
+      then ;
+
+This is ~20 cycles out of the 256 available, so it seems tenable.
+
+At vblank, the character address would need to get rewound back to the top of
+the frame.
+
+It seems like having the character-address work in units of characters (and not
+pixels) will improve ergonomy. Any write should probably just zero the bottom
+three bits of the pixel count.
+
+The font base units are arbitrary.
+
+Writing the font base could acknowledge the hblank interrupt, saving some
+cycles.
+
+Strawman register map:
+
+- VIA[1:0]: interrupt acknowledge. 1 bits clear corresponding interrupt conditions.
+- VCA[6:0]: character address. Incremented every 8 pixels during visible area.
+- VFB[3:0]: font base. Read/write from software only.
+- VTHV[9:0]: horizontal visible pixels.
+- VTHF[5:0]: horizontal front porch pixels.
+- VTHS[6:0]: horizontal sync pixels.
+- VTHB[6:0]: horizontal back porch pixels.
+- VTVV[9:0]: vertical visible lines.
+- VTVF[2:0]: vertical front porch lines.
+- VTVS[2:0]: vertical sync lines.
+- VTVB[4:0]: vertical back porch lines.
+
+This design needs *two* pixel counters: one that generates the character
+address, and one that keeps getting advanced during hblank to control sync and
+start of next line. Since the character addressing one can be arbitrary, it
+won't match against the timing values.
+
