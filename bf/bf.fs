@@ -1105,20 +1105,26 @@ variable uart-rx-tl
 
 : delay 0 begin 1+ dup 0= until drop ;
 
+create vectors  16 cells allot
+
 : isr
-  IRQST @
-  $4000 over and if
-    rx-timer-isr
-  then
-  $8000 over and if
-    rx-negedge-isr
-  then
-  $2000 over and if
-    tx-isr
-  then
-  drop
+  15 IRQST @
+  begin
+    dup
+  while
+    $8000 over and if
+      over cells  vectors + @ execute
+    then
+    1 lshift
+    swap 1 - swap
+  repeat
+  drop drop
   r> 2 - >r
   ei ;
+
+' rx-negedge-isr  vectors 15 cells +  !
+' rx-timer-isr    vectors 14 cells +  !
+' tx-isr          vectors 13 cells +  !
 
 create TIB 80 allot
 
