@@ -9,6 +9,7 @@
 module RTL.VGA where
 
 import Clash.Prelude
+import Data.Maybe (fromMaybe)
 import Control.Lens hiding ((:>))
 import CFM.Types
 
@@ -109,6 +110,8 @@ data GState = GState
     -- ^ Font Base
   , _gsAddr :: BitVector 12
     -- ^ Address for writing to video memory.
+  , _gsRead :: BitVector 4
+    -- ^ Read address for response muxing
   }
 
 makeLenses ''GState
@@ -116,7 +119,7 @@ makeLenses ''GState
 instance Default GState where
   def = GState (def, fst vesa800x600x60)
                (def, snd vesa800x600x60)
-               def False False False def def
+               def False False False def def def
 
 -- | Mealy function for the framegen circuit.
 --
@@ -131,9 +134,16 @@ framegenT :: GState
                , BitVector 14 -- pixel address
                , BitVector 3  -- font base
                , Maybe (BitVector 12, BitVector 8)  -- write through
+               , Cell -- read response
                ))
-framegenT s iowr =
-  (s', ((hsync, s ^. gsHIF), (vsync, s ^. gsVIF, s ^. gsEVIF), act, vid, s ^. gsFB, write))
+framegenT s iowr = (s', ( (hsync, s ^. gsHIF)
+                        , (vsync, s ^. gsVIF, s ^. gsEVIF)
+                        , act
+                        , vid
+                        , s ^. gsFB
+                        , write
+                        , readResponse
+                        ))
   where
     s' = s & gsH . _1 %~ flip tstateT (True, s ^. gsH . _2)
            & gsH . _2 %~ timingT hwr
@@ -145,6 +155,7 @@ framegenT s iowr =
            & gsEVIF %~ ((&& not evack) . (|| evblank))
            & gsFB .~ fb'
            & gsAddr .~ addr'
+           & gsRead .~ fromMaybe (s ^.gsRead) (fst <$> iowr)
 
     iosplit (Just (split -> (t, a), x)) = case t of
       0 -> (Just (a, truncateB <$> x), Nothing, Nothing)
@@ -177,6 +188,17 @@ framegenT s iowr =
       | Just (0xC, Just v) <- rwr = Just (s ^. gsAddr, truncateB v)
       | otherwise = Nothing
 
+    readResponse = case s ^. gsRead of
+          _ | s ^. gsRead .&. 0xC == 0 ->
+                zeroExtend $ (s ^. gsH . _2) !! ((s ^. gsRead) .&. 3)
+          _ | s ^. gsRead .&. 0xC == 4 ->
+                zeroExtend $ (s ^. gsV . _2) !! ((s ^. gsRead) .&. 3)
+          8 -> zeroExtend $ s ^. gsPixels
+          9 -> zeroExtend $ pack (s ^. gsEVIF, s ^. gsHIF, s ^. gsVIF)
+          10 -> zeroExtend $ s ^. gsFB
+          11 -> zeroExtend $ s ^. gsAddr
+          _ -> errorX "undefined video register"
+
 framegen :: (HasClockReset d g s)
          => Signal d (Maybe (BitVector 4, Maybe Cell))
          -> ( Signal d (Bool, Bool)   -- hsync, hblank interrupt
@@ -185,6 +207,7 @@ framegen :: (HasClockReset d g s)
             , Signal d (BitVector 14) -- pixel address
             , Signal d (BitVector 3)  -- glyph base
             , Signal d (Maybe (BitVector 12, BitVector 8))  -- write through
+            , Signal d Cell -- read response
             )
 framegen = unbundle . mealy framegenT def
 
@@ -195,17 +218,18 @@ framegen = unbundle . mealy framegenT def
 chargen
   :: (HasClockReset d g s)
   => Signal d (Maybe (BitVector 4, Maybe Cell))
-  -> ( Signal d Bool    -- hsync
+  -> ( Signal d Cell    -- read response
+     , Signal d Bool    -- hsync
      , Signal d Bool    -- vsync
      , Signal d Bool    -- hblank IRQ
      , Signal d Bool    -- vblank IRQ
      , Signal d Bool    -- end-of-vblank IRQ
      , Signal d Bit     -- monochrome output
      )
-chargen iowr = (hsync'', vsync'', hblank, vblank, evblank, out'')
+chargen iowr = (resp, hsync'', vsync'', hblank, vblank, evblank, out'')
   where
     -- The outputs of framegen provide the first cycle.
-    (unbundle -> (hsync, hblank), unbundle -> (vsync, vblank, evblank), active, pixel, glyph, wrth) = framegen iowr
+    (unbundle -> (hsync, hblank), unbundle -> (vsync, vblank, evblank), active, pixel, glyph, wrth, resp) = framegen iowr
     (charAddr, pxlAddr) = unbundle $ split <$> pixel
 
     ramsplit (Just (split -> (0, a), v)) = (Just (unpack a, v), Nothing)

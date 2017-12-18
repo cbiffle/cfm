@@ -28,7 +28,7 @@ system raminit ins = (outs, hsync, vsync, pack . repeat <$> vid)
     (ioreq, fetch) = coreWithRAM ram ioresp
 
     (ioreq0 :> ioreq1 :> ioreq2 :> ioreq3 :> ioreq4 :> _, ioch) = ioDecoder @3 ioreq
-    ioresp = responseMux (ioresp0 :> ioresp1 :> ioresp2 :> ioresp3 :> repeat (pure 0)) ioch
+    ioresp = responseMux (ioresp0 :> ioresp1 :> ioresp2 :> ioresp3 :> ioresp4 :> repeat (pure 0)) ioch
 
     ram r w = ramRewrite $ blockRamFile (SNat @3072) raminit r w
 
@@ -39,7 +39,7 @@ system raminit ins = (outs, hsync, vsync, pack . repeat <$> vid)
     (ramRewrite, ioresp3) = multiIrqController irqs fetch $ partialDecode ioreq3
     irqs = irq0 :> irq1 :> irq2 :> hirq :> virq :> evirq :> repeat (pure False)
 
-    (hsync, vsync, hirq, virq, evirq, vid) = chargen (partialDecode ioreq4)
+    (ioresp4, hsync, vsync, hirq, virq, evirq, vid) = chargen (partialDecode ioreq4)
 
 {-# ANN topEntity (defTop { t_name = "ico_soc"
                           , t_inputs = [ PortName "clk_core"
