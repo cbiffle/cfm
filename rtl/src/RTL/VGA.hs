@@ -76,10 +76,15 @@ tstateT s (_, tm) = s & tsPhase .~ phase'
 -- gate the vertical machine from the horizontal.
 tstateO :: (KnownNat n)
         => TState n
-        -> (Bool, Bool, Bool)
-tstateO s = (blank, sync, active)
+        -> ( Bool       -- start of blank
+           , Bool       -- end of blank
+           , Bool       -- sync level
+           , Bool       -- active
+           )
+tstateO s = (blank, eblank, sync, active)
   where
-    blank = s ^. tsCycLeft == 0 && s ^.tsPhase == VisibleArea
+    blank = s ^. tsCycLeft == 0 && s ^. tsPhase == VisibleArea
+    eblank = s ^. tsCycLeft == 0 && s ^. tsPhase == BackPorch
     sync = s ^. tsPhase == SyncPulse
     active = s ^. tsPhase == VisibleArea
 
@@ -98,6 +103,8 @@ data GState = GState
     -- ^ Hblank Interrupt Flag
   , _gsVIF :: Bool
     -- ^ Vblank Interrupt Flag
+  , _gsEVIF :: Bool
+    -- ^ End-of-Vblank Interrupt Flag
   , _gsFB :: BitVector 3
     -- ^ Font Base
   , _gsAddr :: BitVector 12
@@ -109,7 +116,7 @@ makeLenses ''GState
 instance Default GState where
   def = GState (def, fst vesa800x600x60)
                (def, snd vesa800x600x60)
-               def False False def def
+               def False False False def def
 
 -- | Mealy function for the framegen circuit.
 --
@@ -118,17 +125,15 @@ instance Default GState where
 framegenT :: GState
           -> Maybe (BitVector 4, Maybe Cell)
           -> ( GState
-             , ( Bool -- hsync
-               , Bool -- vsync
-               , Bool -- HIF
-               , Bool -- VIF
+             , ( (Bool, Bool) -- hsync, HIF
+               , (Bool, Bool, Bool) -- vsync, VIF, EVIF
                , Bool -- Active
                , BitVector 14 -- pixel address
                , BitVector 3  -- font base
                , Maybe (BitVector 12, BitVector 8)  -- write through
                ))
 framegenT s iowr =
-  (s', (hsync, vsync, s ^. gsHIF, s ^. gsVIF, act, vid, s ^. gsFB, write))
+  (s', ((hsync, s ^. gsHIF), (vsync, s ^. gsVIF, s ^. gsEVIF), act, vid, s ^. gsFB, write))
   where
     s' = s & gsH . _1 %~ flip tstateT (True, s ^. gsH . _2)
            & gsH . _2 %~ timingT hwr
@@ -137,6 +142,7 @@ framegenT s iowr =
            & gsPixels .~ pixels'
            & gsHIF %~ ((&& not hack) . (|| hblank))
            & gsVIF %~ ((&& not vack) . (|| vblank))
+           & gsEVIF %~ ((&& not evack) . (|| evblank))
            & gsFB .~ fb'
            & gsAddr .~ addr'
 
@@ -152,14 +158,14 @@ framegenT s iowr =
             | hactive && vactive = s ^. gsPixels + 1
             | otherwise = s ^. gsPixels
 
-    (hack, vack) | Just (0x9, Just v) <- rwr = unpack (slice d1 d0 v)
-                 | otherwise = (False, False)
+    (evack, hack, vack) | Just (0x9, Just v) <- rwr = unpack (slice d2 d0 v)
+                        | otherwise = (False, False, False)
 
     fb' | Just (0xA, Just v) <- rwr = truncateB v
         | otherwise = s ^. gsFB
 
-    (hblank, hsync, hactive) = tstateO (s ^. gsH . _1)
-    (vblank, vsync, vactive) = tstateO (s ^. gsV . _1)
+    (hblank, _, hsync, hactive) = tstateO (s ^. gsH . _1)
+    (vblank, evblank, vsync, vactive) = tstateO (s ^. gsV . _1)
     vid = s ^. gsPixels
     act = hactive && vactive
 
@@ -173,10 +179,8 @@ framegenT s iowr =
 
 framegen :: (HasClockReset d g s)
          => Signal d (Maybe (BitVector 4, Maybe Cell))
-         -> ( Signal d Bool   -- hsync
-            , Signal d Bool   -- vsync
-            , Signal d Bool   -- hblank interrupt
-            , Signal d Bool   -- vblank interrupt
+         -> ( Signal d (Bool, Bool)   -- hsync, hblank interrupt
+            , Signal d (Bool, Bool, Bool)   -- vsync, start of / end of irqs
             , Signal d Bool   -- active
             , Signal d (BitVector 14) -- pixel address
             , Signal d (BitVector 3)  -- glyph base
@@ -191,16 +195,17 @@ framegen = unbundle . mealy framegenT def
 chargen
   :: (HasClockReset d g s)
   => Signal d (Maybe (BitVector 4, Maybe Cell))
-  -> ( Signal d Bool
-     , Signal d Bool
-     , Signal d Bool
-     , Signal d Bool
-     , Signal d Bit
+  -> ( Signal d Bool    -- hsync
+     , Signal d Bool    -- vsync
+     , Signal d Bool    -- hblank IRQ
+     , Signal d Bool    -- vblank IRQ
+     , Signal d Bool    -- end-of-vblank IRQ
+     , Signal d Bit     -- monochrome output
      )
-chargen iowr = (hsync'', vsync'', hblank, vblank, out'')
+chargen iowr = (hsync'', vsync'', hblank, vblank, evblank, out'')
   where
     -- The outputs of framegen provide the first cycle.
-    (hsync, vsync, hblank, vblank, active, pixel, glyph, wrth) = framegen iowr
+    (unbundle -> (hsync, hblank), unbundle -> (vsync, vblank, evblank), active, pixel, glyph, wrth) = framegen iowr
     (charAddr, pxlAddr) = unbundle $ split <$> pixel
 
     ramsplit (Just (split -> (0, a), v)) = (Just (unpack a, v), Nothing)
@@ -230,4 +235,3 @@ chargen iowr = (hsync'', vsync'', hblank, vblank, out'')
     out'' = mux active''
                 ((!) <$> gslice'' <*> pxlAddr'')
                 (pure 0)
-

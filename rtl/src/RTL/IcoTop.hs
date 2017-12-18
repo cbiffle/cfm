@@ -37,9 +37,9 @@ system raminit ins = (outs, hsync, vsync, pack . repeat <$> vid)
     (ioresp1, irq0) = inport ins ioreq1
     (irq1 :> irq2 :> Nil, ioresp2) = timer $ partialDecode @2 ioreq2
     (ramRewrite, ioresp3) = multiIrqController irqs fetch $ partialDecode ioreq3
-    irqs = irq0 :> irq1 :> irq2 :> hirq :> virq :> repeat (pure False)
+    irqs = irq0 :> irq1 :> irq2 :> hirq :> virq :> evirq :> repeat (pure False)
 
-    (hsync, vsync, hirq, virq, vid) = chargen (partialDecode ioreq4)
+    (hsync, vsync, hirq, virq, evirq, vid) = chargen (partialDecode ioreq4)
 
 {-# ANN topEntity (defTop { t_name = "ico_soc"
                           , t_inputs = [ PortName "clk_core"
