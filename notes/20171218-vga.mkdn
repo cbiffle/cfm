@@ -1,0 +1,112 @@
+I've implemented video RAM write-through in the chargen circuit, because it was
+easy (the way I've mapped normal RAM doesn't play well with others). It's
+vaguely inspired by the 6545.
+
+Time to test it.
+
+The display comes up with snow, as expected. Freezing the image:
+
+    : vbl  1 VIA !  0 VPX ! ;
+    ' vbl vectors 11 cells + !
+    11 irq-on
+
+Frozen with a periodic noisefield. Let's see if I can alter the top corner. The
+VWA register contains zero at reset, so I just need to poke at VWD:
+
+    0 VWD !
+
+Got a small change in the first 8 pixels. Very good sign.
+
+Now to alter the glyph memory backing that location. Glyph memory starts 2 ki
+locations in.
+
+    2048 VWA !
+    0 VWD !
+
+Small changes across the noisefield, presumably any point where "character 0" is
+shown.
+
+Since I can't read back from VWA (though I might want to fix that later) let's
+add autoincrement to it. Now any write through VWD will advance VWA.
+
+This means I can fill the display with "character 0" by running
+
+    : vclr  0 VWA !  2048 begin dup while 0 VWD ! 1- repeat drop ;
+
+Works. Now any changes I make to the first slice of glyph RAM repeat across the
+display as uniform stripes.
+
+Let's make the display show rows of symbols.
+
+    variable charline  0 charline !
+    : hbl
+      2 VIA !   \ ack
+      0 VPX !   \ rewind to show same chunk of character memory
+      charline @  dup VFB !  1+ charline ! ;
+    ' hbl vectors 12 cells + !
+    12 irq-on
+
+Because the display is not an even multiple of 8 tall, this is only stable if we
+reset VPX at vblank (above).
+
+Here is a simple demo once the hbl/vbl isrs are installed:
+
+    vclr  \ set all to character 0
+    2048 VWA !  \ prepare to rewrite font
+    0 VWD ! $66 VWD ! $FF VWD ! $FF VWD !
+    $7E VWD ! $3C VWD ! $18 VWD ! 0 VWD !
+
+----
+
+Okay, what would the actual character-display versions look like?
+
+Out of the box, we're getting 100 character lines. We have enough memory for 20
+of these. Fine; a 100x20 display that repeats 3-and-change times. I can fix this
+by messing with the timing registers later.
+
+TODO: hblank interrupts should be masked during vblank. I can do this in
+software, but I'd need an end-of-vblank interrupt to turn them back on.
+Something to consider. I don't think this is required to test this code.
+
+Let's assume such things are available. At start-of-vblank we'll want to mask
+the hblank ISR.
+
+    : vblank
+      1 VIA !   \ acknowledge vblank
+      2 VIA !  12 irq-off \ clear pending hblank and disable
+      ;
+
+At end-of-vblank, we'll reset the display state and enable hblank.
+
+    variable scanline
+    variable row
+    : evblank  4 VIA !
+      0 VPX ! 0 VFB !   \ reset character and glyph pointers
+      0 scanline !      \ reset manually maintained scanline counter
+      0 row !           \ reset manually maintained row counter
+      2 VIA !           \ clear pending hblank
+      12 irq-on         \ enable hblank for end of next line.
+      ;
+
+TODO: having a machine-implemented scanline counter would save some cycles...
+
+Okay. Now at hblank, we...
+
+    100 constant #cols
+    : hblank 2 VIA !
+      scanline dup @ 1+ $7 and    \ compute next scanline number mod 8
+      swap 2dup_!_drop            \ store it back, leaving a copy
+      VFB 2dup_!_drop             \ store it as glyph base, leaving a copy
+      ( scanline )
+      row @ swap    ( row scanline )
+      0= if  \ first scanline, advance row
+        #cols + row 2dup_!_drop
+      then
+      \ record row offset as pixel address
+      VPX ! ;
+
+This assumes we still can't read back from video registers (TODO).
+
+----
+
+

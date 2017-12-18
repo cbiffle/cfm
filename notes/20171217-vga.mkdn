@@ -124,3 +124,25 @@ For my reference, here are some test programs.
     \ These interrupts can be independently toggled.
     11 irq-on
     12 irq-on
+
+---------
+
+And a basic character generator, admittedly filled with random noise, seems to
+work. Updated test programs:
+
+    \ Rewind pixel count at left end of line.
+    : hbl 2 VIA !  0 VPX ! ;
+    \ Rewind pixel count at top of screen.
+    : vbl 1 VIA ! 0 VPX ! ;
+
+    ' hbl  vectors 12 cells +  !
+    ' vbl  vectors 11 cells +  !
+
+    \ When neither IRQ is on, the display is snow.
+
+    \ When IRQ 11 is on, we get a fixed noise field.
+    11 irq-on
+
+    \ When IRQ 12 is on, we get a one-dimensional barcode.
+    12 irq-on
+

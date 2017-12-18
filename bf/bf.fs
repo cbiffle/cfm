@@ -1105,23 +1105,25 @@ $C008 constant VTV  \ video - timing - vertical
 $C010 constant VPX  \ video - pixel count
 $C012 constant VIA  \ video - interrupt acknowledge
 $C014 constant VFB  \ video - font base
+$C016 constant VWA  \ video - write address
+$C018 constant VWD  \ video - write data
 
-: hblank
-  2 VIA !
-  scanlines @
-  1 -
-  dup if
-    scanlines !
-    VPX @  800 -  VPX !
-    1 VFB +!
-  else
-    drop 8 scanlines !
-    0 VFB !
-  then ;
+\ : hblank
+\   2 VIA !
+\   scanlines @
+\   1 -
+\   dup if
+\     scanlines !
+\     VPX @  800 -  VPX !
+\     1 VFB +!
+\   else
+\     drop 8 scanlines !
+\     0 VFB !
+\   then ;
 
-: vblank
-  1 VIA !
-  0 VPX ! ;
+\ : vblank
+\   1 VIA !
+\   0 VPX ! ;
 
 
 ( ----------------------------------------------------------- )

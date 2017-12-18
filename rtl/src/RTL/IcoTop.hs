@@ -23,7 +23,7 @@ system :: (HasClockReset dom gated synchronous)
           , Signal dom Bool
           , Signal dom (BitVector 6)
           )
-system raminit ins = (outs, hsync, vsync, truncateB <$> vid)
+system raminit ins = (outs, hsync, vsync, pack . repeat <$> vid)
   where
     (ioreq, fetch) = coreWithRAM ram ioresp
 
@@ -39,7 +39,7 @@ system raminit ins = (outs, hsync, vsync, truncateB <$> vid)
     (ramRewrite, ioresp3) = multiIrqController irqs fetch $ partialDecode ioreq3
     irqs = irq0 :> irq1 :> irq2 :> hirq :> virq :> repeat (pure False)
 
-    (hsync, vsync, hirq, virq, vid, _) = framegen $ partialDecode ioreq4
+    (hsync, vsync, hirq, virq, vid) = chargen (partialDecode ioreq4)
 
 {-# ANN topEntity (defTop { t_name = "ico_soc"
                           , t_inputs = [ PortName "clk_core"
