@@ -1,0 +1,28 @@
+
+Fusion cases to consider:
+
+
+drop fusion, to convert `2dup_!` into `2dup_!_drop`
+nip fusion, to convert `2dup_and` into `over_and`
+
+
+
+
+: '
+  parse-name dup if
+    sfind if drop exit then
+    type
+    $3F emit
+    cr
+  then abort ;
+
+
+: words
+  LATEST
+  begin
+    @ dup
+  while
+    dup cell + 1+   ( c-addr )
+    over cell + c@  ( c-addr length )
+    type space
+  repeat drop ;

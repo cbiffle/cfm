@@ -1,0 +1,85 @@
+Notes on splitting the memory and I/O spaces at the core level.
+
+
+Before the change, synthesis results were:
+
+    After packing:
+    IOs          8 / 96
+    GBs          0 / 8
+      GB_IOs     0 / 8
+    LCs          727 / 1280
+      DFF        127
+      CARRY      61
+      CARRY, DFF 5
+      DFF PASS   103
+      CARRY PASS 2
+    BRAMs        10 / 16
+    WARMBOOTs    0 / 1
+    PLLs         1 / 1
+
+    After placement:
+    PIOs       11 / 96
+    PLBs       117 / 160
+    BRAMs      10 / 16
+    
+    // Timing estimate: 18.56 ns (53.88 MHz)
+
+After:
+
+    After packing:
+    IOs          8 / 96
+    GBs          0 / 8
+      GB_IOs     0 / 8
+    LCs          724 / 1280   (-3)
+      DFF        126          (-1)
+      CARRY      60           (-1)
+      CARRY, DFF 5
+      DFF PASS   103
+      CARRY PASS 2
+    BRAMs        10 / 16
+    WARMBOOTs    0 / 1
+    PLLs         1 / 1
+    
+    After placement:
+    PIOs       11 / 96
+    PLBs       120 / 160  (+3)
+    BRAMs      10 / 16
+    
+    // Timing estimate: 17.73 ns (56.40 MHz)
+
+The critical path is now the sign magnitude comparator, from the top bit of the
+data stack to one of the upper bits of T. No surprise there. It's dominated by
+wires.
+
+
+This is a pretty invasive change. The structural model is up to 112 lines. There
+are some repeating patterns I could potentially factor out.
+
+I also feel like the types may be wrong. They don't really describe the
+exclusivity of the bus ports correctly.
+
+The CFM issues a read every cycle, and this read can be routed to either memory
+or I/O.
+
+It may also issue a write, and this write can likewise be routed to either
+memory or I/O.
+
+The instruction encoding technically allows for a load and store to be issued
+simultaneously (NM=1, TMux=MemAtT). What is the meaning of this?
+- The store will write N to [T] immediately.
+- The load will address memory at [T].
+- On the next cycle, memory at [T] will be read.
+
+So for RAM that isn't a useful encoding; it is equivalent to '2dup ! drop dup',
+since it stores N and then reads it back into T.
+
+For I/O, that might be useful.
+
+I could also special-case the semantics of this instruction to make it a
+swap-with-memory, i.e.
+- When a load is requested, the state of the store bit is latched and its effect
+  delayed.
+- On the second cycle, a write is issued alongside the next fetch. Because the
+  fetch won't target I/O, we're guaranteed to have enough bandwidth to do this.
+
+

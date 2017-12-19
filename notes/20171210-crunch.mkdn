@@ -1,0 +1,12 @@
+
+So I ran out of RAM. :-)
+
+I haven't been worrying about code size. Before I do anything drastic, like add
+more RAM, let me have a look at what I can shave off.
+
+Baseline: 2046 words used
+
+Fixing bug in DOES>: 2052 (+6, blown!)
+
+Shortening names in teh demo code: 1990 (-64)
+

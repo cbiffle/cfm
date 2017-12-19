@@ -1,0 +1,58 @@
+Interrupt Design Sketch
+=======================
+
+I'm imagining the core with minimal interrupt support, supplemented by an
+external interrupt controller. This is similar to the Z80 interrupt mode 0 in
+that external hardware feeds instructions to the CPU, but even simpler.
+
+Core Interrupt Support
+----------------------
+
+I believe the only support needed is a signal indicating fetch (vs. load) on the
+memory bus.
+
+Fetch indicates that we're in the final cycle of an instruction and are fetching
+the next.
+
+The interrupt controller would interpose between the core and RAM. When an
+interrupt condition becomes active, it would wait for fetch to be asserted and
+replace the instruction with a call to the vector location. (Which only works
+because calls are absolute.)
+
+
+Simple Interrupt Controller
+---------------------------
+
+This would support a single interrupt line. If the line gets asserted, it sets a
+`pending` flop in the controller. The controller then waits until the core is
+fetching and provides the interrupt address. Once it successfully does this, it
+sets a `disable` flop and clears `pending`.
+
+Receiving another IRQ pulse while `disable` is set will set `pending` but not
+interrupt the processor.
+
+Memory-mapped registers in the I/O space would allow the processor to re-enable
+interrupts. We can probably design the API so that this can be done in a single
+cycle combined with return from ISR, e.g. make a write-sensitive register that
+ignores the written value, and use
+
+    ALU RP Tmux=N NM Dadj=-1 Radj=-1
+
+which stores an arbitrary value to T, drops T, and returns.
+
+As soon as interrupts are re-enabled, a pending interrupt may fire.
+
+This scheme is interesting in part because it's so simple.
+
+
+Vectored Version
+----------------
+
+Basically the same thing, except that
+- There are 16 pending bits and 16 mask bits.
+- There's now a global enable bit, set by a trigger register and cleared on
+  interrupt entry.
+- Different interrupt addresses are provided for each interrupt.
+- The interrupt signaled to the core is the highest-priority enabled pending
+  one, so we'll need a priority encoder.
+

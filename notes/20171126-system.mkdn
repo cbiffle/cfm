@@ -1,0 +1,46 @@
+
+The core's primary bus interface is dual-ported to support maximum execution
+speed against the ICE40's dual-ported RAM. It can issue one read and one write
+each cycle.
+
+More specifically, at each cycle, the core will issue one of the following:
+- An instruction fetch only.
+- An instruction fetch and a write.
+- A data load.
+
+This is important, because only the write and data load cases can target I/O
+space. This means I/O can be single-ported, making things cheaper: only one
+address needs to be decoded.
+
+To bridge from the memory bus to the I/O bus, we can simply give writes
+priority over reads, and then decode the prioritized result. In other words,
+
+    WordAddr -> Maybe (WordAddr, Word) -> Either WordAddr (WordAddr, Word)
+
+And of course, `Either WordAddr (WordAddr, Word)` is isomorphic to `(WordAddr,
+Maybe Word)`, which makes the decoding logic simpler.
+
+The pattern I'm using right now assumes "external" decoding. A central bus
+fabric decodes the address and chooses an I/O device. This is important, because
+the response to a read comes on the *next* cycle, so the fabric needs to
+remember who got selected so that it can mux the response onto the bus back to
+the core.
+
+So an I/O device has the abstract signature
+
+    ins
+    -> Signal d (Maybe (BitVector n, Maybe Word))
+    -> ( Signal d Word
+       , outs
+       )
+
+where
+- `ins` are the device's inputs from elsewhere in the system (e.g. an input pin)
+- `n` is the size of address that the device decodes internally (which for
+  technical limitations cannot be 0)
+- `outs` are the device's non-bus outputs (e.g. an output pin).
+
+If I can make the signature generic, I can probably write a generalized bus
+fabric module.
+
+

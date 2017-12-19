@@ -1,0 +1,50 @@
+
+Converting to a barrel processor, of course.
+  - Round-robin or prioritized?
+  - Every cycle or event-driven?
+    - How is prioritized + event driven significantly different from interrupts?
+
+Interrupts.
+  - Activating an interrupt is basically a call: push the return address, go to
+    a handler.
+  - Would need some way of acknowledging an interrupt condition and returning.
+    - Could have an interrupt acknowledge mechanism with a delay.
+    - Could use bit 0 of the return address.
+      - In the future, could also use bit 15.
+      - I like this class of solution, because ISRs are just functions.
+  - Okay, so, interrupt controller maintains a set of interrupt sources and a
+    mask.
+  - A new core interface port connects to the interrupt controller:
+    - Interrupt controller gives `Maybe (Unsigned n)` signaling highest priority
+      pending interrupt.
+    - Core notices this on fetch, performs the interrupt call, and signals
+      interrupt acknowledge.
+    - IC stops asserting interrupt unless a higher priority one arrives, or
+      software re-enables it.
+    - Core eventually returns, which signals interrupt completion.
+
+
+Signed literals to enable easier access to addresses C000 - FFFE
+
+
+Shorten jump range to free up bits for more conditions.
+- non zero
+- 
+
+Convert jumps to signed.
+
+
+Context switch on backwards branch?
+
+
+Separate I/O and Memory ports at the core level, and only fetch from the Memory
+port. This will eliminate the critical path back from I/O space, through the
+response mux, into decode, etc.
+  - Add an I/O response port to the inputs.
+  - Break the output memory read port into two, one for memory, one for I/O.
+    Both must be Maybe because only one will be active.
+  - Break the output write port into two. One half gets folded into the I/O
+    request output. The other half goes to memory. 
+  - Add an additional bit of context recording bit 15 of the last load address.
+    This is used when LF=1 to select the response. (This replaces the bit in the
+    responseMux.)

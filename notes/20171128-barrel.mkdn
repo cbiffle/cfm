@@ -1,0 +1,73 @@
+Further thoughts on barrel processing.
+======================================
+
+I could easily afford eight contexts. The stacks will just fit (assuming I
+restrict each context to 32-entry stacks). The additional copies of the machine
+state, plus the three-bit current-context register, would require another 291
+flops. I have 1170 available.
+
+What about the impact on the architecture?
+
+
+When to switch
+--------------
+
+### Every cycle?
+
+I could do CDC6600-style barrel processing and switch contexts every cycle.
+
+This would eliminate the `readNew` bypass on the stacks, because we'd never read
+from a stack cell on the cycle after writing it, for a savings of 50 flops and
+some critical path trimming.
+
+When executing context N, we'd need to be starting the fetch or load for context
+N+1. So that logic would be different. On the other hand, this takes the pc
+incrementer out of the read addressing path.
+
+This approach would require attention to atomicity between threads, and would
+reduce the peak throughput of any particular code. I could make the number of
+live contexts adjustable, as in Cx8, but because this system would issue fetches
+directly out of PC, we'd have to special case that if we wanted to be able to
+reduce the number of running threads below 2.
+
+### On demand?
+
+I could make a particular instruction switch contexts. Memory loads/stores,
+branches (a la Transputer), or an explicit operation. (Yielding probably can't
+be triggered by a memory-mapped device, because memory isn't that tightly
+interlocked into the core to make the effect precise without a really nasty
+critical path.)
+
+This could be a role for bit 4 in an ALU operation: YIELD.
+
+So a program could have all the straight-line throughput it desired until it
+decided to give up the core by yielding.
+
+If I used bit 4 for this, I'd need to be careful yielding during a load; the
+load-response cycle would need to write into the T register of the thread that
+yielded, not the next thread. The yield would need to be deferred until the load
+completes.
+
+Which might be easiest if it's always deferred.
+
+On-demand yielding could round-robin across the contexts, or (like the Xerox
+Alto) it could use strict prioritization. Prioritization is probably more useful
+for using contexts to emulate peripherals (as on the Alto). But there would need
+to be a way to disable a context until some event arrived.
+
+An Alto-inspired solution:
+- Give each context a "wake event mask" of 16 bits.
+- Define 16 event signals.
+- If an event signal goes high and a context's corresponding mask bit is set,
+  the context is set to "running."
+
+Add a cycle counter with some compare-match registers, and you can do realtime
+stuff like asynchronous serial.
+
+
+This raises the question of whether a "normal user code" compiler would just
+*always* set the yield bit. Otherwise it would delay interrupts. This isn't a
+problem the Alto had, because the Alto never ran "normal user code" -- it
+emulated it, and the emulator explicitly yielded.
+
+

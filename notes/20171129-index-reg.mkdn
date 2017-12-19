@@ -1,0 +1,7 @@
+What about having an index register to speed loops? It could act as the top of
+the R stack.
+
+If we free up more bits for branch conditions, one branch "condition" could be
+"decrement index and branch if result not zero". This would cost one subtractor.
+
+

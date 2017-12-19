@@ -1,0 +1,33 @@
+
+Okay! Things work and stuff.
+
+The current critical path appears to be
+- VALID bit of I/O response mux channel register
+- logic
+- pc' in the datapath
+- logic
+- RADDR on a RAM.
+
+Given the path from PC to RAM, I can infer some things. This is the instruction
+fetch and decode path, and its effect on fetch of the next instruction.
+
+Which is unfortunate, because instruction fetch shouldn't be happening from I/O
+space (and thus involving the responseMux) but nothing *prevents it*
+structurally.
+
+This also explains why hardcoding the outport's bus response as 0 improves
+timing: it replaces the general responseMux with some AND gates.
+
+
+If I pulled the top level of the responseMux into the core, I could bypass it
+for fetches and shorten the PC by one bit. Fetches would always come from
+memory. Loads and stores could go to memory or I/O. The I/O load critical path
+would then hit the responseMux and go straight to T.
+
+
+And, honestly, that's probably more correct anyway. Right now I've kind of
+asserted that simultaneous write and fetch are safe because fetches shouldn't
+come from I/O, but nothing actually prevents it. If execution passes 0x7FFE to
+0x8000, Weird Things will start happening on the next I/O port write.
+
+

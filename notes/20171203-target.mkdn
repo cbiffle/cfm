@@ -1,0 +1,118 @@
+Target Compilation using Clash
+==============================
+
+I've defined a Target monad based on my work yesterday. It exposes the minimal
+seven operations. I'd like to write an instance of it that wraps the Clash RTL.
+
+I'm trying to figure out how invasive this will need to be.
+
+
+Approach #1
+-----------
+
+Define a "host interface" IO device that can send and receive words. It's
+basically a GPIO port, probably with a small FIFO attached.
+
+Provide the RTL with a RAM image containing two important parts:
+
+- A debug stub living in high memory.
+- A reset vector pointing at it.
+
+The debug stub does the following:
+
+- Erase the reset vector, giving the system a clean slate for the bottom section
+  of RAM.
+- Enter a loop where it:
+  - Waits for a word from the host.
+  - Takes it from the FIFO.
+  - Interprets it as one of the Seven Verbs, performing the requested operation.
+  - Sends response, if relevant.
+  - Repeats.
+
+A single entry FIFO in both directions would suffice.
+
+Sketch of the debug stub code, assuming we model a core with a generous 16kiW of
+memory:
+
+    0x3E00 org  ( leave most of RAM available )
+   
+    0x8000 constant in-ready?   ( reads non-zero when a word awaits )
+    0x8002 constant in-value    ( reads as last word from host, clears in-ready)
+    0x8004 constant out-ready?  ( reads non-zero when no outgoing word waits )
+    0x8006 constant out-value   ( writes go to host )
+
+    : >host  ( x -- )
+      begin out-ready? @ until  ( spin until FIFO available )
+      out-value ! ;             ( send word )
+
+    : host>  ( -- x )
+      begin in-ready? @ until   ( spin until word available )
+      in-value @ ;              ( receive word )
+
+    : debug-loop
+      host>
+      0 over = if drop  ( peek )
+        host>
+        0 >host   ( command valid )
+        @ >host   ( result of load )
+        debug-loop
+      then
+      1 over = if drop  ( poke )
+        host> host>
+        0 >host   ( command valid )
+        !
+        debug-loop
+      then
+      2 over = if drop  ( push )
+        host>
+        0 >host
+        debug-loop
+      then
+      3 over = if drop  ( pop )
+        0 >host
+        >host
+        debug-loop
+      then
+      4 over = if drop  ( >r )
+        host>
+        0 >host
+        >r
+        debug-loop
+      then
+      5 over = if drop  ( r> )
+        0 >host
+        r> >host
+        debug-loop
+      then
+      6 over = if drop  ( execute )
+        host>
+        0 >host
+        execute
+        debug-loop
+      then
+
+      drop
+      1 >host ( command not recognized)
+      debug-loop ;
+
+    : debug
+      0 0 !   ( clear the reset vector )
+      debug-loop ;
+
+    0 org ( back to the reset vector )
+    : reset debug ;
+
+This code is carefully designed to avoid using the return stack. Every call is a
+tail-call except when we execute an xt received from the host. This is
+important: we let the host manipulate the return stack arbitrarily, so it isn't
+ours to use.
+
+This code, as written, with today's fusion algorithm, takes 89 words. It could
+be made smaller. In particular, a jump table would do wonders. But the size is
+acceptable.
+
+Note that the code is placed at the relatively low address `3E00`. This is
+because of the limited range of the absolute jump/branch instructions, which
+can't target `4000` and above. I'm getting twitchy about this limitation.
+
+

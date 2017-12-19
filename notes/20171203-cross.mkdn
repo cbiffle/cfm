@@ -1,0 +1,66 @@
+
+So. When I'm doing cross-compilation, it's in an interpreter. So technically
+the code could do *anything*, up to and including I/O or rewriting code that
+was just compiled.
+
+(Cross-compilation is equivalent to, but harder than, recompilation for these
+purposes.)
+
+So my thought was to do that in an emulator.
+
+Because the resulting system might not contain a compiler, or headers -- or it
+might. You'd want to support both.
+
+
+Recompilation on the same type of CPU is relatively easy. You arrange to target
+an array instead of memory. You carefully use host vs target memory access
+words, and control the placement of definitions.
+
+
+
+Unlike most Forthwrights, I have the complete RTL for my CPU. It seems like I
+ought to be able to do something interesting with that.
+
+
+Running target definitions during compilation is tricky, because they need to
+access e.g. offset memory addresses, and not corrupt the host's I/O. This is
+where the emulator comes in. The host can emulate the instructions by applying
+appropriate address translation and checking.
+
+
+How about an abstraction layer that presents the target machine in terms of a
+small set of operations. Sergeant's set seems like a reasonable starting point:
+
+- Read memory.
+- Write memory.
+- Call.  (Not jump.)
+
+These could be implemented over a serial monitor, or could be emulated.
+
+For the CFM we need additional operations, because data and return stacks are
+separate address spaces. So:
+
+- Pop top of data stack
+- Push value onto data stack
+- Pop top of return stack
+- Push value onto return stack
+
+
+That gives seven fundamental operations: read and write to each of the three
+address spaces, and call.
+
+
+If this is being implemented over, say, a UART, using a monitor in the target's
+address space, the host needs to know this and avoid overwriting said monitor.
+The monitor could be placed at the top of RAM, and the target could omit it from
+the RAM size. Oh, that reminds me, here's an eight operation:
+
+- Query RAM size.
+
+Alternatively, the monitor could live at the base of RAM, and the target could
+indicate somehow that low addresses are reserved.
+
+
+If this is being implemented through emulation, the entire target address space
+is malleable. The read/write operations are simple host operations; only call
+triggers the real emulator.

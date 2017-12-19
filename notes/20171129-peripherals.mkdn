@@ -1,0 +1,9 @@
+I'm leaning toward implementing legit peripherals instead of doing everything in
+software, since, y'know, FPGA.
+
+I need:
+- A better GPIO port.
+- Timer/counter.
+- A UART.
+
+And of course video would be lovely.
