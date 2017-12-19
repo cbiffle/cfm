@@ -1108,23 +1108,38 @@ $C014 constant VFB  \ video - font base
 $C016 constant VWA  \ video - write address
 $C018 constant VWD  \ video - write data
 
-\ : hblank
-\   2 VIA !
-\   scanlines @
-\   1 -
-\   dup if
-\     scanlines !
-\     VPX @  800 -  VPX !
-\     1 VFB +!
-\   else
-\     drop 8 scanlines !
-\     0 VFB !
-\   then ;
+: vblank
+  3 VIA !
+  12 irq-off ;
 
-\ : vblank
-\   1 VIA !
-\   0 VPX ! ;
+variable scanline
+variable row
+80 constant #cols
 
+: hblank
+  2 VIA !
+  scanline dup @ 1+ $7 and
+  swap 2dup_!_drop 
+  VFB 2dup_!_drop 
+  row @ swap 
+  0= if #cols + row 2dup_!_drop then 
+  VPX ! ;
+
+: evblank
+  6 VIA ! 0 VPX ! 0 VFB !
+  0 scanline !
+  0 row !
+  12 irq-on ;
+
+: vid
+  119 VTH !
+  167 VTH 4 + !
+  638 VTH 6 + !
+  200 VTV !
+  222 VTV 4 + !
+  199 VTV 6 + !
+  11 irq-on
+  10 irq-on ;
 
 ( ----------------------------------------------------------- )
 ( Demo wiring below )
@@ -1151,6 +1166,9 @@ create vectors  16 cells allot
 ' rx-negedge-isr  vectors 15 cells +  !
 ' rx-timer-isr    vectors 14 cells +  !
 ' tx-isr          vectors 13 cells +  !
+' vblank          vectors 12 cells +  !
+' hblank          vectors 11 cells +  !
+' evblank         vectors 10 cells +  !
 
 create TIB 80 allot
 
@@ -1188,6 +1206,7 @@ create TIB 80 allot
 : cold
   1 OUTSET !   \ raise TX line soon after reset
   uart-rx-init
+  \ vid
   ei
   10 base !
   35 emit
