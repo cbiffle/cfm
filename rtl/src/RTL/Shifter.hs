@@ -10,11 +10,10 @@ module RTL.Shifter where
 import Clash.Prelude
 
 import CFM.Types
+import RTL.Common.Bits (revbits)
 
 leftShift :: Cell -> BitVector 4 -> Cell
 leftShift input d = revbits $ rightShift (revbits input) d
-  where
-    revbits = pack . reverse . unpack @(Vec _ Bit)
 
 rightShift :: Cell -> BitVector 4 -> Cell
 rightShift input (unpack -> (s3, s2, s1, s0)) = mux1

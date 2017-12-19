@@ -30,7 +30,7 @@ system raminit ins = outs
     -- I/O devices
     (ioresp0, outs) = outport $ partialDecode ioreq0
     (ioresp1, irq0) = inport ins ioreq1
-    (irq1 :> irq2 :> Nil, ioresp2) = timer $ partialDecode @2 ioreq2
+    (ioresp2, irq1 :> irq2 :> Nil) = timer $ partialDecode @2 ioreq2
     (ramRewrite, ioresp3) = multiIrqController irqs fetch $ partialDecode ioreq3
     irqs = irq0 :> irq1 :> irq2 :> repeat (pure False)
 

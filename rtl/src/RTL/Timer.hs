@@ -6,9 +6,10 @@
 module RTL.Timer where
 
 import Clash.Prelude
-import Control.Arrow (first)
+import Control.Arrow (second)
 
 import CFM.Types
+import RTL.IOBus (moorep)
 
 type MatchCount = 2
 type CtrWidth = 13
@@ -33,16 +34,20 @@ type Ctr = BitVector CtrWidth
 -- The match bits in the status register are also exposed as IRQs.
 timer :: (HasClockReset d g s)
       => Signal d (Maybe (Addr, Maybe Cell))
-      -> ( Vec MatchCount (Signal d Bool)
-         , Signal d Cell
+      -> ( Signal d Cell
+         , Vec MatchCount (Signal d Bool)
          )
-timer = first unbundle . unbundle . moore timerT timerO (0, repeat False, repeat 0, 0)
+timer = second unbundle . moorep timerT timerR timerO (pure ())
+  where
+    timerO (TimS _ irqs _) = irqs
 
--- | Transition function for timer state.
-timerT :: (Ctr, Vec MatchCount Bool, Vec MatchCount Ctr, Addr)
-       -> Maybe (Addr, Maybe Cell)
-       -> (Ctr, Vec MatchCount Bool, Vec MatchCount Ctr, Addr)
-timerT (ctr, irqs, matches, lastAddr) req = (ctr', irqs', matches', lastAddr')
+data TimS = TimS Ctr (Vec MatchCount Bool) (Vec MatchCount Ctr)
+
+instance Default TimS where
+  def = TimS 0 (repeat False) (repeat 0)
+
+timerT :: TimS -> (Maybe (Addr, Maybe Cell), ()) -> TimS
+timerT (TimS ctr irqs matches) (req, _) = TimS ctr' irqs' matches'
   where
     ctr' = case req of
       Just (0, Just v) -> truncateB v
@@ -54,13 +59,9 @@ timerT (ctr, irqs, matches, lastAddr) req = (ctr', irqs', matches', lastAddr')
     matches' = flip map indicesI $ \i -> case req of
       Just (n, Just v) | n == fromIntegral i + 2 -> truncateB v
       _                                          -> matches !! i
-    lastAddr' = case req of
-      Just (a, _) -> a
-      _           -> lastAddr
 
--- | Exposes the IRQs and the delayed register reads.
-timerO :: (Ctr, Vec MatchCount Bool, Vec MatchCount Ctr, Addr)
-       -> (Vec MatchCount Bool, Cell)
-timerO (ctr, irqs, matches, lastAddr) = (irqs, rs !! lastAddr)
-  where
-    rs = zeroExtend ctr :> zeroExtend (pack irqs) :> map zeroExtend matches
+timerR :: TimS -> Vec 4 Cell
+timerR (TimS ctr irqs matches) =
+  zeroExtend ctr :>
+  zeroExtend (pack irqs) :>
+  map zeroExtend matches

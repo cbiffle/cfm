@@ -90,3 +90,32 @@ partialDecode :: (KnownNat n)
               => Signal d (Maybe (BitVector (m + n), Maybe t))
               -> Signal d (Maybe (BitVector n, Maybe t))
 partialDecode = fmap truncateAddr
+
+
+-- | Implementation strategy for a peripheral device that can be described as a
+-- Moore machine. This is like Clash's 'moore' but provides a bus read response
+-- multiplexer and associated state.
+--
+-- The reset state of the machine is given by 'def' for the state type, for
+-- convenience.
+moorep :: (KnownNat a, HasClockReset dom gated synchronous, Default s)
+       => (s -> (Maybe (BitVector a, Maybe Cell), i) -> s)
+        -- ^ State transition function.
+       -> (s -> Vec (2^a) Cell)
+        -- ^ Readable register projection function.
+       -> (s -> o)
+        -- ^ Output projection function.
+       -> Signal dom i
+        -- ^ Peripheral-specific input signals.
+       -> Signal dom (Maybe (BitVector a, Maybe Cell))
+        -- ^ Request from I/O bus.
+       -> ( Signal dom Cell
+          , Signal dom o
+          )     -- ^ Response to I/O bus and peripheral-specific outputs.
+moorep ft fr fo inp ioreq = (ioresp, outp)
+  where
+    (ioresp, outp) = mooreB ft' fo' def (ioreq, inp)
+    ft' (s, a) (ioreq_, i) = (ft s (ioreq_, i), fromMaybe a (fst <$> ioreq_))
+    fo' (s, a) = (fr s !! a, fo s)
+
+

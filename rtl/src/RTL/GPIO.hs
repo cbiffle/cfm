@@ -7,6 +7,7 @@
 module RTL.GPIO where
 
 import Clash.Prelude
+import RTL.IOBus (moorep)
 
 import CFM.Types
 
@@ -21,20 +22,17 @@ outport :: (HasClockReset d g s)
         -> ( Signal d Cell
            , Signal d Cell
            )
-outport = unbundle . moore outportT outportO 0
+outport = moorep outportT repeat id (pure ())
   where
-    outportT :: Cell -> Maybe (BitVector 2, Maybe Cell) -> Cell
+    outportT :: Cell -> (Maybe (BitVector 2, Maybe Cell), ()) -> Cell
     -- Writes
-    outportT v (Just (a, Just v')) = case a of
+    outportT v (Just (a, Just v'), _) = case a of
       0 -> v'
       1 -> v .|. v'
       2 -> v .&. complement v'
       _ -> v `xor` v'
     -- Reads or unselected
     outportT v _ = v
-
-    outportO :: Cell -> (Cell, Cell)
-    outportO v = (v, v)
 
 -- | An input port. This is currently rather specialized.
 --
@@ -43,16 +41,15 @@ outport = unbundle . moore outportT outportO 0
 --
 -- It also produces an interrupt on negative edges of bit 0. The interrupt
 -- condition can be cleared by any write to the port's address space.
-inport :: (HasClockReset d g s)
+inport :: (KnownNat a, HasClockReset d g s)
        => Signal d Cell
-       -> Signal d (Maybe (t, Maybe Cell))
+       -> Signal d (Maybe (BitVector a, Maybe Cell))
        -> ( Signal d Cell
           , Signal d Bool
           )
-inport = curry $ mooreB inportT id (0, False)
+inport = moorep inportT (repeat . \(InportS x _) -> x) (\(InportS _ x) -> x)
   where
-    inportT :: (Cell, Bool) -> (Cell, Maybe (t, Maybe Cell)) -> (Cell, Bool)
-    inportT (reg, irq) (port, req) = (port, irq')
+    inportT (InportS reg irq) (req, port) = InportS port irq'
       where
         irq' = case req of
           -- Clear the IRQ flag on any write.
@@ -60,3 +57,6 @@ inport = curry $ mooreB inportT id (0, False)
           -- Otherwise, OR in the negative edge detector.
           _                -> irq || negedge
         negedge = unpack (lsb reg .&. complement (lsb port))
+
+data InportS = InportS Cell Bool deriving (Show)
+instance Default InportS where def = InportS def False
