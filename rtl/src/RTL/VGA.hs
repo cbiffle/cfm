@@ -249,7 +249,7 @@ chargen iowr = (resp, hsync'', vsync'', hblank, vblank, evblank, out'')
     active' = register False active
 
     -- Past the glyph memory we're delayed another cycle.
-    gslice'' = blockRamFilePow2 @_ @_ @11 @8 "random-2048x8_.readmemb"
+    gslice'' = blockRamFilePow2 @_ @_ @11 @8 "font-8x8.readmemb"
                (unpack <$> charf')
                glyphWr
     pxlAddr'' = register def pxlAddr'
