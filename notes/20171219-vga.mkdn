@@ -1,0 +1,20 @@
+If I changed the layout of the font data, I could switch freely between 8 and 16
+row fonts.
+
+The changes:
+
+- Rearrange fonts such that slice 0 of all glyphs comes first, followed by
+  slice 1, etc.
+- Alter the chargen circuit so that the font base forms the upper, not lower,
+  bits of the glyph slice address.
+
+I could even overlap (e.g. by OR) the top bit of the character with the bottom
+bit of the font base, which would enable 8x8 256-character fonts or 8x16
+128-character fonts (with a different VFB increment for each).
+
+
+I'm very much inclined, due to RAM limitations, to use bit 8 of characters to
+signal "alternate color." Can't really afford more attribute bits.
+
+
+
