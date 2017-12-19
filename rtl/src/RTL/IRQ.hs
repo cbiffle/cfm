@@ -10,6 +10,14 @@ import Clash.Prelude
 
 import CFM.Types
 import CFM.Inst
+import RTL.IOBus (moorep)
+
+data SIS = SIS
+  { sisEn :: Bool
+  , sisEnter :: Bool
+  } deriving (Show)
+
+instance Default SIS where def = SIS False False
 
 -- | A simple interrupt controller supporting a single, active-high interrupt
 -- input.
@@ -22,25 +30,24 @@ singleIrqController
   :: (HasClockReset d g s)
   => Signal d Bool    -- ^ Interrupt input, active high, level-sensitive.
   -> Signal d Bool    -- ^ CPU fetch signal, active high.
-  -> Signal d (Maybe (t, Maybe w))   -- ^ I/O bus request.
+  -> Signal d (Maybe (BitVector 1, Maybe Cell))   -- ^ I/O bus request.
   -> ( Signal d Cell -> Signal d Cell
      , Signal d Cell
      )  -- ^ Memory-to-CPU alteration constructor and I/O response,
         -- respectively.
 singleIrqController irqS fetchS reqS = (memCtor, respS)
   where
-    (entryS, respS) = mooreB datapathT datapathO (False, False)
-                             (irqS, fetchS, reqS)
+    (respS, entryS) = moorep datapathT
+                             (repeat . zeroExtend . pack . sisEn)
+                             sisEnter
+                             (bundle (irqS, fetchS))
+                             reqS
 
     -- Normally, pass mem. When entering the ISR, intervene in the next fetch
     -- cycle.
     memCtor = mux entryS (pure $ pack $ NotLit $ Call 1)
 
-    datapathT
-      :: (Bool, Bool)   -- (en, enter)
-      -> (Bool, Bool, Maybe (a, Maybe w))       -- (irq, fetch, ioreq)
-      -> (Bool, Bool)   -- (en', enter')
-    datapathT (en, _) (irq, fetch, req) = (en', entry')
+    datapathT (SIS en _) (req, (irq, fetch)) = SIS en' entry'
       where
         -- Interrupt entry happens on any fetch cycle where we're enabled and
         -- irq is asserted, whether or not we were entering on the previous
@@ -51,9 +58,6 @@ singleIrqController irqS fetchS reqS = (memCtor, respS)
         written = case req of
           Just (_, Just _) -> True
           _                -> False
-
-    datapathO :: (Bool, Bool) -> (Bool, Cell)
-    datapathO (en, entry) = (entry, zeroExtend (pack en))
 
 data MIS = MIS
   { misEn :: Bool
@@ -83,14 +87,15 @@ multiIrqController
         -- respectively.
 multiIrqController irqS fetchS reqS = (memCtor, respS)
   where
-    (entryS, respS) = mooreB datapathT datapathO def
-                             (bundle irqS, fetchS, reqS)
+    (respS, entryS) = moorep datapathT datapathR misEnter
+                             (bundle (bundle irqS, fetchS))
+                             reqS
 
     -- Normally, pass mem. When entering the ISR, intervene in the next fetch
     -- cycle.
     memCtor = mux entryS (pure $ pack $ NotLit $ Call 1)
 
-    datapathT s (irqs, fetch, req) = s'
+    datapathT s (req, (irqs, fetch)) = s'
       where
         s' = MIS
           { misEn = not entry' && case req of
@@ -115,11 +120,6 @@ multiIrqController irqS fetchS reqS = (memCtor, respS)
         maskedIrqs = zipWith (&&) irqs $ misIEn s
         entry' = fetch && misEn s && foldl1 (||) maskedIrqs
 
-    datapathO s = (misEnter s, resp)
-      where
-        resp = case misAddr s of
-          0 -> pack $ misStatus s
-          1 -> zeroExtend $ pack $ misEn s
-          2 -> pack $ misIEn s
-          _ -> pack $ misIEn s
-
+    datapathR s = pack (misStatus s) :>
+                  zeroExtend (pack (misEn s)) :>
+                  repeat (pack (misIEn s))
