@@ -80,11 +80,10 @@ At end-of-vblank, we'll reset the display state and enable hblank.
 
     variable scanline
     variable row
-    : evblank  4 VIA !
+    : evblank  6 VIA !
       0 VPX ! 0 VFB !   \ reset character and glyph pointers
       0 scanline !      \ reset manually maintained scanline counter
       0 row !           \ reset manually maintained row counter
-      2 VIA !           \ clear pending hblank
       12 irq-on         \ enable hblank for end of next line.
       ;
 
@@ -103,10 +102,148 @@ Okay. Now at hblank, we...
         #cols + row 2dup_!_drop
       then
       \ record row offset as pixel address
-      VPX ! ;
+      ( 3 lshift ) VPX ! ;
 
 This assumes we still can't read back from video registers (TODO).
 
+It also assumes VPX is written in *character* addresses. As of the current RTL,
+it's written in *pixel* addresses. I plan to fix this; for now add an `3 lshift`
+where indicated.
+
 ----
+
+Okay. Fixed the VPX addressing issue described above. Here's a working
+transcript for bringing up the video hardware in 100-column mode.
+
+At powerup, the monitor should come out of sleep (because the timing being
+generated is accurate), but will show animated random snow.
+
+First we install a vblank handler.
+
+    : vblank 3 VIA ! 12 irq-off ;
+    ' vblank vectors 11 cells + !
+    11 irq-on
+
+This has no visible effect. Next, hblank, because end-of-vblank will turn it on,
+so we'd better have something useful installed.
+
+    variable scanline
+    variable row
+    100 constant #cols
+
+    : hblank 
+      2 VIA ! 
+      scanline dup @ 1+ $7 and 
+      swap 2dup_!_drop 
+      VFB 2dup_!_drop 
+      row @ swap 
+      0= if #cols + row 2dup_!_drop then 
+      VPX ! ; 
+    ' hblank vectors 12 cells + !
+
+Now, end-of-vblank.
+
+    : evblank
+      6 VIA ! 0 VPX ! 0 VFB !
+      0 scanline !
+      0 row !
+      12 irq-on ;
+    ' evblank vectors 10 cells + !
+    10 irq-on
+
+This causes the snowfield to freeze.
+
+What we're actually seeing is random characters in character RAM, displaying
+random glyphs from glyph RAM. We can clear the character RAM to zeroes to get a
+repeating grid of random glyphs:
+
+    : vclr
+      0 VWA !
+      2048 begin
+        dup
+      while
+        1-
+        0 VWD !
+      repeat drop ;
+    vclr
+
+If we do the same to glyph RAM, we get a blank screen:
+
+    : fclr 2048 VWA ! 2048 begin dup while 1- 0 VWD ! repeat drop ;
+    fclr
+
+We can un-blank the screen by poking a glyph, manually, into glyph RAM:
+
+    2048 VWA !
+    0 VWD ! $66 VWD ! $FF VWD ! $FF VWD !
+    $7E VWD ! $3C VWD ! $18 VWD ! 0 VWD !
+
+Now we have a stable field of hearts. We can see where the character RAM
+actually begins and ends by poking some other codepoints into locations:
+
+    1 VWA !  1 VWD !    \ knock out second heart
+    100 VWA !  1 VWD !  \ knock out first heart on second row
+    100 20 u* 1- VWA ! 1 VWD !  \ knock out lower right heart
+
+Only the first 20 lines of the display are valid. About halfway through the 21st
+line (at byte 2048) we start displaying the contents of character RAM over
+again.
+
+
+-----
+
+I would rather have an 80x25 display surrounded by black than a repeating 100x20
+display. How can I achieve this?
+
+I can probably do it online. ;-) Because Forth and all.
+
+So first let's screw things up by changing the column count from the perspective
+of the character rasterizer ISRs.
+
+    80  ' #cols cell+  !  \ one man's constants are another's variables
+
+The knockouts we had neatly placed along the left and right edges are now in
+randomish places, because there's a mismatch between the rasterizer's notion of
+column count and the actual size of the display.
+
+We can fix that by mucking with the timing registers.
+
+When we narrow the visible area of the display, we need to give the pixels back
+to some other phase of the horizontal timing, or the sync timing will be off and
+the monitor will stop listening. To do 80 8-pixel columns, we want to reduce to
+640 visible, a difference of 160 pixels. Let's hand 80 each to the front and
+back porch.
+
+Best to disable the display. Messing with timing can cause interrupt frequency
+to go nuts, taking out the UART. Don't ask me how I know this. ;-)
+
+    10 irq-off 11 irq-off 12 irq-off
+
+I happen to be working in a memory image with a corrupted dictionary that
+prevents me from using `+`. Yes, my life is odd sometimes, I clearly mistyped a
+poke address. So here's the honest way I adjusted the timing.
+
+    119 VTH !
+    167 VTH cell+ cell+ !
+    638 VTH cell+ cell+ cell+ !
+
+And voila, a 640-pixel-wide display (of garbage). Re-enabling the raster
+interrupts stabilizes a field of hearts:
+
+    11 irq-on
+    10 irq-on
+
+But we're still displaying 3 copies of the display vertically. We only want 25 *
+8 = 200 lines visible vertically, so we must shave off 400 lines. 200 from each
+side again:
+
+    10 irq-off 11 irq-off 12 irq-off
+    VTV @ . 0
+    200 VTV !
+    222 VTV cell+ cell+ !
+    199 VTV cell+ cell+ cell+ !
+    11 irq-on 10 irq-on
+
+80 x 25 (I counted) hearts.
 
 

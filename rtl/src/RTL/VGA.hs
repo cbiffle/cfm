@@ -160,12 +160,12 @@ framegenT s iowr = (s', ( (hsync, s ^. gsHIF)
     iosplit (Just (split -> (t, a), x)) = case t of
       0 -> (Just (a, truncateB <$> x), Nothing, Nothing)
       1 -> (Nothing, Just (a, truncateB <$> x), Nothing)
-      _ -> (Nothing, Nothing, Just (t ++# a, truncateB <$> x))
+      _ -> (Nothing, Nothing, Just (t ++# a, x))
     iosplit _ = (Nothing, Nothing, Nothing)
 
     (hwr, vwr, rwr) = iosplit iowr
 
-    pixels' | Just (0x8, Just v) <- rwr = v
+    pixels' | Just (0x8, Just v) <- rwr = truncateB (v `shiftL` 3)
             | hactive && vactive = s ^. gsPixels + 1
             | otherwise = s ^. gsPixels
 
