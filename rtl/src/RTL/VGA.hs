@@ -110,8 +110,8 @@ data GState = GState
     -- ^ Font Base
   , _gsAddr :: BitVector 12
     -- ^ Address for writing to video memory.
-  , _gsRead :: BitVector 4
-    -- ^ Read address for response muxing
+  , _gsReadValue :: Cell
+    -- ^ Read value, registered to improve bus timing.
   }
 
 makeLenses ''GState
@@ -142,7 +142,7 @@ framegenT s iowr = (s', ( (hsync, s ^. gsHIF)
                         , vid
                         , s ^. gsFB
                         , write
-                        , readResponse
+                        , s ^. gsReadValue
                         ))
   where
     s' = s & gsH . _1 %~ flip tstateT (True, s ^. gsH . _2)
@@ -155,7 +155,7 @@ framegenT s iowr = (s', ( (hsync, s ^. gsHIF)
            & gsEVIF %~ ((&& not evack) . (|| evblank))
            & gsFB .~ fb'
            & gsAddr .~ addr'
-           & gsRead .~ fromMaybe (s ^.gsRead) (fst <$> iowr)
+           & gsReadValue .~ readValue
 
     iosplit (Just (split -> (t, a), x)) = case t of
       0 -> (Just (a, truncateB <$> x), Nothing, Nothing)
@@ -188,11 +188,11 @@ framegenT s iowr = (s', ( (hsync, s ^. gsHIF)
       | Just (0xC, Just v) <- rwr = Just (s ^. gsAddr, truncateB v)
       | otherwise = Nothing
 
-    readResponse = case s ^. gsRead of
-          _ | s ^. gsRead .&. 0xC == 0 ->
-                zeroExtend $ (s ^. gsH . _2) !! ((s ^. gsRead) .&. 3)
-          _ | s ^. gsRead .&. 0xC == 4 ->
-                zeroExtend $ (s ^. gsV . _2) !! ((s ^. gsRead) .&. 3)
+    readValue = case fromMaybe 0 (fst <$> iowr) of
+          x | x .&. 0xC == 0 ->
+                zeroExtend $ (s ^. gsH . _2) !! (x .&. 3)
+          x | x .&. 0xC == 4 ->
+                zeroExtend $ (s ^. gsV . _2) !! (x .&. 3)
           8 -> zeroExtend $ s ^. gsPixels
           9 -> zeroExtend $ pack (s ^. gsEVIF, s ^. gsHIF, s ^. gsVIF)
           10 -> zeroExtend $ s ^. gsFB
