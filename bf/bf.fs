@@ -1205,9 +1205,9 @@ variable vatt   \ attributes for text in top 8 bits
   119 VTH !
   167 VTH 4 + !
   639 VTH 6 + !
-  200 VTV !
-  222 VTV 4 + !
-  199 VTV 6 + !
+  100 VTV !
+  122 VTV 4 + !
+  399 VTV 6 + !
   80 vcols !
   25 vrows !
   vpage

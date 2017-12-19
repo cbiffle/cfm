@@ -133,7 +133,7 @@ data GState = GState
     -- ^ Vblank Interrupt Flag
   , _gsEVIF :: Bool
     -- ^ End-of-Vblank Interrupt Flag
-  , _gsFB :: BitVector 3
+  , _gsFB :: BitVector 4
     -- ^ Font Base (TODO: this name needs work)
   , _gsAddr :: (Bit, BitVector 11)
     -- ^ Address for writing to video memory.
@@ -169,7 +169,7 @@ framegenT :: GState
                , (Bool, Bool, Bool) -- vsync, VIF, EVIF
                , Bool -- Active
                , BitVector 14 -- pixel address
-               , BitVector 3  -- font base
+               , BitVector 4  -- font base
                , Maybe ((Bit, BitVector 11), Cell)  -- write through
                , Cell -- read response
                ))
@@ -219,7 +219,7 @@ framegenT s iowr = (s', ( (hsync, s ^. gsHIF)
     -- for the coming visible field.
     startOfField = hblank && evblank
 
-    lastGlyphSlice = s ^. gsFB == 7 -- TODO programmable
+    lastGlyphSlice = s ^. gsFB == 0xF -- TODO programmable
 
     -- Transition rules for the pixel addressing counter.
     -- TODO all these equations need optimizin'.
@@ -293,7 +293,7 @@ framegen :: (HasClockReset d g s)
             , Signal d (Bool, Bool, Bool)   -- vsync, start of / end of irqs
             , Signal d Bool   -- active
             , Signal d (BitVector 14) -- pixel address
-            , Signal d (BitVector 3)  -- glyph base
+            , Signal d (BitVector 4)  -- glyph base
             , Signal d (Maybe ((Bit, BitVector 11), Cell))  -- write through
             , Signal d Cell -- read response
             )
@@ -369,17 +369,17 @@ chargen ioreq = ( resp
              (fmap (second truncateB) <$> charWr)
     (foreI', backI', char') = ( slice d15 d12 <$> achar'
                               , slice d11 d8 <$> achar'
-                              , slice d7 d0 <$> achar'
+                              , slice d6 d0 <$> achar'  -- drop bit 7
                               )
     glyph' = register def glyph
-    charf' = (++#) <$> char' <*> glyph'
+    charf' = (++#) <$> glyph' <*> char'
     pxlAddr' = register def pxlAddr
     hsync' = register False hsync
     vsync' = register False vsync
     active' = register False active
 
     -- Past the glyph memory we're delayed another cycle.
-    gslice'' = blockRamFilePow2 @_ @_ @11 @8 "font-8x8.readmemb"
+    gslice'' = blockRamFilePow2 @_ @_ @11 @8 "font-8x16.readmemb"
                (unpack <$> charf')
                (fmap (second truncateB) <$> glyphWr)
     pxlAddr'' = register def pxlAddr'
