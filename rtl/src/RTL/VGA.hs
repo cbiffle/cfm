@@ -100,6 +100,8 @@ data GState = GState
     -- ^ Vertical timing configuration and state.
   , _gsPixels :: BitVector 14
     -- ^ Pixel addressing counter.
+  , _gsShadowPixels :: BitVector 14
+    -- ^ Shadow of gsPixels used to effect character retracing.
   , _gsHIF :: Bool
     -- ^ Hblank Interrupt Flag
   , _gsVIF :: Bool
@@ -107,7 +109,7 @@ data GState = GState
   , _gsEVIF :: Bool
     -- ^ End-of-Vblank Interrupt Flag
   , _gsFB :: BitVector 3
-    -- ^ Font Base
+    -- ^ Font Base (TODO: this name needs work)
   , _gsAddr :: BitVector 12
     -- ^ Address for writing to video memory.
   , _gsReadValue :: Cell
@@ -119,7 +121,7 @@ makeLenses ''GState
 instance Default GState where
   def = GState (def, fst vesa800x600x60)
                (def, snd vesa800x600x60)
-               def False False False def def def
+               def def False False False def def def
 
 -- | Mealy function for the framegen circuit.
 --
@@ -150,6 +152,7 @@ framegenT s iowr = (s', ( (hsync, s ^. gsHIF)
            & gsV . _1 %~ flip tstateT (hblank, s ^. gsV . _2)
            & gsV . _2 %~ timingT vwr
            & gsPixels .~ pixels'
+           & gsShadowPixels .~ shadowPixels'
            & gsHIF %~ ((&& not hack) . (|| hblank))
            & gsVIF %~ ((&& not vack) . (|| vblank))
            & gsEVIF %~ ((&& not evack) . (|| evblank))
@@ -165,14 +168,27 @@ framegenT s iowr = (s', ( (hsync, s ^. gsHIF)
 
     (hwr, vwr, rwr) = iosplit iowr
 
+    startOfField = hblank && evblank
+    lastGlyphSlice = s ^. gsFB == 7 -- TODO programmable
+
+    -- TODO all these equations need optimizin'.
     pixels' | Just (0x8, Just v) <- rwr = truncateB (v `shiftL` 3)
+            | startOfField = 0
+            | vactive && hblank && not lastGlyphSlice = s ^. gsShadowPixels
             | hactive && vactive = s ^. gsPixels + 1
             | otherwise = s ^. gsPixels
+
+    shadowPixels' | vactive && hblank && lastGlyphSlice = s ^. gsPixels + 1
+                  | startOfField = 0
+                    -- TODO: remove vactive from that equation?
+                  | otherwise = s ^. gsShadowPixels
 
     (evack, hack, vack) | Just (0x9, Just v) <- rwr = unpack (slice d2 d0 v)
                         | otherwise = (False, False, False)
 
     fb' | Just (0xA, Just v) <- rwr = truncateB v
+        | startOfField = 0
+        | hblank = s ^. gsFB + 1
         | otherwise = s ^. gsFB
 
     (hblank, _, hsync, hactive) = tstateO (s ^. gsH . _1)
@@ -229,7 +245,10 @@ chargen
 chargen iowr = (resp, hsync'', vsync'', hblank, vblank, evblank, out'')
   where
     -- The outputs of framegen provide the first cycle.
-    (unbundle -> (hsync, hblank), unbundle -> (vsync, vblank, evblank), active, pixel, glyph, wrth, resp) = framegen iowr
+    ( unbundle -> (hsync, hblank)
+      , unbundle -> (vsync, vblank, evblank)
+      , active, pixel, glyph, wrth, resp) = framegen iowr
+
     (charAddr, pxlAddr) = unbundle $ split <$> pixel
 
     ramsplit (Just (split -> (0, a), v)) = (Just (unpack a, v), Nothing)

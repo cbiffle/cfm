@@ -1,0 +1,109 @@
+Hardening the VGA peripheral. Goal: operable display with interrupts masked.
+
+Consider the action of the current blanking interrupt service routines.
+
+At hblank:
+
+    : hblank
+      2 VIA !                         \ acknowledge IRQ
+      scanline dup @ 1+ $7 and        \ advance 3-bit scanline counter
+      swap 2dup_!_drop                \ store it back
+      VFB 2dup_!_drop                 \ copy it into VFB
+      row @ swap                      \ load row counter
+      0= if                           \ on final scanline,
+        #cols + row 2dup_!_drop       \ advance it
+      then                            \ otherwise don't, and
+      VPX ! ;                         \ write it into VPX.
+
+If VFB operated as a counter, we could avoid the first part of the ISR. It
+should have controllable rollover to allow for either 8- or 16-line characters
+(and possibly values in between).
+
+The next part has the effect of rewinding VPX to a previous value on every
+scanline except the last one in the glyph (when VFB has rolled over). On that
+hblank event, we update the previous value.
+
+
+So, changes:
+
+- VFB gets an incrementer and a programmable overflow detector, which can signal
+  overflow on carry-out of bit 2 or 3 depending on character height.
+
+- VPX gets a shadow register. At end-of-visible,
+  - if VFB overflows, copy VPX to the shadow register.
+  - otherwise, copy shadow register to VPX.
+
+
+At start-of-vblank:
+
+    : vblank
+      3 VIA !       \ acknowledge IRQ
+      12 irq-off ;  \ disable hblank interrupt
+
+This would no longer be necessary.
+
+At end-of-vblank:
+
+    : evblank
+      6 VIA !
+      0 VPX !         \ rewind VPX to start of character RAM
+      0 VFB !         \ reset VFB so we don't start showing a partial character.
+      0 scanline !    \ zero 3-bit glyph line counter
+      0 row !         \ zero shadow register.
+      12 irq-on ;
+
+This is necessary, today, because the display keeps running during vblank, so
+VPX and VFB will have random-seeming values at the start of the frame. We could
+specify that they get zeroed at end-of-vblank and fix this problem.
+
+I'd be inclined to leave the interrupt *facilities* available, because they're
+useful.
+
+Changes:
+- VPX and VFB both get reset at the hblank event in the final line of vblank.
+  For now, they get reset to zero. If this proves constraining I'll change it.
+
+
+Separately it might be useful to have control over
+- Video signal enabled or blacked
+- Sync signals emitted or suppressed
+- Sync polarity.
+
+
+It would also be nice to consider implementing a variant on the MDA's 9-pixel
+character mode. In this mode, the MDA draws characters 9 pixels wide. Obviously
+its ROMs are only 9 bits wide. The remaining pixel is used as inter-character
+space for most characters, and repeats the 8th bit for the graphics-drawing
+characters in CP437 ($C0 - $DF). This would enable a 720-pixel-wide text mode
+with clearer character spacing, but would be less useful for simulating graphics
+tile modes.
+
+
+---------
+
+Implementation notes.
+
+I can almost remove VFB. If the vertical timing machine used an up-counter
+instead of a down-counter, I could just sample its bottom 3-4 bits. Consider
+this later.
+
+In the framegen circuit, there's a new event to acknowledge: the hblank at the
+end-of-vblank. I'm calling this `startOfField`; it can be derived with a simple
+and-gate of existing events. A new case for the write logic on VFB and VPX and
+we've got the field reset behavior.
+
+Hypothesis: the snow field should be stable now and not roll like it has in the
+past. I'll have to test that later as I'm on the road.
+
+Now, the shadow.
+
+Since we already have access to blanking and active signals, this is a simple
+addition of equations to the update rules (and a new register).
+
+Hypothesis: some amount of regular row structure should now be visible. (In
+fact, it may be recognizable as the CGA font that I'm loading into font memory.)
+
+-------
+
+Okay, I got a couple corner cases wrong with respect to the shadow register
+values, but came pretty close on my first try! It's stable now.

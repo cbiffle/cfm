@@ -1,0 +1,32 @@
+It would be nice to bring up the SRAM on the icoboard.
+
+The SRAM is quite fast (10ns).
+
+The CFM core interface expects writes to occur in one cycle, and reads to occur
+over two, where the data returns on the second cycle and a new read or write can
+be issued.
+
+We'll want to register the SRAM data outputs for this model, because the SRAM
+will only hold its outputs for so long after a new transaction is initiated --
+and given that the video demo is using a 40MHz clock, there's no way a 10ns SRAM
+will hold for long enough.
+
+And then there's turnaround. We could address turnaround by driving WE low at
+the start of a write cycle, and only asserting the outputs at the middle edge of
+the cycle. Or, equivalently, we could clock the SRAM interface at 2x core and
+make everything take two cycles. Or, as far as I can tell, we could ignore the
+issue and tolerate some bus contention, which costs power.
+
+Clash thinks in terms of single-edge clocks, so unless I want to write the
+interface in Verilog -- and I do not -- that option is out.
+
+Clocking the interface at 2x core should be straightforward with the latest
+round of clocking changes in Clash. Might even be able to use their explicit DDR
+synchronizer blocks instead of having to use a general synchronizer.
+
+But the simplest option is definitely ignoring contention, and I may start
+there.
+
+
+
+

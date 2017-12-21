@@ -1,0 +1,19 @@
+Hardening the peripherals, just a bit.
+
+Right now all the peripherals are interrupt-dependent, which is very flexible
+but means they can interfere with each other. For example, running the VGA
+display makes UART flakier, and I'm still not entirely sure why.
+
+In the interest of having debugging interfaces stable even during mistakes, it
+would be nice to harden the peripherals.
+
+In the case of the UART, this means it needs transmit and receive timing
+generators (which may be arbitrarily out of phase with respect to one another),
+and shift registers, at minimum.
+
+In the case of the VGA, I would really only harden it a little bit by removing
+the need for hblank interrupt activity. I could do this by introducing a shadow
+register for the pixel address, and add logic to manage character row
+boundaries.
+
+
