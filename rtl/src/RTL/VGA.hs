@@ -11,6 +11,7 @@ module RTL.VGA where
 import Clash.Prelude
 import Data.Maybe (fromMaybe)
 import Control.Lens hiding ((:>))
+import Control.Arrow (second)
 import CFM.Types
 
 -------------------------------------------------------------------------------
@@ -102,6 +103,9 @@ data GState = GState
     -- ^ Pixel addressing counter.
   , _gsShadowPixels :: BitVector 14
     -- ^ Shadow of gsPixels used to effect character retracing.
+  , _gsChar0 :: BitVector 11
+    -- ^ Offset of top-left corner of display in character RAM. Used to reset
+    -- the pixel addressing counter at top of frame.
   , _gsHIF :: Bool
     -- ^ Hblank Interrupt Flag
   , _gsVIF :: Bool
@@ -110,7 +114,7 @@ data GState = GState
     -- ^ End-of-Vblank Interrupt Flag
   , _gsFB :: BitVector 3
     -- ^ Font Base (TODO: this name needs work)
-  , _gsAddr :: BitVector 12
+  , _gsAddr :: (Bit, BitVector 11)
     -- ^ Address for writing to video memory.
   , _gsReadValue :: Cell
     -- ^ Read value, registered to improve bus timing.
@@ -121,7 +125,7 @@ makeLenses ''GState
 instance Default GState where
   def = GState (def, fst vesa800x600x60)
                (def, snd vesa800x600x60)
-               def def False False False def def def
+               def def def False False False def def def
 
 -- | Mealy function for the framegen circuit.
 --
@@ -135,7 +139,7 @@ framegenT :: GState
                , Bool -- Active
                , BitVector 14 -- pixel address
                , BitVector 3  -- font base
-               , Maybe (BitVector 12, BitVector 8)  -- write through
+               , Maybe ((Bit, BitVector 11), BitVector 8)  -- write through
                , Cell -- read response
                ))
 framegenT s iowr = (s', ( (hsync, s ^. gsHIF)
@@ -153,6 +157,7 @@ framegenT s iowr = (s', ( (hsync, s ^. gsHIF)
            & gsV . _2 %~ timingT vwr
            & gsPixels .~ pixels'
            & gsShadowPixels .~ shadowPixels'
+           & gsChar0 .~ char0'
            & gsHIF %~ ((&& not hack) . (|| hblank))
            & gsVIF %~ ((&& not vack) . (|| vblank))
            & gsEVIF %~ ((&& not evack) . (|| evblank))
@@ -173,14 +178,13 @@ framegenT s iowr = (s', ( (hsync, s ^. gsHIF)
 
     -- TODO all these equations need optimizin'.
     pixels' | Just (0x8, Just v) <- rwr = truncateB (v `shiftL` 3)
-            | startOfField = 0
+            | startOfField = (s ^. gsChar0) ++# 0
             | vactive && hblank && not lastGlyphSlice = s ^. gsShadowPixels
             | hactive && vactive = s ^. gsPixels + 1
             | otherwise = s ^. gsPixels
 
     shadowPixels' | vactive && hblank && lastGlyphSlice = s ^. gsPixels + 1
-                  | startOfField = 0
-                    -- TODO: remove vactive from that equation?
+                  | startOfField = (s ^. gsChar0) ++# 0
                   | otherwise = s ^. gsShadowPixels
 
     (evack, hack, vack) | Just (0x9, Just v) <- rwr = unpack (slice d2 d0 v)
@@ -196,13 +200,16 @@ framegenT s iowr = (s', ( (hsync, s ^. gsHIF)
     vid = s ^. gsPixels
     act = hactive && vactive
 
-    addr' | Just (0xB, Just v) <- rwr = truncateB v
-          | Just _ <- write = s ^. gsAddr + 1  -- autoincrement on use
+    addr' | Just (0xB, Just v) <- rwr = unpack $ truncateB v
+          | Just _ <- write = second (+1) $ s ^. gsAddr -- autoincrement on use
           | otherwise = s ^. gsAddr
 
     write
       | Just (0xC, Just v) <- rwr = Just (s ^. gsAddr, truncateB v)
       | otherwise = Nothing
+
+    char0' | Just (0xD, Just v) <- rwr = truncateB v
+          | otherwise = s ^. gsChar0
 
     readValue = case fromMaybe 0 (fst <$> iowr) of
           x | x .&. 0xC == 0 ->
@@ -211,8 +218,10 @@ framegenT s iowr = (s', ( (hsync, s ^. gsHIF)
                 zeroExtend $ (s ^. gsV . _2) !! (x .&. 3)
           8 -> zeroExtend $ s ^. gsPixels
           9 -> zeroExtend $ pack (s ^. gsEVIF, s ^. gsHIF, s ^. gsVIF)
-          10 -> zeroExtend $ s ^. gsFB
-          11 -> zeroExtend $ s ^. gsAddr
+          0xA -> zeroExtend $ s ^. gsFB
+          0xB -> zeroExtend $ pack $ s ^. gsAddr
+          0xC -> errorX "write-only register"
+          0xD -> zeroExtend $ s ^. gsChar0
           _ -> errorX "undefined video register"
 
 framegen :: (HasClockReset d g s)
@@ -222,7 +231,7 @@ framegen :: (HasClockReset d g s)
             , Signal d Bool   -- active
             , Signal d (BitVector 14) -- pixel address
             , Signal d (BitVector 3)  -- glyph base
-            , Signal d (Maybe (BitVector 12, BitVector 8))  -- write through
+            , Signal d (Maybe ((Bit, BitVector 11), BitVector 8))  -- write through
             , Signal d Cell -- read response
             )
 framegen = unbundle . mealy framegenT def
@@ -251,8 +260,8 @@ chargen iowr = (resp, hsync'', vsync'', hblank, vblank, evblank, out'')
 
     (charAddr, pxlAddr) = unbundle $ split <$> pixel
 
-    ramsplit (Just (split -> (0, a), v)) = (Just (unpack a, v), Nothing)
-    ramsplit (Just (split -> (_, a), v)) = (Nothing, Just (unpack a, v))
+    ramsplit (Just ((0, a), v)) = (Just (unpack a, v), Nothing)
+    ramsplit (Just ((_, a), v)) = (Nothing, Just (unpack a, v))
     ramsplit _ = (Nothing, Nothing)
     (charWr, glyphWr) = unbundle $ ramsplit <$> wrth
 

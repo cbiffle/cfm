@@ -1107,6 +1107,7 @@ $C012 constant VIA  \ video - interrupt acknowledge
 $C014 constant VFB  \ video - font base
 $C016 constant VWA  \ video - write address
 $C018 constant VWD  \ video - write data
+$C01A constant VC0  \ video - character 0
 
 : vid
   119 VTH !
