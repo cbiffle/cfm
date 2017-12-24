@@ -23,7 +23,7 @@ system :: (HasClockReset dom gated synchronous)
           , Signal dom Bool
           , Signal dom (BitVector 6)
           )
-system raminit ins = (outs, hsync, vsync, pack . repeat <$> vid)
+system raminit ins = (outs, hsync, vsync, vid)
   where
     (ioreq, fetch) = coreWithRAM ram ioresp
 

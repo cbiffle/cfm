@@ -170,7 +170,7 @@ framegenT :: GState
                , Bool -- Active
                , BitVector 14 -- pixel address
                , BitVector 3  -- font base
-               , Maybe ((Bit, BitVector 11), BitVector 8)  -- write through
+               , Maybe ((Bit, BitVector 11), Cell)  -- write through
                , Cell -- read response
                ))
 framegenT s iowr = (s', ( (hsync, s ^. gsHIF)
@@ -266,7 +266,7 @@ framegenT s iowr = (s', ( (hsync, s ^. gsHIF)
 
     -- Detecting writes to VWD.
     write
-      | Just (0xC, Just v) <- rwr = Just (s ^. gsAddr, truncateB v)
+      | Just (0xC, Just v) <- rwr = Just (s ^. gsAddr, v)
       | otherwise = Nothing
 
     -- Transition rules for char0, a simple register.
@@ -294,32 +294,67 @@ framegen :: (HasClockReset d g s)
             , Signal d Bool   -- active
             , Signal d (BitVector 14) -- pixel address
             , Signal d (BitVector 3)  -- glyph base
-            , Signal d (Maybe ((Bit, BitVector 11), BitVector 8))  -- write through
+            , Signal d (Maybe ((Bit, BitVector 11), Cell))  -- write through
             , Signal d Cell -- read response
             )
 framegen = unbundle . mealy framegenT def
 
 
 -------------------------------------------------------------------------------
+-- Palette.
+
+paletteO :: (KnownNat n)
+         => Vec (2^n) (BitVector c) -> BitVector n -> BitVector c
+paletteO = (!!)
+
+paletteT :: (KnownNat n)
+         => Maybe (BitVector n, Maybe (BitVector c))
+         -> Vec (2^n) (BitVector c)
+         -> Vec (2^n) (BitVector c)
+paletteT (Just (a, Just v)) = replace a v
+paletteT _ = id
+
+-------------------------------------------------------------------------------
 -- Character generation.
+
+defaultPalette :: Vec 16 (BitVector 6)
+defaultPalette =
+  0 :> 1 :> 2 :> 3 :> 4 :> 5 :> 20 :> 7 :>
+  56 :> 57 :> 58 :> 59 :> 60 :> 61 :> 62 :> 63 :> Nil
 
 chargen
   :: (HasClockReset d g s)
-  => Signal d (Maybe (BitVector 4, Maybe Cell))
+  => Signal d (Maybe (BitVector 5, Maybe Cell))
   -> ( Signal d Cell    -- read response
      , Signal d Bool    -- hsync
      , Signal d Bool    -- vsync
      , Signal d Bool    -- hblank IRQ
      , Signal d Bool    -- vblank IRQ
      , Signal d Bool    -- end-of-vblank IRQ
-     , Signal d Bit     -- monochrome output
+     , Signal d (BitVector 6)
      )
-chargen iowr = (resp, hsync'', vsync'', hblank, vblank, evblank, out'')
+chargen ioreq = ( resp
+                , hsync''
+                , vsync''
+                , hblank
+                , vblank
+                , evblank
+                , out''
+                )
   where
+    iosplit (Just (split @_ @1 -> (0, a), v)) = (Just (a, v), Nothing)
+    iosplit (Just (split @_ @1 -> (_, a), v)) = (Nothing, Just (a, v))
+    iosplit _ = (Nothing, Nothing)
+
+    (fgreq, preq) = unbundle $ iosplit <$> ioreq
+
+    palette = register defaultPalette $
+      paletteT <$> (fmap (second (fmap truncateB)) <$> preq) <*> palette
+
     -- The outputs of framegen provide the first cycle.
     ( unbundle -> (hsync, hblank)
       , unbundle -> (vsync, vblank, evblank)
-      , active, pixel, glyph, wrth, resp) = framegen iowr
+      , active, pixel, glyph, wrth, resp) = framegen fgreq
 
     (charAddr, pxlAddr) = unbundle $ split <$> pixel
 
@@ -329,9 +364,13 @@ chargen iowr = (resp, hsync'', vsync'', hblank, vblank, evblank, out'')
     (charWr, glyphWr) = unbundle $ ramsplit <$> wrth
 
     -- Past the character memory we are delayed one cycle.
-    char' = blockRamFilePow2 @_ @_ @11 @8 "random-2048x8.readmemb"
-            (unpack <$> charAddr)
-            charWr
+    achar' = blockRamFilePow2 @_ @_ @11 @16 "random-2k.readmemb"
+             (unpack <$> charAddr)
+             (fmap (second truncateB) <$> charWr)
+    (foreI', backI', char') = ( slice d15 d12 <$> achar'
+                              , slice d11 d8 <$> achar'
+                              , slice d7 d0 <$> achar'
+                              )
     glyph' = register def glyph
     charf' = (++#) <$> char' <*> glyph'
     pxlAddr' = register def pxlAddr
@@ -342,11 +381,17 @@ chargen iowr = (resp, hsync'', vsync'', hblank, vblank, evblank, out'')
     -- Past the glyph memory we're delayed another cycle.
     gslice'' = blockRamFilePow2 @_ @_ @11 @8 "font-8x8.readmemb"
                (unpack <$> charf')
-               glyphWr
+               (fmap (second truncateB) <$> glyphWr)
     pxlAddr'' = register def pxlAddr'
     hsync'' = register False hsync'
     vsync'' = register False vsync'
     active'' = register False active'
+    foreI'' = register def foreI'
+    backI'' = register def backI'
+    fore'' = paletteO <$> palette <*> foreI''
+    back'' = paletteO <$> palette <*> backI''
     out'' = mux active''
-                ((!) <$> gslice'' <*> pxlAddr'')
+                (mux (unpack <$> ((!) <$> gslice'' <*> pxlAddr''))
+                     fore''
+                     back'')
                 (pure 0)
