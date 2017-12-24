@@ -7,14 +7,14 @@ module top(
   input S1,
   output cts_n,
   output [3:0] led,
-  output pmod3_7,
-  output pmod3_1,
-  output pmod3_8,
-  output pmod3_9,
-  output pmod3_10,
-  output pmod3_2,
-  output pmod3_3,
-  output pmod3_4);
+  output pmod3_7, // hsync
+  output pmod3_1, // vsync
+  output pmod3_8, // R4
+  output pmod3_9, // B4
+  output pmod3_10,  // G3
+  output pmod3_2, // G4
+  output pmod3_3, // R3
+  output pmod3_4);  // B3
 
 wire clk_core;
 wire pll_locked;
@@ -81,5 +81,5 @@ wire reset_n = ~S1;
         assign {cts_n, TX} = out1[1:0];
         assign in = {15'b0, RX};
 
-        assign {pmod3_8, pmod3_9, pmod3_10, pmod3_2, pmod3_3, pmod3_4} = vid;
+        assign {pmod3_8, pmod3_2, pmod3_9, pmod3_3, pmod3_10, pmod3_4} = vid;
 endmodule
