@@ -127,6 +127,8 @@ data GState = GState
   , _gsChar0 :: BitVector 11
     -- ^ Offset of top-left corner of display in character RAM. Used to reset
     -- the pixel addressing counter at top of frame.
+  , _gsCursor :: BitVector 11
+    -- ^ Address in character RAM of the cursor.
   , _gsHIF :: Bool
     -- ^ Hblank Interrupt Flag
   , _gsVIF :: Bool
@@ -150,6 +152,7 @@ instance Default GState where
     , _gsPixels = def
     , _gsShadowPixels = def
     , _gsChar0 = def
+    , _gsCursor = def
     , _gsHIF = False
     , _gsVIF = False
     , _gsEVIF = False
@@ -171,6 +174,7 @@ framegenT :: GState
                , BitVector 14 -- pixel address
                , BitVector 4  -- font base
                , Maybe ((Bit, BitVector 11), Cell)  -- write through
+               , Bool  -- cursor active?
                , Cell -- read response
                ))
 framegenT s iowr = (s', ( (hsync, s ^. gsHIF)
@@ -179,12 +183,14 @@ framegenT s iowr = (s', ( (hsync, s ^. gsHIF)
                         , s ^. gsPixels
                         , s ^. gsFB
                         , write
+                        , s ^. gsCursor == slice d13 d3 (s ^. gsPixels)
                         , s ^. gsReadValue
                         ))
   where
     s' = s & gsPixels .~ pixels'
            & gsShadowPixels .~ shadowPixels'
            & gsChar0 .~ char0'
+           & gsCursor .~ cursor'
            & gsFB .~ fb'
            & gsAddr .~ addr'
            & gsReadValue .~ readValue
@@ -273,6 +279,10 @@ framegenT s iowr = (s', ( (hsync, s ^. gsHIF)
     char0' | Just (0xD, Just v) <- rwr = truncateB v
            | otherwise = s ^. gsChar0
 
+    -- Transition rules for cursor, a simple register.
+    cursor' | Just (0xE, Just v) <- rwr = truncateB v
+            | otherwise = s ^. gsCursor
+
     -- Bus response multiplexer.
     readValue = case fromMaybe 0 (fst <$> iowr) of
           x | x .&. 0xC == 0 ->
@@ -285,6 +295,7 @@ framegenT s iowr = (s', ( (hsync, s ^. gsHIF)
           0xB -> zeroExtend $ pack $ s ^. gsAddr
           0xC -> errorX "write-only register"
           0xD -> zeroExtend $ s ^. gsChar0
+          0xE -> zeroExtend $ s ^. gsCursor
           _ -> errorX "undefined video register"
 
 framegen :: (HasClockReset d g s)
@@ -295,6 +306,7 @@ framegen :: (HasClockReset d g s)
             , Signal d (BitVector 14) -- pixel address
             , Signal d (BitVector 4)  -- glyph base
             , Signal d (Maybe ((Bit, BitVector 11), Cell))  -- write through
+            , Signal d Bool -- cursor
             , Signal d Cell -- read response
             )
 framegen = unbundle . mealy framegenT def
@@ -354,7 +366,7 @@ chargen ioreq = ( resp
     -- The outputs of framegen provide the first cycle.
     ( unbundle -> (hsync, hblank)
       , unbundle -> (vsync, vblank, evblank)
-      , active, pixel, glyph, wrth, resp) = framegen fgreq
+      , active, pixel, glyph, wrth, cursor, resp) = framegen fgreq
 
     (charAddr, pxlAddr) = unbundle $ split <$> pixel
 
@@ -377,6 +389,7 @@ chargen ioreq = ( resp
     hsync' = register False hsync
     vsync' = register False vsync
     active' = register False active
+    cursor' = register False cursor
 
     -- Past the glyph memory we're delayed another cycle.
     gslice'' = blockRamFilePow2 @_ @_ @11 @8 "font-8x16.readmemb"
@@ -388,10 +401,16 @@ chargen ioreq = ( resp
     active'' = register False active'
     foreI'' = register def foreI'
     backI'' = register def backI'
+    cursor'' = register False cursor'
+
     fore'' = paletteO <$> palette <*> foreI''
     back'' = paletteO <$> palette <*> backI''
+
+    cursbits'' = mux cursor'' (pure 3) (pure 0)
+    gcslice'' = (.|.) <$> gslice'' <*> cursbits''
+
     out'' = mux active''
-                (mux (unpack <$> ((!) <$> gslice'' <*> pxlAddr''))
+                (mux (unpack <$> ((!) <$> gcslice'' <*> pxlAddr''))
                      fore''
                      back'')
                 (pure 0)
