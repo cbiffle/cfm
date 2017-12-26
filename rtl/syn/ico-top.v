@@ -7,14 +7,11 @@ module top(
   input S1,
   output cts_n,
   output [3:0] led,
-  output pmod3_7, // hsync
-  output pmod3_1, // vsync
-  output pmod3_8, // R4
-  output pmod3_9, // B4
-  output pmod3_10,  // G3
-  output pmod3_2, // G4
-  output pmod3_3, // R3
-  output pmod3_4);  // B3
+  output vga_hsync,
+  output vga_vsync,
+  output [4:3] vga_r,
+  output [4:3] vga_b,
+  output [4:3] vga_g);
 
 wire clk_core;
 wire pll_locked;
@@ -72,8 +69,8 @@ wire reset_n = ~S1;
           .reset(~core_reset_n),
           .out1(out1),
           .inport(in),
-          .hsync(pmod3_7),
-          .vsync(pmod3_1),
+          .hsync(vga_hsync),
+          .vsync(vga_vsync),
           .vid(vid),
         );
 
@@ -81,5 +78,6 @@ wire reset_n = ~S1;
         assign {cts_n, TX} = out1[1:0];
         assign in = {15'b0, RX};
 
-        assign {pmod3_8, pmod3_2, pmod3_9, pmod3_3, pmod3_10, pmod3_4} = vid;
+        assign {vga_r[4], vga_g[4], vga_b[4], vga_r[3], vga_g[3], vga_b[3]}
+          = vid;
 endmodule

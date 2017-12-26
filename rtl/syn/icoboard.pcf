@@ -59,6 +59,15 @@ set_io --warn-no-port sram_d_19b       L3
 set_io --warn-no-port sram_d_18a       K4
 set_io --warn-no-port sram_d_16b       K3
 
+set_io vga_hsync N9
+set_io vga_vsync L9
+set_io vga_b[3]  N6
+set_io vga_b[4]  M8
+set_io vga_g[3]  N7
+set_io vga_g[4]  G5
+set_io vga_r[3]  L7
+set_io vga_r[4]  P9
+
 #set_io --warn-no-port pmod1_1    D8
 #set_io --warn-no-port pmod1_2    B9
 #set_io --warn-no-port pmod1_3    B10
@@ -77,14 +86,14 @@ set_io --warn-no-port pmod2_8    B6
 set_io --warn-no-port pmod2_9    B3
 set_io --warn-no-port pmod2_10   B5
 
-set_io --warn-no-port pmod3_1    L9
-set_io --warn-no-port pmod3_2    G5
-set_io --warn-no-port pmod3_3    L7
-set_io --warn-no-port pmod3_4    N6
-set_io --warn-no-port pmod3_7    N9
-set_io --warn-no-port pmod3_8    P9
-set_io --warn-no-port pmod3_9    M8
-set_io --warn-no-port pmod3_10   N7
+#set_io --warn-no-port pmod3_1    L9
+#set_io --warn-no-port pmod3_2    G5
+#set_io --warn-no-port pmod3_3    L7
+#set_io --warn-no-port pmod3_4    N6
+#set_io --warn-no-port pmod3_7    N9
+#set_io --warn-no-port pmod3_8    P9
+#set_io --warn-no-port pmod3_9    M8
+#set_io --warn-no-port pmod3_10   N7
 
 set_io --warn-no-port pmod4_1    T15
 set_io --warn-no-port pmod4_2    T14
