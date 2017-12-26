@@ -615,7 +615,7 @@ user (handler)
 
 : u<= swap u< 0= ;
 
-: u/mod  ( num denom -- quotient remainder )
+: u/mod  ( num denom -- remainder quotient )
   0 0 16
   begin                   ( n d r q i )
     >r                    ( n d r q ) ( R: i )
@@ -635,6 +635,9 @@ user (handler)
     dup 0=
   until ( n d r q i )
   drop >r nip nip r> ;
+
+: u/  u/mod nip ;
+: umod  u/mod drop ;
 
 \ -----------------------------------------------------------------------------
 \ User-facing terminal.
