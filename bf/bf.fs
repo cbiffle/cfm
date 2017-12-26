@@ -1210,8 +1210,8 @@ variable vatt   \ attributes for text in top 8 bits
   399 VTV 6 + !
   80 vcols !
   25 vrows !
-  vpage
   0 15 vcolor!
+  vpage
   ;
 ( ----------------------------------------------------------- )
 ( Programming tools )

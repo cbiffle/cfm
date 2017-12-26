@@ -127,8 +127,6 @@ data GState = GState
   , _gsChar0 :: BitVector 11
     -- ^ Offset of top-left corner of display in character RAM. Used to reset
     -- the pixel addressing counter at top of frame.
-  , _gsCursor :: BitVector 11
-    -- ^ Address in character RAM of the cursor.
   , _gsHIF :: Bool
     -- ^ Hblank Interrupt Flag
   , _gsVIF :: Bool
@@ -152,7 +150,6 @@ instance Default GState where
     , _gsPixels = def
     , _gsShadowPixels = def
     , _gsChar0 = def
-    , _gsCursor = def
     , _gsHIF = False
     , _gsVIF = False
     , _gsEVIF = False
@@ -183,14 +180,13 @@ framegenT s iowr = (s', ( (hsync, s ^. gsHIF)
                         , s ^. gsPixels
                         , s ^. gsFB
                         , write
-                        , s ^. gsCursor == slice d13 d3 (s ^. gsPixels)
+                        , s ^. gsAddr == (0, slice d13 d3 (s ^. gsPixels))
                         , s ^. gsReadValue
                         ))
   where
     s' = s & gsPixels .~ pixels'
            & gsShadowPixels .~ shadowPixels'
            & gsChar0 .~ char0'
-           & gsCursor .~ cursor'
            & gsFB .~ fb'
            & gsAddr .~ addr'
            & gsReadValue .~ readValue
@@ -279,10 +275,6 @@ framegenT s iowr = (s', ( (hsync, s ^. gsHIF)
     char0' | Just (0xD, Just v) <- rwr = truncateB v
            | otherwise = s ^. gsChar0
 
-    -- Transition rules for cursor, a simple register.
-    cursor' | Just (0xE, Just v) <- rwr = truncateB v
-            | otherwise = s ^. gsCursor
-
     -- Bus response multiplexer.
     readValue = case fromMaybe 0 (fst <$> iowr) of
           x | x .&. 0xC == 0 ->
@@ -295,7 +287,6 @@ framegenT s iowr = (s', ( (hsync, s ^. gsHIF)
           0xB -> zeroExtend $ pack $ s ^. gsAddr
           0xC -> errorX "write-only register"
           0xD -> zeroExtend $ s ^. gsChar0
-          0xE -> zeroExtend $ s ^. gsCursor
           _ -> errorX "undefined video register"
 
 framegen :: (HasClockReset d g s)
