@@ -1102,6 +1102,8 @@ variable uart-rx-tl
 
 : ledtog  4 + #bit OUTTOG ! ;
 
+\ ----------------------------------------------------------------------
+\ Text mode video display
 
 $C000 constant VTH  \ video - timing - horizontal
 $C008 constant VTV  \ video - timing - vertical
@@ -1112,13 +1114,106 @@ $C016 constant VWA  \ video - write address
 $C018 constant VWD  \ video - write data
 $C01A constant VC0  \ video - character 0
 
+\ Overwrites a section of video memory with a given value.
+: vfill  ( v-addr u x -- )
+  VWA @ >r    \ save cursor position
+  >r          \ stash cell to write
+  swap VWA !  \ set up write address
+  begin
+    dup
+  while ( count ) ( R: vwa x )
+    1- r@ VWD !
+  repeat
+  rdrop drop
+  r> VWA !  \ restore old cursor
+  ;
+
+variable vcols  \ columns in the text display
+variable vrows  \ rows in the text display
+variable vatt   \ attributes for text in top 8 bits
+
+\ Sets the current color to the given fore and back color indices.
+: vcolor!  ( back fore -- )
+  4 lshift or 8 lshift  vatt ! ;
+
+\ Fills a section of text RAM with spaces in the current color.
+: vclr  ( v-addr u -- )
+  bl vatt @ or vfill ;
+
+\ Clears the screen, filling it with spaces in the current color, and resets
+\ the cursor to the lower-left corner. As a side effect, this resets the text
+\ window scroll to the start of video memory.
+: vpage
+  0  \ start of memory
+  vcols @ vrows @ u*  \ size of a screen
+  vclr     \ clear a screen-sized area of text RAM
+  0 VC0 !   \ make it the active screen
+  vcols @ vrows @ 1- u* VWA !   \ cursor to lower left
+  ;
+
+\ Scrolls the display up, revealing a blank line at the bottom. Leaves the
+\ cursor address unchanged (i.e. it moves up on the display).
+: vscroll
+  vcols @ VC0 +!
+  VC0 @  vcols @ vrows @ 1- u* + $7FF and  vcols @  vclr
+  ;
+
+\ "Types" a character without control character interpretation. Advances the
+\ cursor. Scrolls the display as needed.
+: vputc ( c -- )
+  vatt @ or VWD !   \ store the character with attributes
+  VWA @  VC0 @ -  $7FF and    \ get distance from start of display
+  vcols @ vrows @ u* = if   \ if we've run off the end
+    vscroll  \ reveal another line
+  then ;
+
+\ "Types" a character with control character interpretation, simulating a
+\ terminal.
+: vemit ( c -- )
+  7 over = if drop exit then   \ ignore BEL
+
+  8 over = if drop  \ backspace
+    VC0 @ VWA @ xor if  VWA @ 1- $7FF and VWA ! then
+    exit
+  then
+
+  10 over = if drop \ line feed
+    vscroll
+    VWA @  vcols @ + $7FF and  VWA !
+    exit
+  then
+
+  12 over = if drop \ form feed / page
+    vpage exit
+  then
+
+  13 over = if drop \ carriage return
+    \ TODO broken broken ?
+    \ Compute current offset into the display
+    VWA @  VC0 @  -  $7FF and
+    \ Round down by division and multiplication
+    vcols @ u/  vcols @ u*
+    \ Project back into the display and assign
+    VC0 @ + $7FF and VWA !
+    exit
+  then
+
+  vputc ;
+
+
 : vid
   119 VTH !
   167 VTH 4 + !
   639 VTH 6 + !
   200 VTV !
   222 VTV 4 + !
-  199 VTV 6 + ! ;
+  199 VTV 6 + !
+  80 vcols !
+  25 vrows !
+  vpage
+  0 15 vcolor!
+  ;
+
 
 ( ----------------------------------------------------------- )
 ( Demo wiring below )
