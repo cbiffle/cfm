@@ -1213,6 +1213,20 @@ variable vatt   \ attributes for text in top 8 bits
   vpage
   0 15 vcolor!
   ;
+( ----------------------------------------------------------- )
+( Programming tools )
+
+: words
+  LATEST @
+  begin
+    dup
+  while
+    2 over +  \ compute address of name field
+    dup 1+ swap c@  \ convert to counted string
+    type space
+    @
+  repeat
+  drop ;
 
 
 ( ----------------------------------------------------------- )
