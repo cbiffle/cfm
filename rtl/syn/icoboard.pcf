@@ -4,10 +4,10 @@ set_io led[0] C8
 set_io led[1] F7
 set_io led[2] K9
 
-set_io cts_n A11
-set_io TX A9
-set_io RX A10
-set_io --warn-no-port rts_n B8
+set_io cts_n B11
+set_io TX B9
+set_io RX B10
+set_io --warn-no-port rts_n D8
 
 set_io --warn-no-port S1 K11
 set_io --warn-no-port S2 P13
@@ -59,14 +59,14 @@ set_io --warn-no-port sram_d_19b       L3
 set_io --warn-no-port sram_d_18a       K4
 set_io --warn-no-port sram_d_16b       K3
 
-set_io --warn-no-port pmod1_1    D8
-set_io --warn-no-port pmod1_2    B9
-set_io --warn-no-port pmod1_3    B10
-set_io --warn-no-port pmod1_4    B11
-#set_io --warn-no-port pmod1_7    B8
-#set_io --warn-no-port pmod1_8    A9
-#set_io --warn-no-port pmod1_9    A10
-#set_io --warn-no-port pmod1_10   A11
+#set_io --warn-no-port pmod1_1    D8
+#set_io --warn-no-port pmod1_2    B9
+#set_io --warn-no-port pmod1_3    B10
+#set_io --warn-no-port pmod1_4    B11
+set_io --warn-no-port pmod1_7    B8
+set_io --warn-no-port pmod1_8    A9
+set_io --warn-no-port pmod1_9    A10
+set_io --warn-no-port pmod1_10   A11
 
 set_io --warn-no-port pmod2_1    A5
 set_io --warn-no-port pmod2_2    A2
