@@ -11,7 +11,13 @@ module top(
   output vga_vsync,
   output [4:3] vga_r,
   output [4:3] vga_b,
-  output [4:3] vga_g);
+  output [4:3] vga_g,
+  output sd_cs_n,
+  output sd_mosi,
+  input sd_miso,
+  output sd_sck,
+  input sd_cd,
+  );
 
 wire clk_core;
 wire pll_locked;
@@ -74,9 +80,10 @@ wire reset_n = ~S1;
           .vid(vid),
         );
 
-        assign led = out1[7:4];
+        assign led = out1[8:5];
         assign {cts_n, TX} = out1[1:0];
-        assign in = {15'b0, RX};
+        assign {sd_cs_n, sd_mosi, sd_sck} = out1[4:2];
+        assign in = {sd_cd, sd_miso, RX};
 
         assign {vga_r[4], vga_g[4], vga_b[4], vga_r[3], vga_g[3], vga_b[3]}
           = vid;

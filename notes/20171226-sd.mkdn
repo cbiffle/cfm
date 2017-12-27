@@ -1,0 +1,169 @@
+I've wired up an SD card slot to the GPIO ports. The current wiring is:
+
+    out[2]    sd_sck
+    out[3]    sd_mosi
+    out[4]    sd_cs_n
+
+    in[1]     sd_miso
+    in[2]     sd_cd     (sd_cd_n, see below)
+
+Let's see if I can talk to it!
+
+(First observation: these added nets are causing me to miss timing.)
+
+
+First line of business: I'm using Digilent's SD breakout board, and they weren't
+clear on what the polarity of the card detect signal is. We can read the status
+of the line by
+
+    IN @ 4 and .
+
+By inspection it seems that the signal is active low and thus ought to have its
+name changed.
+
+So here's our first SD word:
+
+    : sd?  ( -- ? )  \ queries whether a card is inserted
+      IN @ 4 and 0= ;
+
+Great!
+
+To wake an SD card in SPI mode, we apparently need to
+
+- Raise MOSI and CS
+- Send at least 74 clock pulses
+- Select card (CS low)
+- Send CMD0
+
+We should get a response byte back.
+
+The bus at this point in the protocol is capped at 400kHz, which means we'll
+need delays.
+
+    : cycles ( u -- )   \ delays for at least u cycles
+      >r
+      TIMV @
+      begin   ( start )
+        TIMV @ over -   ( start delta )
+        r@ u< 0= if
+          rdrop drop exit
+        then
+      again ;
+
+We're going to want to increase the speed after startup, so let's put it in a
+variable.
+
+    variable sdcyc
+    : sddelay  sdcyc @ cycles ;
+
+Now, access to output pins:
+
+    : outpin
+      create #bit ,
+      does> @ swap if OUTSET else OUTCLR then ! ;
+
+    2 outpin >sdclk
+    3 outpin >sdmosi
+    4 outpin >sdcs_
+
+And SPI frame exchanges. Here we assume that the clock is left low in between
+calls.
+
+    \ Exchanges a single bit over SPI with the SD card. The top two cells on
+    \ the stack are used as incoming / outgoing shift registers.
+    : sdx1  ( rx tx -- rx' tx' )
+      $80 over and >sdmosi    \ transmit MSB after falling edge
+      1 lshift                \ shift new MSB into place
+
+      sddelay  1 >sdclk       \ fast-forward to rising edge
+      sddelay                 \ allow for settling
+
+      swap                    \ expose received frame
+      1 lshift                \ make room for new LSB
+      IN @ 2 and 1 rshift or  \ set new LSB
+      swap
+
+      0 >sdclk                \ falling edge
+      ;
+
+    : sdx  ( tx -- rx )
+      0 swap
+      sdx1 sdx1 sdx1 sdx1
+      sdx1 sdx1 sdx1 sdx1
+      drop ;
+
+To send the initial CMD0 we need to generate the right CRC. Someone on the
+internet asserts it is $95. For my purposes, I'll hardcode that for now.
+
+    : sdcmd0
+      $40 sdx drop
+      0 sdx drop
+      0 sdx drop
+      0 sdx drop
+      0 sdx drop
+      $95 sdx drop ;
+
+    : sdinit
+      \ Use slow clock.
+      50 sdcyc !
+      \ Raise MOSI and CS
+      1 >sdmosi   1 >sdcs_
+      \ Send 9 bytes with MOSI high (=81 edges, > required 74)
+      9 begin
+        dup
+      while
+        1-
+        $FF sdx drop
+      repeat drop
+      
+      0 >sdcs   \ select card
+      \ Send CMD0
+      sdcmd0
+
+      \ The card will hold MISO high until it responds. The response will
+      \ contain at least one zero bit.
+      begin
+        $FF sdx
+        dup $FF =
+      while
+        drop
+      repeat ;
+
+Okay. In initial experiments, it seems that the card will complain about illegal
+commands if I send commands with no intervening clock cycles. This is weird, and
+I don't remember this behavior from last time I wrote a driver.
+
+We can leave CS asserted, but we need to send idle clocks (MOSI high) between
+commands. Sending an entire byte of them is easy and keeps things readable on
+the logic analyzer.
+
+
+---
+
+
+Trying to fetch CSD.
+
+    : csd.
+      0 0 9 sdcmd sdr1 . cr     \ send CMD9
+      begin
+        $FF sdx $FF xor
+      until   \ wait for a data token (should really bail on error)
+
+      16 begin  \ print the 16-byte packet
+        dup
+      while
+        1-
+        $FF sdx .
+      repeat
+      drop
+      cr
+      $FF sdx . $FF sdx . \ print the CRC
+      cr
+      sdidle ;
+
+
+I think this is CSD:
+
+0 5D 1 32 13 59 81 DA F6 D9 CF FF 16 40 0 7D 
+
+

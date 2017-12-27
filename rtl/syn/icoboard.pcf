@@ -68,6 +68,15 @@ set_io vga_g[4]  G5
 set_io vga_r[3]  L7
 set_io vga_r[4]  P9
 
+set_io sd_cs_n    A5
+set_io sd_mosi    A2
+set_io sd_miso    C3
+set_io sd_sck     B4
+set_io sd_cd      B3
+set_io --warn-no-port sd_dat1    B7
+set_io --warn-no-port sd_dat2    B6
+set_io --warn-no-port sd_wp      B5
+
 #set_io --warn-no-port pmod1_1    D8
 #set_io --warn-no-port pmod1_2    B9
 #set_io --warn-no-port pmod1_3    B10
@@ -77,14 +86,14 @@ set_io --warn-no-port pmod1_8    A9
 set_io --warn-no-port pmod1_9    A10
 set_io --warn-no-port pmod1_10   A11
 
-set_io --warn-no-port pmod2_1    A5
-set_io --warn-no-port pmod2_2    A2
-set_io --warn-no-port pmod2_3    C3
-set_io --warn-no-port pmod2_4    B4
-set_io --warn-no-port pmod2_7    B7
-set_io --warn-no-port pmod2_8    B6
-set_io --warn-no-port pmod2_9    B3
-set_io --warn-no-port pmod2_10   B5
+#set_io --warn-no-port pmod2_1    A5
+#set_io --warn-no-port pmod2_2    A2
+#set_io --warn-no-port pmod2_3    C3
+#set_io --warn-no-port pmod2_4    B4
+#set_io --warn-no-port pmod2_7    B7
+#set_io --warn-no-port pmod2_8    B6
+#set_io --warn-no-port pmod2_9    B3
+#set_io --warn-no-port pmod2_10   B5
 
 #set_io --warn-no-port pmod3_1    L9
 #set_io --warn-no-port pmod3_2    G5

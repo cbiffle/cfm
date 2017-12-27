@@ -1228,6 +1228,105 @@ variable vatt   \ attributes for text in top 8 bits
   repeat
   drop ;
 
+( ----------------------------------------------------------- )
+( SD Card )
+
+
+: cycles ( u -- )   \ delays for at least u cycles
+  >r
+  TIMV @
+  begin   ( start )
+    TIMV @ over -   ( start delta )
+    r@ u< 0= if
+      rdrop drop exit
+    then
+  again ;
+
+variable sdcyc  50 sdcyc !
+: sddelay sdcyc @ cycles ;
+
+TARGET-PARSER: outpin
+: outpin
+  create #bit ,
+  does> @ swap if OUTSET else OUTCLR then ! ;
+
+2 outpin >sdclk
+3 outpin >sdmosi
+4 outpin >sdcs_
+
+: sdx1
+  $80 over and >sdmosi
+  1 lshift
+
+  sddelay  1 >sdclk
+  sddelay
+
+  swap
+  1 lshift
+  IN @ 2 and 1 rshift  or
+  swap
+  
+  0 >sdclk ;
+
+: sdx  ( tx -- rx )
+  0 swap
+  sdx1 sdx1 sdx1 sdx1
+  sdx1 sdx1 sdx1 sdx1
+  drop ;
+
+: sdidle $FF sdx drop ;
+
+: sdr1
+  $FF sdx
+  dup $FF = if
+    drop sdr1 exit
+  then
+  sdidle ;
+
+: sdcmd  ( arglo arghi cmd -- )
+  $40 or sdx drop         \ start bit + cmd
+  dup 8 lshift sdx drop   \ arg[31:24]
+  sdx drop                \ arg[23:16]
+  dup 8 lshift sdx drop   \ arg[15:8]
+  sdx drop                \ arg[7:0]
+  $95 sdx drop ;          \ checksum, hardcoded for CMD0
+
+: sdacmd  ( arglo arghi cmd -- )
+  0 0 55 sdcmd sdr1 drop
+  sdcmd ;
+
+: sdcmd0
+  0 0 0 sdcmd
+  sdr1 ;
+
+: sdacmd41
+  0 0 41 sdacmd sdr1 ;
+
+: sdinit
+  \ Use slow clock.
+  50 sdcyc !
+  \ Raise MOSI and CS
+  1 >sdmosi   1 >sdcs_
+  \ Send 9 bytes with MOSI high (=81 edges, > required 74)
+  9 begin
+    dup
+  while
+    1-
+    $FF sdx drop
+  repeat drop
+
+  0 >sdcs_   \ select card
+  \ Send CMD0
+  sdcmd0
+  \ Require a $01 response
+  1 <> 1 and throw
+  \ Send CMD1 until we get a 0 back
+  begin
+    sdacmd41 0=
+  until
+  ;
+
+
 
 ( ----------------------------------------------------------- )
 ( Demo wiring below )
