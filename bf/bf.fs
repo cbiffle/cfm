@@ -1303,8 +1303,8 @@ create TIB 80 allot
 ' cold  u2/  0 !
 ( install isr as the interrupt vector )
 ' isr  u2/  2 !
-( adjust U0 to mapped RAM for the Icestick )
-$1700 U0 !
+( adjust U0 to mapped RAM for the Icoboard )
+8064 U0 !
 
 true remarker empty
 

@@ -30,7 +30,7 @@ system raminit ins = (outs, hsync, vsync, vid)
     (ioreq0 :> ioreq1 :> ioreq2 :> ioreq3 :> ioreq4 :> _, ioch) = ioDecoder @3 ioreq
     ioresp = responseMux (ioresp0 :> ioresp1 :> ioresp2 :> ioresp3 :> ioresp4 :> repeat (pure 0)) ioch
 
-    ram r w = ramRewrite $ blockRamFile (SNat @3072) raminit r w
+    ram r w = ramRewrite $ blockRamFile (SNat @4096) raminit r w
 
     -- I/O devices
     (ioresp0, outs) = outport $ partialDecode ioreq0
@@ -61,4 +61,4 @@ topEntity :: Clock System 'Source
              , Signal System Bool
              , Signal System (BitVector 6)
              )
-topEntity c r = withClockReset c r $ system "random-3k.readmemb"
+topEntity c r = withClockReset c r $ system "random-4k.readmemb"

@@ -43,7 +43,7 @@ build/icestick.asc:
 	cp rtl/syn/out/syn1k.asc build/icestick.asc
 
 %-prog.asc: %.asc build/test.hex
-	icebram -v rtl/syn/random-3k.hex build/test.hex \
+	icebram -v rtl/syn/random-4k.hex build/test.hex \
 	  < $< \
 	  > $@
 
