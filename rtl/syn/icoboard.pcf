@@ -73,6 +73,11 @@ set_io --warn-no-port sd_dat1    B7
 set_io --warn-no-port sd_dat2    B6
 set_io --warn-no-port sd_wp      B5
 
+set_io --warn-no-port spi_flash_cs   R12
+set_io --warn-no-port spi_flash_sclk R11
+set_io --warn-no-port spi_flash_mosi P12
+set_io --warn-no-port spi_flash_miso P11
+
 #set_io --warn-no-port pmod1_1    D8
 #set_io --warn-no-port pmod1_2    B9
 #set_io --warn-no-port pmod1_3    B10
