@@ -225,42 +225,84 @@ $FFFF constant true  ( also abused as -1 below, since it's cheaper )
 : (dovar) r> ;
 
 \ -----------------------------------------------------------------------------
+\ Basic control structures.
+
+\ Records the current location as the destination of a backwards branch, yet
+\ to be assembled by <resolve .
+: mark<  ( -- dest )  freeze ;
+\ Assembles a backwards branch (using the given template) to a location left
+\ by mark< .
+: <resolve  ( dest template -- )
+  swap u2/  \ convert to word address
+  or asm, ;
+
+\ Assembles a forward branch (using the given template) to a yet-unknown
+\ location. Leaves the address of the branch (the 'orig') on the stack for
+\ fixup via >resolve .
+: mark>  ( template -- orig )
+  freeze
+  swap asm, ;
+\ Resolves a forward branch previously assembled by mark> by updating its
+\ destination field.
+: >resolve  ( orig -- )
+  dup @
+  freeze u2/ or
+  swap ! ;
+
+\ The host has been providing IF ELSE THEN until now. These definitions
+\ immediately shadow the host versions.
+: if  ( C: -- orig )  $2000 mark> ; immediate
+: then  ( C: orig -- )  >resolve ; immediate
+: else  ( C: orig1 -- orig2 )
+  $0000 mark>
+  swap >resolve ; immediate
+
+\ Loop support!
+: begin  ( C: -- dest )  mark< ; immediate
+: again  ( C: dest -- )  0 <resolve ; immediate
+: until  ( C: dest -- )  $2000 <resolve ; immediate
+
+\ -----------------------------------------------------------------------------
 \ Exception handling.
 
 : execute  ( i*x xt -- j*x )  >r ; ( NOINLINE )
 
-: ndrop  ( u*x u -- )
-  ?dup if
-    nip 1- ndrop exit
-  then ;
-
-: ncrap  ( x u -- x u*x )
-  ?dup if
-    dup 1- ncrap exit
-  then ;
-
 : SP!   ( tgt -- * )
   1+ depth - dup 0< if   \ going down
-    negate ndrop exit
+    begin
+      ?dup if
+        nip 1+
+      else
+        exit
+      then
+    again
   else  \ going up
-    ncrap exit
-  then ;
-
-: nrdrop  ( u -- ) ( R: u*x a -- )
-  ?dup if
-    r> rdrop >r 1- nrdrop exit
-  then ;
-
-: nrcrap  ( u -- ) ( R: -- u*??? )
-  ?dup if
-    r@ >r 1- nrcrap exit
+    begin
+      ?dup if
+        dup 1-
+      else
+        exit
+      then
+    again
   then ;
 
 : RSP!   ( tgt -- * )
   rdepth 1- - dup 0< if   \ going down
-    negate nrdrop exit
+    begin
+      ?dup if
+        r> rdrop >r 1+
+      else
+        exit
+      then
+    again
   else  \ going up
-    nrcrap exit
+    begin
+      ?dup if
+        r@ >r 1-
+      else
+        exit
+      then
+    again
   then ;
 
 variable 'handler
@@ -327,42 +369,8 @@ variable 'handler
 
 
 \ -----------------------------------------------------------------------------
-\ Basic control structures.
+\ More loop words, implemented with POSTPONE, which we can use now.
 
-\ Records the current location as the destination of a backwards branch, yet
-\ to be assembled by <resolve .
-: mark<  ( -- dest )  freeze ;
-\ Assembles a backwards branch (using the given template) to a location left
-\ by mark< .
-: <resolve  ( dest template -- )
-  swap u2/  \ convert to word address
-  or asm, ;
-
-\ Assembles a forward branch (using the given template) to a yet-unknown
-\ location. Leaves the address of the branch (the 'orig') on the stack for
-\ fixup via >resolve .
-: mark>  ( template -- orig )
-  freeze
-  swap asm, ;
-\ Resolves a forward branch previously assembled by mark> by updating its
-\ destination field.
-: >resolve  ( orig -- )
-  dup @
-  freeze u2/ or
-  swap ! ;
-
-\ The host has been providing IF ELSE THEN until now. These definitions
-\ immediately shadow the host versions.
-: if  ( C: -- orig )  $2000 mark> ; immediate
-: then  ( C: orig -- )  >resolve ; immediate
-: else  ( C: orig1 -- orig2 )
-  $0000 mark>
-  swap >resolve ; immediate
-
-\ Loop support!
-: begin  ( C: -- dest )  mark< ; immediate
-: again  ( C: dest -- )  0 <resolve ; immediate
-: until  ( C: dest -- )  $2000 <resolve ; immediate
 : while  ( C: dest -- orig dest )
   postpone if
   swap ; immediate
@@ -638,6 +646,9 @@ user (handler)
 
 : u/  u/mod nip ;
 : umod  u/mod drop ;
+
+.( Before terminal support, HERE is )
+here host.
 
 \ -----------------------------------------------------------------------------
 \ User-facing terminal.
