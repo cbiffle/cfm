@@ -927,10 +927,10 @@ here host.
 ( ----------------------------------------------------------- )
 ( Interrupt Controller )
 
-$B000 constant IRQST  ( status / enable trigger )
-\ $B002 constant IRQEN  ( enable )
-$B004 constant IRQSE  ( set enable )
-$B006 constant IRQCE  ( clear enable )
+$D800 constant IRQST  ( status / enable trigger )
+\ $D802 constant IRQEN  ( enable )
+$D804 constant IRQSE  ( set enable )
+$D806 constant IRQCE  ( clear enable )
 
 ( Atomically enables interrupts and returns. This is intended to be tail )
 ( called from the end of an ISR. )
@@ -947,19 +947,19 @@ $B006 constant IRQCE  ( clear enable )
 ( I/O ports )
 
 \ $8000 constant outport      ( literal value)
-$8002 constant OUTSET  ( 1s set pins, 0s do nothing)
-$8004 constant OUTCLR  ( 1s clear pins, 0s do nothing)
-$8006 constant OUTTOG  ( 1s toggle pins, 0s do nothing)
+$C002 constant OUTSET  ( 1s set pins, 0s do nothing)
+$C004 constant OUTCLR  ( 1s clear pins, 0s do nothing)
+$C006 constant OUTTOG  ( 1s toggle pins, 0s do nothing)
 
-$9000 constant IN
+$C800 constant IN
 
 ( ----------------------------------------------------------- )
 ( Timer )
 
-$A000 constant TIMV
-$A002 constant TIMF
-$A004 constant TIMM0
-$A006 constant TIMM1
+$D000 constant TIMV
+$D002 constant TIMF
+$D004 constant TIMM0
+$D006 constant TIMM1
 
 ( ----------------------------------------------------------- )
 ( UART emulation )
@@ -1105,14 +1105,14 @@ variable uart-rx-tl
 \ ----------------------------------------------------------------------
 \ Text mode video display
 
-$C000 constant VTH  \ video - timing - horizontal
-$C008 constant VTV  \ video - timing - vertical
-$C010 constant VPX  \ video - pixel count
-$C012 constant VIA  \ video - interrupt acknowledge
-$C014 constant VFB  \ video - font base
-$C016 constant VWA  \ video - write address
-$C018 constant VWD  \ video - write data
-$C01A constant VC0  \ video - character 0
+$E000 constant VTH  \ video - timing - horizontal
+$E008 constant VTV  \ video - timing - vertical
+$E010 constant VPX  \ video - pixel count
+$E012 constant VIA  \ video - interrupt acknowledge
+$E014 constant VFB  \ video - font base
+$E016 constant VWA  \ video - write address
+$E018 constant VWD  \ video - write data
+$E01A constant VC0  \ video - character 0
 
 \ Overwrites a section of video memory with a given value.
 : vfill  ( v-addr u x -- )

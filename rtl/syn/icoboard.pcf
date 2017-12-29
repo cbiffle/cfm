@@ -12,52 +12,48 @@ set_io --warn-no-port rts_n D8
 set_io --warn-no-port S1 K11
 set_io --warn-no-port S2 P13
 
-set_io --warn-no-port sram_ce_n        M7
-set_io --warn-no-port sram_we_n        T7
-set_io --warn-no-port sram_oe_n        L5
+set_io --warn-no-port sram_a[0] N2
+set_io --warn-no-port sram_a[1] K5
+set_io --warn-no-port sram_a[2] J5
+set_io --warn-no-port sram_a[3] M5
+set_io --warn-no-port sram_a[4] P4
+set_io --warn-no-port sram_a[5] N5
+set_io --warn-no-port sram_a[6] P5
+set_io --warn-no-port sram_a[7] P7
+set_io --warn-no-port sram_a[8] M6
+set_io --warn-no-port sram_a[9] P6
+set_io --warn-no-port sram_a[10] T8
+set_io --warn-no-port sram_a[11] T1
+set_io --warn-no-port sram_a[12] P2
+set_io --warn-no-port sram_a[13] R1
+set_io --warn-no-port sram_a[14] N3
+set_io --warn-no-port sram_a[15] P1
+set_io --warn-no-port sram_a[16] M11
+set_io --warn-no-port sram_a[17] P10
+set_io --warn-no-port sram_a[18] P8
 
-set_io --warn-no-port sram_lb_n        J4
-set_io --warn-no-port sram_ub_n        J3
+set_io --warn-no-port sram_d[0] T2
+set_io --warn-no-port sram_d[1] R3
+set_io --warn-no-port sram_d[2] T3
+set_io --warn-no-port sram_d[3] R4
+set_io --warn-no-port sram_d[4] R5
+set_io --warn-no-port sram_d[5] T5
+set_io --warn-no-port sram_d[6] R6
+set_io --warn-no-port sram_d[7] T6
+set_io --warn-no-port sram_d[8] N4
+set_io --warn-no-port sram_d[9] M4
+set_io --warn-no-port sram_d[10] L6
+set_io --warn-no-port sram_d[11] M3
+set_io --warn-no-port sram_d[12] L4
+set_io --warn-no-port sram_d[13] L3
+set_io --warn-no-port sram_d[14] K4
+set_io --warn-no-port sram_d[15] K3
 
-set_io --warn-no-port sram_a_21a       N2
-set_io --warn-no-port sram_a_20a       K5
-set_io --warn-no-port sram_a_13a       J5
-set_io --warn-no-port sram_a_25b       M5
-set_io --warn-no-port sram_a_54        P4
-set_io --warn-no-port sram_a_56        N5
-set_io --warn-no-port sram_a_58        P5
-set_io --warn-no-port sram_a_77        P7
-
-set_io --warn-no-port sram_a_22a       M6
-set_io --warn-no-port sram_a_67        P6
-set_io --warn-no-port sram_a_76        T8
-set_io --warn-no-port sram_a_53        T1
-set_io --warn-no-port sram_a_25a       P2
-set_io --warn-no-port sram_a_26a       R1
-set_io --warn-no-port sram_a_23b       N3
-set_io --warn-no-port sram_a_24a       P1
-
-set_io --warn-no-port sram_a_72        P8
-set_io --warn-no-port sram_a_86        P10
-set_io --warn-no-port sram_a_93        M11
-
-set_io --warn-no-port sram_d_57        T2
-set_io --warn-no-port sram_d_59        R3
-set_io --warn-no-port sram_d_61        T3
-set_io --warn-no-port sram_d_63        R4
-set_io --warn-no-port sram_d_60        R5
-set_io --warn-no-port sram_d_69        T5
-set_io --warn-no-port sram_d_71        R6
-set_io --warn-no-port sram_d_73        T6
-
-set_io --warn-no-port sram_d_26b       N4
-set_io --warn-no-port sram_d_24b       M4
-set_io --warn-no-port sram_d_19a       L6
-set_io --warn-no-port sram_d_22b       M3
-set_io --warn-no-port sram_d_17a       L4
-set_io --warn-no-port sram_d_19b       L3
-set_io --warn-no-port sram_d_18a       K4
-set_io --warn-no-port sram_d_16b       K3
+set_io --warn-no-port sram_ce_n  M7
+set_io --warn-no-port sram_we_n  T7
+set_io --warn-no-port sram_oe_n  L5
+set_io --warn-no-port sram_lb_n  J4
+set_io --warn-no-port sram_ub_n  J3
 
 set_io vga_hsync N9
 set_io vga_vsync L9

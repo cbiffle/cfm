@@ -14,23 +14,33 @@ import RTL.GPIO
 import RTL.Timer
 import RTL.Core
 import RTL.VGA
+import RTL.SRAM
 
 system :: (HasClockReset dom gated synchronous)
        => FilePath
-       -> Signal dom Cell
+       -> Signal dom Cell -- input port
+       -> Signal dom Cell -- SRAM-to-host
        -> ( Signal dom Cell
           , Signal dom Bool
           , Signal dom Bool
           , Signal dom (BitVector 6)
+          , Signal dom (BitVector 13)  -- SRAM address
+          , Signal dom Bool  -- SRAM write
+          , Signal dom Cell  -- SRAM data
           )
-system raminit ins = (outs, hsync, vsync, vid)
+system raminit ins sram2h = (outs, hsync, vsync, vid, sramA, sramW, h2sram)
   where
     (ioreq, fetch) = coreWithRAM ram ioresp
 
-    (ioreq0 :> ioreq1 :> ioreq2 :> ioreq3 :> ioreq4 :> _, ioch) = ioDecoder @3 ioreq
-    ioresp = responseMux (ioresp0 :> ioresp1 :> ioresp2 :> ioresp3 :> ioresp4 :> repeat (pure 0)) ioch
+    (ioreqSram :> ioreqOthers :> Nil, ioch0) = ioDecoder @1 ioreq
+    ioresp = responseMux (iorespSram :> iorespOthers :> Nil) ioch0
+
+    (ioreq0 :> ioreq1 :> ioreq2 :> ioreq3 :> ioreq4 :> _, ioch1) = ioDecoder @3 ioreqOthers
+    iorespOthers = responseMux (ioresp0 :> ioresp1 :> ioresp2 :> ioresp3 :> ioresp4 :> repeat (pure 0)) ioch1
 
     ram r w = ramRewrite $ blockRamFile (SNat @4096) raminit r w
+
+    (iorespSram, sramA, sramW, h2sram) = extsram sram2h ioreqSram
 
     -- I/O devices
     (ioresp0, outs) = outport $ partialDecode ioreq0
@@ -45,20 +55,28 @@ system raminit ins = (outs, hsync, vsync, vid)
                           , t_inputs = [ PortName "clk_core"
                                        , PortName "reset"
                                        , PortName "inport"
+                                       , PortName "sram_to_host"
                                        ]
                           , t_output = PortField ""
                                        [ PortName "out1"
                                        , PortName "hsync"
                                        , PortName "vsync"
                                        , PortName "vid"
+                                       , PortName "sram_a"
+                                       , PortName "sram_wr"
+                                       , PortName "host_to_sram"
                                        ]
                           }) #-}
 topEntity :: Clock System 'Source
           -> Reset System 'Asynchronous
           -> Signal System Cell
+          -> Signal System Cell
           -> ( Signal System Cell
              , Signal System Bool
              , Signal System Bool
              , Signal System (BitVector 6)
+             , Signal System (BitVector 13)  -- SRAM address
+             , Signal System Bool  -- SRAM write
+             , Signal System Cell  -- SRAM data
              )
 topEntity c r = withClockReset c r $ system "random-4k.readmemb"

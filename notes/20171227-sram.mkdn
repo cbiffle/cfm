@@ -1,0 +1,72 @@
+The `SB_IO` Verilog primitive allows control over the ICE40's bidirectional I/O
+circuits. This is key to getting the data pins working.
+
+
+Clifford Wolf's icosoc demo is using alternating clock edges to control the SRAM
+and avoid contention. Because the SRAM is significantly faster than designs on
+an HX8K are likely to be.
+
+He's generating a primary clock and a 90-degree-out-of-phase clock. The SRAM's
+WE signal is getting asserted (low) during the high phase of the clk90, and then
+only when at least one byte is getting written. Clever. This ensures that the OE
+signal, in particular, leads WE by 1/4 clock period.
+
+However, the actual output enable on the pads is driven combinationally from the
+byte write signals, which are generated in time with clk0, not clk90. So the
+micro will begin driving the data lines at the same time that OE is asserted.
+Contention is not avoided. Mistake, or am I missing something?
+
+
+For my initial test, I'm going to wire up the SRAM to some GPIO ports and poke
+it by hand.
+
+
+-------
+
+On further study, Wolf's clock phase method is being used to generate a WE pulse
+in the center of the clock cycle, *not* to avoid contention.
+
+His system is clocked at 20MHz. Mine is at 40. This means the high phase of my
+clock is 12.5 ns. The Icoboard uses the -10 grade of the SRAM, so the minimum WE
+pulse is shorter than that.
+
+The SRAM's data-setup-to-write-end time is 6ns, shorter than the WE pulse width.
+This means I could actually gate the data line output drivers on WE itself. If I
+deassert OE at the start of the cycle, and assert WE and begin driving the data
+lines 1/4 of a cycle in, that gives the chip 6.25 ns to stop driving the data
+lines. The datasheet says it'll happen in less than 4. Great.
+
+No hold is required after the WE pulse, so I can go ahead and high-Z the data
+lines immediately.
+
+
+This makes enough sense that I might as well go ahead and map the SRAM into I/O
+space, instead of twiddling it through GPIOs.
+
+
+Would it make sense to do all this 180 out of phase, instead of 90, though?
+
+There's no hold time requirement on address after write, or on data. Ending the
+write before the end of the core clock cycle does seem more robust, in that the
+signals gated by the core clock may start changing in arbitrary order at the
+clock cycle edge. I'll stick with 90.
+
+
+-----
+
+So, do we register the outputs, or the inputs?
+
+The SRAM is asynchronous and faster than we are. We expect read results to be
+available on the cycle after they are requested, and that write results happen
+"whenever" but in order with reads.
+
+This means we could either make the addressing/control path combinational and
+register the results, or register the addressing/control and make the results
+combinational back to the core.
+
+I trust the SRAM not to glitch somewhat more than I trust the CFM. Registering
+the outputs probably makes the most sense.
+
+Still can't quite express the interface as a Moore machine, then, because
+there's a direct path from the data line inputs through to the CPU. This will
+limit speed. Only one way to find out...
