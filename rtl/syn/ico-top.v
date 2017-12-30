@@ -24,6 +24,8 @@ module top(
   output sram_oe_n,
   output sram_lb_n,
   output sram_ub_n,
+
+  output pmod4_1,
   );
 
 wire clk_core, clk_core90;
@@ -111,6 +113,8 @@ wire reset_n = ~S1;
           .sram_a(sram_a[12:0]),
           .sram_wr(sram_wr),
           .host_to_sram(host_to_sram),
+
+          .uart_tx(pmod4_1),
         );
 
         assign sram_a[18:13] = 0;

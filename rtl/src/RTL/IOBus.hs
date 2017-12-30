@@ -118,4 +118,30 @@ moorep ft fr fo inp ioreq = (ioresp, outp)
     ft' (s, a) (ioreq_, i) = (ft s (ioreq_, i), fromMaybe a (fst <$> ioreq_))
     fo' (s, a) = (fr s !! a, fo s)
 
-
+-- | Implementation strategy for a peripheral device that can be described as a
+-- Mealy machine. This is like Clash's 'mealy' but provides a bus read response
+-- multiplexer and associated state.
+--
+-- Note that 'moorep' will almost always be faster.
+--
+-- The reset state of the machine is given by 'def' for the state type, for
+-- convenience.
+mealyp :: (KnownNat a, HasClockReset dom gated synchronous, Default s)
+       => (s -> (Maybe (BitVector a, Maybe Cell), i) -> (s, o))
+        -- ^ State transition and outputs function.
+       -> (s -> Vec (2^a) Cell)
+        -- ^ Readable register projection function.
+       -> Signal dom i
+        -- ^ Peripheral-specific input signals.
+       -> Signal dom (Maybe (BitVector a, Maybe Cell))
+        -- ^ Request from I/O bus.
+       -> ( Signal dom Cell
+          , Signal dom o
+          )     -- ^ Response to I/O bus and peripheral-specific outputs.
+mealyp ft fr inp ioreq = (ioresp, outp)
+  where
+    (ioresp, outp) = mealyB ft' def (ioreq, inp)
+    ft' (s, a) (ioreq_, i) = let (s', o) = ft s (ioreq_, i)
+                             in ( (s', fromMaybe a (fst <$> ioreq_))
+                                , (fr s !! a, o)
+                                )
