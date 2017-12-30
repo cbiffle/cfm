@@ -973,6 +973,18 @@ $D004 constant TIMM0
 $D006 constant TIMM1
 
 ( ----------------------------------------------------------- )
+( Hard UART )
+
+$E800 constant UARTST
+$E802 constant UARTRD
+$E804 constant UARTTX
+
+: tx
+  \ Wait for transmitter to be free
+  begin UARTST @ 2 and until
+  UARTTX ! ;
+
+( ----------------------------------------------------------- )
 ( UART emulation )
 
 .( Compiling soft UART... )
@@ -980,38 +992,6 @@ here
 
 2083 constant cyc/bit
 1042 constant cyc/bit/2
-
-variable uart-tx-bits
-  \ Holds bits as they're shifted out.
-  \ Because the final bit to be shifted out, the stop bit, is a 1,
-  \ this also serves as a "transmitter available" indicator when 0.
-
-: tx-isr
-  TIMV @ cyc/bit + TIMM1 !
-  \ Acknowledge interrupt by writing 1 to bit 0 of TIMF.
-  \ Keep the 1 around; we're going to use it to save cycles.
-  1 TIMF 2dup_!_drop
-  \ Read the transmit shift register, and derive its LSB using the 1.
-  uart-tx-bits @  over over and  ( 1 bits lsb )
-  if OUTSET else OUTCLR then  ( 1 bits regaddr )
-  1 swap !  ( 1 bits )
-  swap rshift   ( bits' )
-  uart-tx-bits 2dup_!_drop  ( bits' )
-
-  0= if \ bits all gone
-    irq#m1 irq-off
-  then ;
-
-: tx
-  ( Wait for transmitter to be free )
-  begin uart-tx-bits @ 0= until
-  ( Frame the byte )
-  2*
-  $200 or
-  uart-tx-bits !
-  TIMV @ cyc/bit + TIMM1 !
-  1 TIMF !
-  irq#m1 irq-on ;
 
 variable uart-rx-bits
 
@@ -1363,7 +1343,6 @@ create vectors  16 cells allot
 
 ' rx-negedge-isr  vectors 15 cells +  !
 ' rx-timer-isr    vectors 14 cells +  !
-' tx-isr          vectors 13 cells +  !
 
 create TIB 80 allot
 
@@ -1399,7 +1378,7 @@ create TIB 80 allot
 ' rx! 'key !
 
 : cold
-  1 OUTSET !   \ raise TX line soon after reset
+  2082 UARTRD ! \ Set baud rate to 19200
   uart-rx-init
   \ vid
   ei

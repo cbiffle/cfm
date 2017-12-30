@@ -24,8 +24,6 @@ module top(
   output sram_oe_n,
   output sram_lb_n,
   output sram_ub_n,
-
-  output pmod4_1,
   );
 
 wire clk_core, clk_core90;
@@ -114,12 +112,12 @@ wire reset_n = ~S1;
           .sram_wr(sram_wr),
           .host_to_sram(host_to_sram),
 
-          .uart_tx(pmod4_1),
+          .uart_tx(TX),
         );
 
         assign sram_a[18:13] = 0;
         assign led = out1[8:5];
-        assign {cts_n, TX} = out1[1:0];
+        assign cts_n = out1[1];
         assign {sd_cs_n, sd_mosi, sd_sck} = out1[4:2];
         assign in = {sd_cd, sd_miso, RX};
 

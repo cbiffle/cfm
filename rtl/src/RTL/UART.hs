@@ -9,8 +9,7 @@
 module RTL.UART where
 
 import Clash.Prelude
-import Data.Maybe (fromMaybe, isJust, isNothing)
-import Control.Monad (join)
+import Data.Maybe (isNothing)
 import Control.Arrow (second)
 
 import CFM.Types
@@ -44,7 +43,7 @@ common :: (HasClockReset d g s)
             , Signal d (Maybe (BitVector 8))
             )
           )
-common txreadyS txidleS ioreq = second unbundle $ mealyp commonT commonR (bundle (txreadyS, txidleS)) ioreq
+common txreadyS txidleS ioreqS = second unbundle $ mealyp commonT commonR (bundle (txreadyS, txidleS)) ioreqS
   where
     commonR s = csStatus s :> csCyclesPerBit s :> repeat 0
 
