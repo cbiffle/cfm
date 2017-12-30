@@ -22,6 +22,7 @@ system :: (HasClockReset dom gated synchronous)
        => FilePath
        -> Signal dom Cell -- input port
        -> Signal dom Cell -- SRAM-to-host
+       -> Signal dom Bit  -- UART RX
        -> ( Signal dom Cell
           , Signal dom Bool
           , Signal dom Bool
@@ -31,7 +32,7 @@ system :: (HasClockReset dom gated synchronous)
           , Signal dom Cell  -- SRAM data
           , Signal dom Bit  -- UART TX
           )
-system raminit ins sram2h = (outs, hsync, vsync, vid, sramA, sramW, h2sram, utx)
+system raminit ins sram2h urx = (outs, hsync, vsync, vid, sramA, sramW, h2sram, utx)
   where
     (ioreq, fetch) = coreWithRAM ram ioresp
 
@@ -50,17 +51,18 @@ system raminit ins sram2h = (outs, hsync, vsync, vid, sramA, sramW, h2sram, utx)
     (ioresp1, irq0) = inport ins ioreq1
     (ioresp2, irq1 :> irq2 :> Nil) = timer $ partialDecode @2 ioreq2
     (ramRewrite, ioresp3) = multiIrqController irqs fetch $ partialDecode ioreq3
-    irqs = irq0 :> irq1 :> irq2 :> hirq :> virq :> evirq :> repeat (pure False)
+    irqs = irq0 :> irq1 :> irq2 :> hirq :> virq :> evirq :> urxne :> repeat (pure False)
 
     (ioresp4, hsync, vsync, hirq, virq, evirq, vid) = chargen (partialDecode ioreq4)
 
-    (ioresp5, _, _, utx) = U.uart $ partialDecode ioreq5
+    (ioresp5, _, _, urxne, utx) = U.uart urx $ partialDecode ioreq5
 
 {-# ANN topEntity (defTop { t_name = "ico_soc"
                           , t_inputs = [ PortName "clk_core"
                                        , PortName "reset"
                                        , PortName "inport"
                                        , PortName "sram_to_host"
+                                       , PortName "uart_rx"
                                        ]
                           , t_output = PortField ""
                                        [ PortName "out1"
@@ -77,6 +79,7 @@ topEntity :: Clock System 'Source
           -> Reset System 'Asynchronous
           -> Signal System Cell
           -> Signal System Cell
+          -> Signal System Bit
           -> ( Signal System Cell
              , Signal System Bool
              , Signal System Bool

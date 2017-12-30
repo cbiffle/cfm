@@ -985,15 +985,7 @@ $E804 constant UARTTX
   UARTTX ! ;
 
 ( ----------------------------------------------------------- )
-( UART emulation )
-
-.( Compiling soft UART... )
-here
-
-2083 constant cyc/bit
-1042 constant cyc/bit/2
-
-variable uart-rx-bits
+( UART receive queue and flow control )
 
 8 constant uart-#rx
 variable uart-rx-buf  uart-#rx 1- cells allot
@@ -1022,6 +1014,31 @@ variable uart-rx-tl
   begin rxq-empty? 0= until
   uart-rx-buf  uart-rx-tl @ [ uart-#rx 1- 2* ] literal and +  @
   2 uart-rx-tl +! ;
+
+\ Receives a byte from RX, returning the bits and a valid flag. The valid flag may
+\ be false in the event of a framing error.
+: rx  ( -- c ? )
+  rxq>
+
+  \ Dissect the frame and check for framing error. The frame is in the
+  \ upper bits of the word.
+  6 rshift
+  dup u2/ $FF and   \ extract the data bits
+  swap $201 and          \ extract the start/stop bits.
+  $200 =                 \ check for valid framing
+  rxq-empty? if CTSon then  \ allow sender to resume if we've emptied the queue.
+  ;
+
+( ----------------------------------------------------------- )
+( UART emulation )
+
+.( Compiling soft UART... )
+here
+
+2083 constant cyc/bit
+1042 constant cyc/bit/2
+
+variable uart-rx-bits
 
 : uart-rx-init
   \ Clear any pending negedge condition
@@ -1072,21 +1089,6 @@ variable uart-rx-tl
     \ Clear the interrupt condition.
     2 TIMF !
   then ;
-
-\ Receives a byte from RX, returning the bits and a valid flag. The valid flag may
-\ be false in the event of a framing error.
-: rx  ( -- c ? )
-  rxq>
-
-  \ Dissect the frame and check for framing error. The frame is in the
-  \ upper bits of the word.
-  6 rshift
-  dup u2/ $FF and   \ extract the data bits
-  swap $201 and          \ extract the start/stop bits.
-  $200 =                 \ check for valid framing
-  rxq-empty? if CTSon then  \ allow sender to resume if we've emptied the queue.
-  ;
-
 
 ( ----------------------------------------------------------- )
 ( Icestick board features )

@@ -113,6 +113,7 @@ wire reset_n = ~S1;
           .host_to_sram(host_to_sram),
 
           .uart_tx(TX),
+          .uart_rx(RX),
         );
 
         assign sram_a[18:13] = 0;
