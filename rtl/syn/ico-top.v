@@ -99,6 +99,14 @@ wire reset_n = ~S1;
         wire [15:0] in;
         wire [5:0] vid;
 
+        reg RX_;
+        always @(posedge clk_core or negedge reset_n)
+            if (~reset_n) begin
+              RX_ <= 1;
+            end else begin
+              RX_ <= RX;
+            end
+
         ico_soc _inst(
           .clk_core(clk_core),
           .reset(~core_reset_n),
@@ -113,14 +121,14 @@ wire reset_n = ~S1;
           .host_to_sram(host_to_sram),
 
           .uart_tx(TX),
-          .uart_rx(RX),
+          .uart_rx(RX_),
         );
 
         assign sram_a[18:13] = 0;
         assign led = out1[8:5];
         assign cts_n = out1[1];
         assign {sd_cs_n, sd_mosi, sd_sck} = out1[4:2];
-        assign in = {sd_cd, sd_miso, RX};
+        assign in = {sd_cd, sd_miso, RX_};
 
         assign {vga_r[4], vga_g[4], vga_b[4], vga_r[3], vga_g[3], vga_b[3]}
           = vid;
