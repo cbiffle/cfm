@@ -973,18 +973,6 @@ $D004 constant TIMM0
 $D006 constant TIMM1
 
 ( ----------------------------------------------------------- )
-( Hard UART )
-
-$E800 constant UARTST
-$E802 constant UARTRD
-$E804 constant UARTTX
-
-: tx
-  \ Wait for transmitter to be free
-  begin UARTST @ 2 and until
-  UARTTX ! ;
-
-( ----------------------------------------------------------- )
 ( UART receive queue and flow control )
 
 8 constant uart-#rx
@@ -1020,75 +1008,36 @@ variable uart-rx-tl
 : rx  ( -- c ? )
   rxq>
 
-  \ Dissect the frame and check for framing error. The frame is in the
-  \ upper bits of the word.
-  6 rshift
-  dup u2/ $FF and   \ extract the data bits
-  swap $201 and          \ extract the start/stop bits.
-  $200 =                 \ check for valid framing
+  dup 0< 0=
+
   rxq-empty? if CTSon then  \ allow sender to resume if we've emptied the queue.
   ;
 
 ( ----------------------------------------------------------- )
-( UART emulation )
+( Hard UART )
 
-.( Compiling soft UART... )
-here
+$E800 constant UARTST
+$E802 constant UARTRD
+$E804 constant UARTTX
+$E806 constant UARTRX
 
-2083 constant cyc/bit
-1042 constant cyc/bit/2
+9 constant irq#rxne
 
-variable uart-rx-bits
+: tx
+  \ Wait for transmitter to be free
+  begin UARTST @ 2 and until
+  UARTTX ! ;
+
+: rx-isr
+  UARTRX @ >rxq
+  CTSoff ;
 
 : uart-rx-init
-  \ Clear any pending negedge condition
-  0 IN !
-  \ Enable the initial negedge ISR to detect the start bit.
-  irq#negedge irq-on
+  \ Clear any pending queued character.
+  UARTRX @ drop
+  \ Enable the IRQ.
+  irq#rxne irq-on
   CTSon ;
-
-\ Triggered when we're between frames and RX drops.
-: rx-negedge-isr
-  \ Set up the timer to interrupt us again halfway into the start bit.
-  \ First, update the match register to the point in time we want, and
-  \ ensure it won't fire while we're working.
-  TIMV @  cyc/bit/2 +  TIMM0 !
-  \ Next, the timer may have rolled over while we were waiting for a new
-  \ frame, so clear its pending interrupt status.
-  2 TIMF !
-  \ We don't need to clear the IRQ condition, because we won't be re-enabling
-  \ it any time soon. Mask our interrupt.
-  irq#negedge irq-off
-
-  \ Prepare to receive a ten bit frame.
-  10 #bit uart-rx-bits !
-
-  \ Now enable its interrupt.
-  irq#m0 irq-on ;
-
-\ Triggered at each sampling point during an RX frame.
-: rx-timer-isr
-  \ Sample the input port into the high bit of a word.
-  IN @  15 lshift
-  \ Reset the timer for the next sample point.
-  TIMV @  cyc/bit +  TIMM0 !
-  \ Load this into the frame shift register.
-  uart-rx-bits @  u2/  or  uart-rx-bits 2dup_!_drop
-  \ Check the LSB to see if we're done.
-  1 and if  \ all done
-    irq#m0 irq-off
-    \ Enqueue the received frame
-    uart-rx-bits @ >rxq
-    \ Clear any pending negedge condition
-    0 IN !
-    \ Enable the initial negedge ISR to detect the start bit.
-    irq#negedge irq-on
-    \ Conservatively deassert CTS to try and stop sender.
-    CTSoff
-  else  \ more bits to receive
-    \ Clear the interrupt condition.
-    2 TIMF !
-  then ;
 
 ( ----------------------------------------------------------- )
 ( Icestick board features )
@@ -1343,8 +1292,7 @@ create vectors  16 cells allot
   r> 2 - >r
   ei ;
 
-' rx-negedge-isr  vectors 15 cells +  !
-' rx-timer-isr    vectors 14 cells +  !
+' rx-isr vectors 9 cells + !
 
 create TIB 80 allot
 
