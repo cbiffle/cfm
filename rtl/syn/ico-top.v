@@ -24,6 +24,9 @@ module top(
   output sram_oe_n,
   output sram_lb_n,
   output sram_ub_n,
+
+  input pmod4_7,
+  inout pmod4_8,
   );
 
 wire clk_core, clk_core90;
@@ -99,6 +102,18 @@ wire reset_n = ~S1;
         wire [15:0] in;
         wire [5:0] vid;
 
+        wire ps2_clk;
+        SB_IO #(
+          .PIN_TYPE(6'b1010_00),
+          .PULLUP(0),
+        ) ps2_clk_io (
+          .PACKAGE_PIN(pmod4_8),
+          .OUTPUT_ENABLE(out1[9]),
+          .D_OUT_0(1'b0),
+          .D_IN_0(ps2_clk),
+          .INPUT_CLK(clk_core),
+        );
+
         reg RX_;
         always @(posedge clk_core or negedge reset_n)
             if (~reset_n) begin
@@ -128,7 +143,7 @@ wire reset_n = ~S1;
         assign led = out1[8:5];
         assign cts_n = out1[1];
         assign {sd_cs_n, sd_mosi, sd_sck} = out1[4:2];
-        assign in = {sd_cd, sd_miso, RX_};
+        assign in = {pmod4_7, sd_cd, sd_miso, ps2_clk};
 
         assign {vga_r[4], vga_g[4], vga_b[4], vga_r[3], vga_g[3], vga_b[3]}
           = vid;

@@ -99,6 +99,7 @@ $FFFF constant true  ( also abused as -1 below, since it's cheaper )
 : 0= 0 = ;
 : 0< 0 < ;
 : <> = invert ;
+: u> swap u< ;
 
 : depth  depths $FF and ;
 : rdepth  depths 8 rshift 1- ;
@@ -1288,7 +1289,191 @@ variable sdcyc  50 sdcyc !
   until
   ;
 
+\ -------------------------------------------------------------------
+\ PS/2 keyboard GPIO interface
 
+variable kbdbuf
+variable kbd#bit
+
+: kbdisr
+  3 #bit  IN @ and  12 lshift     \ get data value in bit 15
+  kbdbuf @  1 rshift or  kbdbuf ! \ insert it into shift register
+  kbd#bit @ 1 - kbd#bit !d        \ decrement bit counter
+  0= if   \ we're done
+    irq#negedge irq-off           \ disable this IRQ
+    9 #bit OUTSET !               \ pull clock low
+  else
+    IN !d                         \ acknowledge IRQ
+  then ;
+
+: kbd@
+  11 kbd#bit !                    \ expecting 11 bits
+  9 #bit OUTCLR !                 \ release clock line
+  IN !d                           \ clear pending negedge IRQ
+  irq#negedge irq-on              \ enable IRQ
+  begin kbd#bit @ 0= until        \ wait for all bits
+  kbdbuf @ 6 rshift $FF and       \ extract bits
+  ;
+
+: kbdinit
+  9 #bit OUTSET !                 \ pull clock low
+  ;
+
+: kbdscan
+  kbd@
+  $E0 over = if   \ extended scan code set 0
+    drop kbdscan  8 #bit or  exit
+  then
+  $E1 over = if   \ hello, pause
+    drop
+    kbdscan @ drop
+    kbdscan @ drop
+    $200 exit
+  then
+  $F0 over = if   \ break code
+    drop kbdscan  15 #bit or  exit
+  then
+  ;
+
+create kbdlt
+0 c,    0 c,      \ 0: unused
+0 c,    0 c,      \ F9
+0 c,    0 c,      \ 2: unused
+0 c,    0 c,      \ F5
+0 c,    0 c,      \ F3
+0 c,    0 c,      \ F1
+0 c,    0 c,      \ F2
+0 c,    0 c,      \ F12
+0 c,    0 c,      \ 8: unused
+0 c,    0 c,      \ F10
+0 c,    0 c,      \ F8
+0 c,    0 c,      \ F6
+0 c,    0 c,      \ F4
+9 c,    9 c,      \ TAB
+'`' c,  '~' c,
+0 c,    0 c,      \ 0F: unused
+0 c,    0 c,      \ 10: unused
+0 c,    0 c,      \ L ALT
+0 c,    0 c,      \ L SHIFT
+0 c,    0 c,      \ 13: unused
+0 c,    0 c,      \ L CTRL
+'q' c,  'Q' c,
+'1' c,  '!' c,
+0 c,    0 c,      \ 17: unused
+0 c,    0 c,      \ 18: unused
+0 c,    0 c,      \ 19: unused
+'z' c,  'Z' c,
+'s' c,  'S' c,
+'a' c,  'A' c,
+'w' c,  'W' c,
+'2' c,  '@' c,
+0 c,    0 c,      \ 1F: unused
+0 c,    0 c,      \ 20: unused
+'c' c,  'C' c,
+'x' c,  'X' c,
+'d' c,  'D' c,
+'e' c,  'E' c,
+'4' c,  '$' c,
+'3' c,  '#' c,
+0 c,    0 c,      \ 27: unused
+0 c,    0 c,      \ 28: unused
+bl c,   bl c,
+'v' c,  'V' c,
+'f' c,  'F' c,
+'t' c,  'T' c,
+'r' c,  'R' c,
+'5' c,  '%' c,
+0 c,    0 c,      \ 2F: unused
+0 c,    0 c,      \ 30: unused
+'n' c,  'N' c,
+'b' c,  'B' c,
+'h' c,  'H' c,
+'g' c,  'G' c,
+'y' c,  'Y' c,
+'6' c,  '^' c,
+0 c,    0 c,      \ 37: unused
+0 c,    0 c,      \ 38: unused
+0 c,    0 c,      \ 39: unused
+'m' c,  'M' c,
+'j' c,  'J' c,
+'u' c,  'U' c,
+'7' c,  '&' c,
+'8' c,  '*' c,
+0 c,    0 c,      \ 3F: unused
+0 c,    0 c,      \ 40: unused
+',' c,  '<' c,
+'k' c,  'K' c,
+'i' c,  'I' c,
+'o' c,  'O' c,
+'0' c,  ')' c,
+'9' c,  '(' c,
+0 c,    0 c,      \ 47: unused
+0 c,    0 c,      \ 48: unused
+'.' c,  '<' c,
+'/' c,  '?' c,
+'l' c,  'L' c,
+';' c,  ':' c,
+'p' c,  'P' c,
+'-' c,  '_' c,
+0 c,    0 c,      \ 4F unused
+0 c,    0 c,      \ 50 unused
+0 c,    0 c,      \ 51 unused
+''' c,  '"' c,
+0 c,    0 c,      \ 53 unused
+'[' c,  '{' c,
+'=' c,  '+' c,
+0 c,    0 c,      \ 56 unused
+0 c,    0 c,      \ 57 unused
+0 c,    0 c,      \ CAPS
+0 c,    0 c,      \ R SHIFT
+13 c,   13 c,     \ ENTER
+']' c,  '}' c,
+0 c,    0 c,      \ 5C unused
+'\' c,  '|' c,
+0 c,    0 c,      \ 5E unused
+0 c,    0 c,      \ 5F unused
+0 c,    0 c,      \ 60 unused
+0 c,    0 c,      \ 61 unused
+0 c,    0 c,      \ 62 unused
+0 c,    0 c,      \ 63 unused
+0 c,    0 c,      \ 64 unused
+0 c,    0 c,      \ 65 unused
+8 c,    8 c,      \ backspace
+
+variable kbdmod
+: kbdkey
+  kbdscan
+  $12 over =  over $59 = or if  \ shift make
+    drop  kbdmod @ 1 or kbdmod !
+    kbdkey exit
+  then
+  $8012 over =  over $8059 = or if  \ shift break
+    drop kbdmod @ 1 invert and kbdmod !
+    kbdkey exit
+  then
+  $14 over =  over $114 = or if \ ctrl make
+    drop  kbdmod @ 2 or kbdmod !
+    kbdkey exit
+  then
+  $8014 over =  over $8114 = or if  \ ctrl break
+    drop kbdmod @ 2 invert and kbdmod !
+    kbdkey exit
+  then
+
+  \ Having processed the modifiers, ignore any large values, including
+  \ break codes.
+  dup  $66 u> if  drop kbdkey exit  then
+
+  \ We now have a value in-range for the lookup table.
+  cells   \ convert to offset
+  kbdmod @ 1 and +  \ mix in shift offset
+  kbdlt + c@
+
+  \ The result might be zero for unused/non-ASCII codes.
+  dup 0= if drop kbdkey exit then
+
+  \ Apply control.
+  kbdmod @ 2 and if  $20 invert and  '@' -  then ;
 
 ( ----------------------------------------------------------- )
 ( Demo wiring below )
@@ -1318,6 +1503,7 @@ create vectors  16 cells allot
 
 \ Vector table
 ' rx-isr vectors 9 cells + !
+' kbdisr vectors irq#negedge cells + !
 
 create TIB 80 allot
 

@@ -1,0 +1,345 @@
+Interfacing a PS/2 Keyboard
+===========================
+
+I've got the PS/2 PMOD from XESS.
+
+Step one is exposing the signals to software. The interface is plugged into
+socket 4 on the Icoboard, so
+
+- DATA on pmod4_7
+- CLK on pmod4_8
+
+I've wired CLK to IN[0] so I can get a negedge interrupt on it, and DATA to the
+previously unused IN[3]. Let's see what it looks like.
+
+The bits read as high, which I'd expect.
+
+How about that negedge interrupt? Here's an ISR that toggles an LED and
+acknowledges the interrupt.
+
+    : ps2test 1 ledtog  IN !d ;
+
+We can wire it up like so
+
+    ' ps2test  vectors irq#negedge cells + !
+
+and enable it
+
+    irq#negedge irq-on
+
+A single byte transmission from the keyboard involves 11 negative clock edges.
+Pressing and releasing a simple key, like spacebar, generates three bytes, or 33
+edges. All told I would expect space to toggle the LED (since the total number
+of edges is odd).
+
+It's flaky. I bet we're getting bounce.
+
+Hm, not bounce, actually.  Missed edges.  This would explain some of the
+flakiness of the UART that was using this approach.
+
+Oh, hey, the negative edge detector is using the raw input line without
+registering it. So it's vulnerable to metastability. That explains things.
+
+Registering.
+
+It's robust now.
+
+So doing this naively with a negedge interrupt is going to be kind of prone to
+glitches, but it's worth a shot for the initial draft.
+
+Keypresses can come at any time. We can exercise flow control by pulling the
+clock line low. This makes the clock bidirectional, so some more goo is required
+in the Verilog.
+
+Probably the *right* way to do this is to have a buffer, and have the ISR in
+charge of pulling clock low, and normal code responsible for releasing it. This
+is analogous to what I've done for UART flow control.
+
+A perhaps more expedient way would keep clock normally low, releasing it only
+when user code is asking for a byte (and enabling the IRQ at the same time).
+
+Either way, I need an `SB_IO` configured so that I can pull the clock low. I've
+arbitrarily assigned GPIO 9 to this task. I've also enabled the input register
+in the `SB_IO` block, hopefully saving the need to separately register the
+input.
+
+The circuit should default to the same behavior as before, until OUT[9] is set.
+Seems to work.
+
+Setting OUT[9] should stop the LED from toggling...
+
+    9 #bit OUTSET !
+    9 #bit OUTCLR !
+
+confirmed.
+
+
+Let's designate a cell in memory to hold a byte from the keyboard.
+
+    variable kbdbuf
+
+This is used for communication between the ISR and normal code. The ISR also
+needs a counter for the number of edges it's expecting.
+
+    variable kbd#bit
+
+The ISR implements a simple shift register:
+
+    : kbdisr
+      3 #bit  IN @ and  12 lshift     \ get data value in bit 15
+      kbdbuf @  1 rshift or  kbdbuf ! \ insert it into shift register
+      kbd#bit @ 1 - kbd#bit !d        \ decrement bit counter
+      0= if   \ we're done
+        irq#negedge irq-off           \ disable this IRQ
+        9 #bit OUTSET !               \ pull clock low
+      else
+        IN !d                         \ acknowledge IRQ
+      then ;
+
+Receiving a byte:
+
+    : kbd@
+      11 kbd#bit !                    \ expecting 11 bits
+      9 #bit OUTCLR !                 \ release clock line
+      IN !d                           \ clear pending negedge IRQ
+      irq#negedge irq-on              \ enable IRQ
+      begin kbd#bit @ 0= until        \ wait for all bits
+      kbdbuf @ 6 rshift $FF and       \ extract bits
+      ;
+
+And starting the process:
+
+    : kbdinit
+      9 #bit OUTSET !                 \ pull clock low
+      ;
+
+Pasted that all in (man, having a robust UART is nice) and testing:
+
+    kbdinit
+    kbd@ .
+
+Doesn't work because I forgot to install the vector!
+
+    ' kbdisr vectors irq#negedge cells + !
+    kbdinit
+    kbd@ .
+
+Works now. Successive calls to `kbd@ .` get successive bytes, even if they're
+part of the same break code. That's pretty much what I wanted!
+
+---
+
+Reading bytes is a start, but I'd like to turn them into ASCII.
+
+I can ignore break codes for keys other than modifiers.
+
+For modifier keys, I need a modifier bitmask I can update.
+
+Reviewing the scan code set, I can actually ignore `E0`-prefix codes at first.
+That'll knock out the right-hand modifier cluster (except right shift,
+curiously) but it seems like it'll simplify things.
+
+---
+
+Simplifications aside, let's write a parser for the scan code language. We'll
+map all keyboard events into a cell-sized quantity.
+
+Keys with 1-byte scan codes are simply zero-extended on make.
+
+Keys with `E0`-prefixed scan codes get bit 8 set.
+
+The PAUSE key, with its nutty scan code, gets arbitrarily mapped to $200.
+
+And for break codes, we'll set bit 15.
+
+Here's a recursive definition, which is technically too generous (it will
+happily parse sequences like `E0 E0 F0 F0 17`), but simple.
+
+    : kbdscan
+      kbd@
+      $E0 over = if   \ extended scan code set 0
+        drop kbdscan  8 #bit or  exit
+      then
+      $E1 over = if   \ hello, pause
+        drop
+        kbdscan @ drop
+        kbdscan @ drop
+        $200 exit
+      then
+      $F0 over = if   \ break code
+        drop kbdscan  15 #bit or  exit
+      then
+      ;
+
+There is no regularity to the mapping between the scancodes and the ASCII
+characters on a US-layout keyboard. A lookup table is necessary.
+
+If we ignore the numpad for the moment, the largest scancode corresponding to an
+ASCII character is $66, for backspace. This we need 103 table entries.
+
+Shifted keys are probably best indicated in the table, the mapping is not
+perfectly regular.
+
+Control characters like ^C can be derived from the ASCII representation.
+
+Here's my first crack at a layout table:
+
+    create kbdlt
+    0 c,    0 c,      \ 0: unused
+    0 c,    0 c,      \ F9
+    0 c,    0 c,      \ 2: unused
+    0 c,    0 c,      \ F5
+    0 c,    0 c,      \ F3
+    0 c,    0 c,      \ F1
+    0 c,    0 c,      \ F2
+    0 c,    0 c,      \ F12
+    0 c,    0 c,      \ 8: unused
+    0 c,    0 c,      \ F10
+    0 c,    0 c,      \ F8
+    0 c,    0 c,      \ F6
+    0 c,    0 c,      \ F4
+    9 c,    9 c,      \ TAB
+    '`' c,  '~' c,
+    0 c,    0 c,      \ 0F: unused
+    0 c,    0 c,      \ 10: unused
+    0 c,    0 c,      \ L ALT
+    0 c,    0 c,      \ L SHIFT
+    0 c,    0 c,      \ 13: unused
+    0 c,    0 c,      \ L CTRL
+    'q' c,  'Q' c,
+    '1' c,  '!' c,
+    0 c,    0 c,      \ 17: unused
+    0 c,    0 c,      \ 18: unused
+    0 c,    0 c,      \ 19: unused
+    'z' c,  'Z' c,
+    's' c,  'S' c,
+    'a' c,  'A' c,
+    'w' c,  'W' c,
+    '2' c,  '@' c,
+    0 c,    0 c,      \ 1F: unused
+    0 c,    0 c,      \ 20: unused
+    'c' c,  'C' c,
+    'x' c,  'X' c,
+    'd' c,  'D' c,
+    'e' c,  'E' c,
+    '4' c,  '$' c,
+    '3' c,  '#' c,
+    0 c,    0 c,      \ 27: unused
+    0 c,    0 c,      \ 28: unused
+    bl c,   bl c,
+    'v' c,  'V' c,
+    'f' c,  'F' c,
+    't' c,  'T' c,
+    'r' c,  'R' c,
+    '5' c,  '%' c,
+    0 c,    0 c,      \ 2F: unused
+    0 c,    0 c,      \ 30: unused
+    'n' c,  'N' c,
+    'b' c,  'B' c,
+    'h' c,  'H' c,
+    'g' c,  'G' c,
+    'y' c,  'Y' c,
+    '6' c,  '^' c,
+    0 c,    0 c,      \ 37: unused
+    0 c,    0 c,      \ 38: unused
+    0 c,    0 c,      \ 39: unused
+    'm' c,  'M' c,
+    'j' c,  'J' c,
+    'u' c,  'U' c,
+    '7' c,  '&' c,
+    '8' c,  '*' c,
+    0 c,    0 c,      \ 3F: unused
+    0 c,    0 c,      \ 40: unused
+    ',' c,  '<' c,
+    'k' c,  'K' c,
+    'i' c,  'I' c,
+    'o' c,  'O' c,
+    '0' c,  ')' c,
+    '9' c,  '(' c,
+    0 c,    0 c,      \ 47: unused
+    0 c,    0 c,      \ 48: unused
+    '.' c,  '<' c,
+    '/' c,  '?' c,
+    'l' c,  'L' c,
+    ';' c,  ':' c,
+    'p' c,  'P' c,
+    '-' c,  '_' c,
+    0 c,    0 c,      \ 4F unused
+    0 c,    0 c,      \ 50 unused
+    0 c,    0 c,      \ 51 unused
+    ''' c,  '"' c,
+    0 c,    0 c,      \ 53 unused
+    '[' c,  '{' c,
+    '=' c,  '+' c,
+    0 c,    0 c,      \ 56 unused
+    0 c,    0 c,      \ 57 unused
+    0 c,    0 c,      \ CAPS
+    0 c,    0 c,      \ R SHIFT
+    13 c,   13 c,     \ ENTER
+    ']' c,  '}' c,
+    0 c,    0 c,      \ 5C unused
+    '\' c,  '|' c,
+    0 c,    0 c,      \ 5E unused
+    0 c,    0 c,      \ 5F unused
+    0 c,    0 c,      \ 60 unused
+    0 c,    0 c,      \ 61 unused
+    0 c,    0 c,      \ 62 unused
+    0 c,    0 c,      \ 63 unused
+    0 c,    0 c,      \ 64 unused
+    0 c,    0 c,      \ 65 unused
+    8 c,    8 c,      \ backspace
+
+So, a function to scan codes and maintain modifier state until finding an ASCII
+character to return:
+
+    variable kbdmod
+    : kbdkey
+      kbdscan
+      $12 over =  over $59 = or if  \ shift make
+        drop  kbdmod @ 1 or kbdmod !
+        kbdkey exit
+      then
+      $8012 over =  over $8059 = or if  \ shift break
+        drop kbdmod @ 1 invert and kbdmod !
+        kbdkey exit
+      then
+      $14 over =  over $114 = or if \ ctrl make
+        drop  kbdmod @ 2 or kbdmod !
+        kbdkey exit
+      then
+      $8014 over =  over $8114 = or if  \ ctrl break
+        drop kbdmod @ 2 invert and kbdmod !
+        kbdkey exit
+      then
+
+      \ Having processed the modifiers, ignore any large values, including
+      \ break codes.
+      dup  $66 u> if  drop kbdkey exit  then
+
+      \ We now have a value in-range for the lookup table.
+      cells   \ convert to offset
+      kbdmod @ 1 and +  \ mix in shift offset
+      kbdlt + c@
+
+      \ The result might be zero for unused/non-ASCII codes.
+      dup 0= if drop kbdkey exit then
+
+      \ Apply control.
+      kbdmod @ 2 and if  $20 invert and  '@' -  then ;
+
+Works!
+
+-----
+
+So, implementing this in hardware.
+
+I feel like this wants a timeout facility. Otherwise, a glitch on the CLK line
+could step the shift register and render it forever off by one bit. Fortunately
+the protocol specifies a minimum clock rate.
+
+It seems like a 50 microsecond timeout would be very safe. That's 2000 cycles.
+We could call it 2048.
+
+We can probably ignore host-to-keyboard comms for now.
+
+
