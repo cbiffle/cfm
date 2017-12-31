@@ -1539,7 +1539,7 @@ create TIB 80 allot
 ' rx! 'key !
 
 : cold
-  2082 UARTRD ! \ Set baud rate to 19200
+  347 UARTRD ! \ Set baud rate to 115200
   uart-rx-init
   \ vid
   ei
