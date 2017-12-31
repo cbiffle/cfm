@@ -29,11 +29,12 @@
 : <      [ $6803 asm, ] ;
 : u<     [ $6f03 asm, ] ;
 
-\ Useful compound instructions are named for the equivalent sequence of Forth
-\ words:
-: 2dup_!_drop  ( x addr -- x )  [ $6123 asm, ] ;
 
 \ Odd CFM instructions:
+
+\ Stores x at addr, leaving x (the data, or d) on the stack.
+: !d  ( x addr -- x )  [ $6123 asm, ] ;
+
 \ Pushes a word containing the depth of the parameter stack in bits 7:0, and
 \ the depth of the return stack in bits 15:8.
 : depths  ( -- x )  [ $6E81 asm, ] ;
@@ -74,7 +75,7 @@ $FFFF constant true  ( also abused as -1 below, since it's cheaper )
 \ More useful Forth words.
 
 : tuck  ( a b -- b a b )  swap over ;
-: !  ( x addr -- )  2dup_!_drop drop ;
+: !  ( x addr -- )  !d drop ;
 : +!  ( x addr -- )  tuck @ + swap ! ;
 : aligned  ( addr -- a-addr )  1 over and + ;
 
@@ -181,7 +182,7 @@ $FFFF constant true  ( also abused as -1 below, since it's cheaper )
 \ instructions already present in the dictionary. It returns the value of here,
 \ because we basically always want that when using freeze.
 : freeze  ( -- addr )
-  here FREEZEP 2dup_!_drop ;
+  here FREEZEP !d ;
 
 \ Encloses a data cell in the dictionary. Prevents misinterpretation of the
 \ data as instructions by using freeze . Thus using , to assemble machine
@@ -219,10 +220,24 @@ $FFFF constant true  ( also abused as -1 below, since it's cheaper )
 \ -----------------------------------------------------------------------------
 \ Support for VARIABLE .
 
-\ Because we don't need VARIABLE until much later in bootstrap, we can write
-\ its code fragment more clearly than (docon) .
+\ Like CONSTANT, words created with VARIABLE will call (dovar) as their only
+\ instruction, thus handing us the address of the actual variable on the return
+\ stack.
+
+\ Because we don't need VARIABLE until much later in bootstrap, we were able to
+\ wait until now to write its code fragment, where we have R> available.
 
 : (dovar) r> ;
+
+\ -----------------------------------------------------------------------------
+\ EXECUTE
+
+\ The CFM provides no indirect branch or call instructions, but it does provide
+\ return. So to call an arbitrary address, we call EXECUTE (leaving the origin
+\ return address), and EXECUTE inserts the address on the return stack before
+\ "returning" to it.
+
+: execute  ( i*x xt -- j*x )  >r ; ( NOINLINE )
 
 \ -----------------------------------------------------------------------------
 \ Basic control structures.
@@ -265,7 +280,9 @@ $FFFF constant true  ( also abused as -1 below, since it's cheaper )
 \ -----------------------------------------------------------------------------
 \ Exception handling.
 
-: execute  ( i*x xt -- j*x )  >r ; ( NOINLINE )
+\ The CFM makes this difficult by not allowing us to write the stack pointers
+\ directly. Instead, to adjust the stack pointers to a specified value, we
+\ have to perform a sequence of stack manipulations.
 
 : SP!   ( tgt -- * )
   1+ depth - dup 0< if   \ going down
@@ -305,6 +322,9 @@ $FFFF constant true  ( also abused as -1 below, since it's cheaper )
     again
   then ;
 
+\ The variable HANDLER holds the depth of the return stack at the last call to
+\ CATCH. However, it's a USER variable, and we don't have USER variables yet.
+\ So we vector it for now.
 variable 'handler
 : handler 'handler @ execute ;
 
@@ -365,6 +385,8 @@ variable 'handler
 \ compiler and dictionary maintenance words, and switches to using the target
 \ versions, thus improving performance (and ensuring correctness).
 
+\ In particular, this lets us start using POSTPONE.
+
 <TARGET-EVOLVE>
 
 
@@ -378,27 +400,36 @@ variable 'handler
   postpone again
   postpone then ; immediate
 
-
 \ -----------------------------------------------------------------------------
-\ Dictionary search.
+\ Useful Forth words.
 
 : rot  ( x1 x2 x3 -- x2 x3 x1 )
   >r swap r> swap ;
 
 : bounds over + swap ;
 
+\ Convert a counted string to a normal string. We use counted strings rarely,
+\ but they're useful in the dictionary.
+: count  ( c-addr1 -- c-addr2 u )
+  dup 1+ swap c@ ;
+
+\ -----------------------------------------------------------------------------
+\ Dictionary search.
+
 \ Compares two strings.
 : s= ( c-addr1 u1 c-addr2 u2 -- ? )
+  \ Early exit if the lengths are different.
   rot over xor if drop 2drop false exit then
   ( c-addr1 c-addr2 u )
-  >r  2dup -  ( c-addr1 c-addr2 1-2 ) ( R: u )
-  r> swap >r  ( c-addr1 c-addr2 u ) ( R: 1-2 )
-  nip         ( c-addr1 u ) ( R: 1-2 )
+  >r over swap -  ( c-addr1 1-2 ) ( R: u)
+  r> swap >r   ( c-addr1 u ) ( R: 1-2)
   bounds      ( c-addrE c-addrS ) ( R: 1-2)
   begin
     over over xor
-  while
-    dup c@  over r@ - c@ xor if 2drop rdrop false exit then
+  while  ( c-addrE c-addr ) ( R: 1-2 )
+    dup c@  ( c-addrE c-addr c ) ( R: 1-2 )
+    over r@ - c@  ( c-addrE c-addr c c2 ) ( R: 1-2 )
+    xor if 2drop rdrop false exit then
     1+
   repeat
   2drop rdrop true ;
@@ -412,8 +443,7 @@ variable 'handler
   while
     >r  ( stash the LFA ) ( c-addr u )              ( R: lfa )
     2dup                  ( c-addr u c-addr u )     ( R: lfa )
-    r@ cell+              ( c-addr u c-addr u nfa ) ( R: lfa )
-    dup 1+ swap c@        ( c-addr u c-addr u c-addr u ) ( R: lfa )
+    r@ cell+ count        ( c-addr u c-addr u c-addr u ) ( R: lfa )
     s= if                 ( c-addr u )              ( R: lfa )
       nip                 ( u )                     ( R: lfa )
       r> cell+            ( u nfa )
@@ -479,6 +509,22 @@ variable 'handler
   >resolve
   ; immediate
 
+\ Processes a string character-by-character with an accumulator parameter. The
+\ xt will be executed with the presumed stack effect
+\    c x -- x'
+\ Initially x is x0; after that, it is the result of the last execution. The
+\ final x is left on the stack.
+: sfoldl  ( c-addr u x0 xt -- x )
+  >r >r
+  bounds
+  begin
+    over over xor
+  while
+    dup c@ r> r@ execute >r
+    1+
+  repeat
+  2drop r> rdrop ;
+
 \ -----------------------------------------------------------------------------
 \ Basic source code input support and parsing.
 
@@ -518,14 +564,8 @@ variable >IN
 \ Encloses a string in the dictionary as a counted string.
 : s,  ( c-addr u -- )
   dup c,        ( Length byte )
-  bounds   ( c-addr-end c-addr-start )
-  begin
-    over over xor    ( cheap inequality test )
-  while
-    dup c@ c,
-    1+
-  repeat
-  2drop align ;
+  0 [: swap c, ;] sfoldl drop
+  align ;
 
 \ Implementation factor of the other defining words: parses a name and creates
 \ a header, without generating any code.
@@ -604,8 +644,10 @@ TARGET-PARSER: variable
 : does>
   \ End the defining code with a non-tail call to (does>)
   [:  ( R: tail-addr -- )
+      \ Patch the first instruction of the last (current) definition to contain
+      \ a call to the code after DOES> .
       lastxt  r> u2/ $4000 or  swap !
-  ;] compile, freeze drop
+  ;] compile,
   \ Control will reach this point from the call instruction at the start of the
   \ code field. We need to reveal the parameter field address by postponing r>
   postpone r>
@@ -675,13 +717,7 @@ $20 constant bl
   \ This assumes a traditional terminal and is a candidate for vectoring.
 
 : type  ( c-addr u -- )
-  bounds
-  begin
-    over over xor
-  while
-    dup c@ emit
-    1+
-  repeat 2drop ;
+  0 [: swap emit ;] sfoldl drop ;
 
 \ Receive a string of at most u characters, allowing basic line editing.
 \ Returns the number of characters received, which may be zero.
@@ -695,7 +731,7 @@ $20 constant bl
         dup emit  \ echo character
         >r over over + r>  ( c-addr pos dest c )
         swap c! 1+    ( c-addr pos' )
-        0  \ "key" for code above
+        0  \ "key" for code below
       else  \ buffer full
         beep
       then
@@ -761,16 +797,6 @@ $20 constant bl
   9 over u< 7 and -
   base @ 1- over u< -13 and throw ;
 
-: sfoldl  ( c-addr u x0 xt -- x )
-  >r >r
-  bounds
-  begin
-    over over xor
-  while
-    dup c@ r> r@ execute >r
-    1+
-  repeat
-  2drop r> rdrop ;
 
 \ Converts the given string into a number, in the current base, but respecting
 \ base prefixes $ (hex) and # (decimal). Throws -13 (undefined word) if parsing
@@ -878,8 +904,7 @@ TARGET-MASK: (
       \ literal onto the stack and updates the return address to skip
       \ it.
       r>        ( addr )
-      dup 1+
-      swap c@   ( c-addr u )
+      count     ( c-addr u )
       over over + aligned  ( c-addr u end )
       >r
   ;] compile,
@@ -945,7 +970,7 @@ $D806 constant IRQCE  ( clear enable )
 
 ( Atomically enables interrupts and returns. This is intended to be tail )
 ( called from the end of an ISR. )
-: ei  IRQST 2dup_!_drop ;
+: ei  IRQST !d ;
 
 : irq-off  ( u -- )  #bit IRQCE ! ;
 : irq-on   ( u -- )  #bit IRQSE ! ;
@@ -961,6 +986,11 @@ $D806 constant IRQCE  ( clear enable )
 $C002 constant OUTSET  ( 1s set pins, 0s do nothing)
 $C004 constant OUTCLR  ( 1s clear pins, 0s do nothing)
 $C006 constant OUTTOG  ( 1s toggle pins, 0s do nothing)
+
+TARGET-PARSER: outpin
+: outpin
+  create #bit ,
+  does> @ swap if OUTSET else OUTCLR then ! ;
 
 $C800 constant IN
 
@@ -980,8 +1010,7 @@ variable uart-rx-buf  uart-#rx 1- cells allot
 variable uart-rx-hd
 variable uart-rx-tl
 
-: CTSon 2 OUTCLR ! ;
-: CTSoff 2 OUTSET ! ;
+1 outpin >CTS_N
 
 : rxq-empty? uart-rx-hd @ uart-rx-tl @ = ;
 : rxq-full? uart-rx-hd @ uart-rx-tl @ - uart-#rx = ;
@@ -990,12 +1019,10 @@ variable uart-rx-tl
 ( interrupt context, so if it encounters a queue overrun, it simply drops )
 ( data. )
 : >rxq
-  rxq-full? if
-    drop
-  else
-    uart-rx-buf  uart-rx-hd @ [ uart-#rx 1- 2* ] literal and +  !
-    2 uart-rx-hd +!
-  then ;
+  rxq-full? if drop exit then
+
+  uart-rx-buf  uart-rx-hd @ [ uart-#rx 1- 2* ] literal and +  !
+  2 uart-rx-hd +! ;
 
 ( Takes a cell from the receive queue. If the queue is empty, spin. )
 : rxq>
@@ -1003,14 +1030,11 @@ variable uart-rx-tl
   uart-rx-buf  uart-rx-tl @ [ uart-#rx 1- 2* ] literal and +  @
   2 uart-rx-tl +! ;
 
-\ Receives a byte from RX, returning the bits and a valid flag. The valid flag may
-\ be false in the event of a framing error.
-: rx  ( -- c ? )
+\ Receives a byte from RX. In the event of an error (e.g. framing) the sign bit
+\ is set.
+: rx  ( -- x )
   rxq>
-
-  dup 0< 0=
-
-  rxq-empty? if CTSon then  \ allow sender to resume if we've emptied the queue.
+  rxq-empty? if 0 >CTS_N then  \ allow sender to resume if we've emptied the queue.
   ;
 
 ( ----------------------------------------------------------- )
@@ -1030,14 +1054,14 @@ $E806 constant UARTRX
 
 : rx-isr
   UARTRX @ >rxq
-  CTSoff ;
+  1 >CTS_N ;
 
 : uart-rx-init
   \ Clear any pending queued character.
   UARTRX @ drop
   \ Enable the IRQ.
   irq#rxne irq-on
-  CTSon ;
+  0 >CTS_N ;
 
 ( ----------------------------------------------------------- )
 ( Icestick board features )
@@ -1074,6 +1098,8 @@ variable vcols  \ columns in the text display
 variable vrows  \ rows in the text display
 variable vatt   \ attributes for text in top 8 bits
 
+: vsize vcols @ vrows @ u* ;
+
 \ Sets the current color to the given fore and back color indices.
 : vcolor!  ( back fore -- )
   4 lshift or 8 lshift  vatt ! ;
@@ -1087,17 +1113,17 @@ variable vatt   \ attributes for text in top 8 bits
 \ window scroll to the start of video memory.
 : vpage
   0  \ start of memory
-  vcols @ vrows @ u*  \ size of a screen
+  vsize  \ size of a screen
   vclr     \ clear a screen-sized area of text RAM
   0 VC0 !   \ make it the active screen
-  vcols @ vrows @ 1- u* VWA !   \ cursor to lower left
+  vsize vcols @ - VWA !   \ cursor to lower left
   ;
 
 \ Scrolls the display up, revealing a blank line at the bottom. Leaves the
 \ cursor address unchanged (i.e. it moves up on the display).
 : vscroll
   vcols @ VC0 +!
-  VC0 @  vcols @ vrows @ 1- u* + $7FF and  vcols @  vclr
+  VC0 @  vsize vcols @ - + $7FF and  vcols @  vclr
   ;
 
 \ "Types" a character without control character interpretation. Advances the
@@ -1105,7 +1131,7 @@ variable vatt   \ attributes for text in top 8 bits
 : vputc ( c -- )
   vatt @ or VWD !   \ store the character with attributes
   VWA @  VC0 @ -  $7FF and    \ get distance from start of display
-  vcols @ vrows @ u* = if   \ if we've run off the end
+  vsize = if   \ if we've run off the end
     vscroll  \ reveal another line
   then ;
 
@@ -1159,14 +1185,13 @@ variable vatt   \ attributes for text in top 8 bits
 ( Programming tools )
 
 : words
-  LATEST @
+  LATEST
   begin
-    dup
+    @ dup
   while
     2 over +  \ compute address of name field
-    dup 1+ swap c@  \ convert to counted string
+    count     \ convert to counted string
     type space
-    @
   repeat
   drop ;
 
@@ -1186,11 +1211,6 @@ variable vatt   \ attributes for text in top 8 bits
 
 variable sdcyc  50 sdcyc !
 : sddelay sdcyc @ cycles ;
-
-TARGET-PARSER: outpin
-: outpin
-  create #bit ,
-  does> @ swap if OUTSET else OUTCLR then ! ;
 
 2 outpin >sdclk
 3 outpin >sdmosi
@@ -1278,9 +1298,11 @@ TARGET-PARSER: outpin
 create vectors  16 cells allot
 
 : isr
+  \ Vectored interrupt dispatcher.
+  \ Which interrupts are active?
   15 IRQST @
-  begin
-    dup
+  begin   ( vector# irqst )
+    dup \ while any remain
   while
     $8000 over and if
       over cells  vectors + @ execute
@@ -1289,14 +1311,17 @@ create vectors  16 cells allot
     swap 1 - swap
   repeat
   drop drop
+  \ Patch up interrupt return address.
   r> 2 - >r
+  \ Atomically enable interrupts and return.
   ei ;
 
+\ Vector table
 ' rx-isr vectors 9 cells + !
 
 create TIB 80 allot
 
-: rx! rx 0= if rx! exit then ;
+: rx! rx dup 0< if rx! exit then ;
 
 : quit
   0 RSP!
@@ -1334,7 +1359,7 @@ create TIB 80 allot
   ei
   10 base !
   35 emit
-  LATEST @ cell+ dup 1+ swap c@ type
+  LATEST @ cell+ count type
   35 emit cr
   quit ;
 
