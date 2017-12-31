@@ -123,7 +123,7 @@ transmit = curry $ mooreB transmitT transmitO def
       0 -> case regWr of
         Nothing -> s
         Just x -> s { tsTimer = cycPerBit
-                    , tsBitsLeft = 1 + 8 + 2
+                    , tsBitsLeft = 1 + 8
                     , tsShift = x ++# 0
                     }
       -- Otherwise, keep shifting out bits.
