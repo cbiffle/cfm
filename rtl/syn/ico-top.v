@@ -84,16 +84,16 @@ wire reset_n = ~S1;
           .PULLUP(0)
         ) sram_io [15:0] (
           .PACKAGE_PIN(sram_d),
-          .OUTPUT_ENABLE(sram_wr && clk_core90),
+          .OUTPUT_ENABLE(sram_wr ? clk_core90 : 1'b0),
           .D_OUT_0(host_to_sram),
           .D_IN_0(sram_to_host),
         );
 
-        assign sram_we_n = !(sram_wr && clk_core90);
+        assign sram_we_n = sram_wr ? !clk_core90 : 1'b1;
         assign sram_oe_n = sram_wr;
-        assign sram_ce_n = 1;  // TODO
-        assign sram_lb_n = sram_we_n;
-        assign sram_ub_n = sram_we_n;
+        assign sram_ce_n = 0;
+        assign sram_lb_n = 0;
+        assign sram_ub_n = 0;
 
         wire [15:0] out1;
         wire [15:0] in;
