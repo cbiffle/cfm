@@ -924,7 +924,7 @@ TARGET-MASK: postpone
       exit
     then
   then
-  ?? ;
+  ?? ; immediate
 
 \ -----------------------------------------------------------------------------
 \ Programming tools.
