@@ -1346,6 +1346,85 @@ variable sdcyc  50 sdcyc !
   5 <> throw ;
 
 \ -------------------------------------------------------------------
+\ Block support
+
+\ We place a single 1kiB block buffer at the top of data SRAM.
+$8000 16384 + 1024 - constant blkbuf
+
+\ If bit 0 of blkstat is set, the buffer is allocated to a disk block. If bit 1
+\ of blkstat is also set, the buffer is dirty.
+variable blkstat
+
+\ If the buffer is allocated, blkall stores the block number.
+variable blkall
+
+\ Convert a block number to an LBA.
+: blk>sec  ( u -- u )  1- 2* ;
+
+\ Marks the contents of the current buffer as dirty. If the current buffer is
+\ not allocated, this is a no-op.
+: update  blkstat @  2 or  blkstat ! ;
+
+\ Flush modified buffers to disk and unassign.
+: flush
+  \ If the buffer is both assigned and dirty,
+  blkstat @ 3 and 3 = if
+    blkall @ blk>sec >r
+    blkbuf        r@    9 lshift  r@    7 rshift  sdwr
+    blkbuf 512 +  r@ 1+ 9 lshift  r> 1+ 7 rshift  sdwr
+  then
+  \ Unassign.
+  0 blkstat ! ;
+
+\ Arrange for a block to be assigned to a buffer, and return its address.
+: block  ( u -- addr )
+  \ If the requested block is already loaded, just return its address.
+  blkall @ over =  blkstat @ 1 and  and if  blkbuf exit  then
+
+  \ This is written in an attempt to keep I/O exceptions from corrupting state.
+  flush
+  dup blk>sec >r
+  blkbuf        r@    9 lshift  r@    7 rshift  sdrd
+  blkbuf 512 +  r@ 1+ 9 lshift  r> 1+ 7 rshift  sdrd
+  blkall !
+  1 blkstat !
+  blkbuf ;
+
+\ -------------------------------------------------------------------
+\ Block load and dev support.
+
+variable blk
+  \ Holds the block index currently being used as source, or 0 if
+  \ source is coming from somewhere else.
+
+\ Interprets source code in block u.
+: load  ( i*x u -- j*x )
+  \ Save source state.
+  blk @ >r   SOURCE >r >r   >IN @ >r
+  \ Set up input to read from the block.
+  dup blk !
+  block 'SOURCE !  1024 'SOURCE cell+ !  0 >IN !
+  \ Try to interpret.
+  [ ' interpret ] literal catch
+  \ Whether that succeeded or failed, restore the old input spec.
+  r> >IN !  r> r> 'SOURCE cell+ !  'SOURCE !  r> dup blk !  ( except old-blk )
+  \ If we were loading from a block before LOAD, the address is likely
+  \ wrong. Update it.
+  ?dup if  block 'SOURCE !  then
+  throw ;
+
+\ Lists source code in a block using the conventional 64x16 format.
+: list  ( u -- )
+  block 1024 bounds
+  begin
+    over over xor
+  while
+    dup 64 cr type
+    64 +
+  repeat
+  2drop ;
+
+\ -------------------------------------------------------------------
 \ PS/2 keyboard GPIO interface
 
 variable kbdbuf
