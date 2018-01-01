@@ -205,11 +205,110 @@ Here's an untested sketch of some block words.
       dup blk !
       SOURCE >r >r  >IN @ >r
       block 'SOURCE !  1024 'SOURCE cell+ !  0 >IN !
-      ['] interpret catch
+      [ ' interpret ] literal catch
       r> >IN !
-      >r 'SOURCE cell+ !  >r 'SOURCE !
-      >r blk !
+      r> 'SOURCE cell+ !  r> 'SOURCE !
+      r> blk !
       throw ;
 
+Let's poke some code into RAM manually.
 
+    0 block drop
+    : fill
+      >r
+      bounds begin
+        over over xor
+      while
+        r@ over c!
+        1+ 
+      repeat
+      rdrop 2drop ;
+    $8000 1024 bl fill
+    update
+    flush
+
+LOAD is scrambling the source somehow. Debugging...
+
+    : load0
+      0 block 'SOURCE !  1024 'SOURCE cell+ !  0 >IN !
+      [ ' interpret ] literal catch
+      ABORT ;
+
+Works.
+
+    : load1
+      >r
+      SOURCE >IN @
+      r> block 'SOURCE !  1024 'SOURCE cell+ !  0 >IN !
+      [ ' interpret ] literal catch .
+      >IN !
+      'SOURCE cell+ !
+      'SOURCE !
+      ;
+
+Works.
+
+    : load2
+      SOURCE >r >r
+      >IN @ >r
+      block 'SOURCE !  1024 'SOURCE cell+ !  0 >IN !
+      [ ' interpret ] literal catch .
+      r> >IN !
+      r> 'SOURCE cell+ !
+      r> 'SOURCE !
+      ;
+
+Does not work.
+
+    : load3
+      SOURCE >IN @ >r >r >r
+      block 'SOURCE !  1024 'SOURCE cell+ !  0 >IN !
+      [ ' interpret ] literal catch .
+      r> r> r>
+      >IN !
+      'SOURCE cell+ !
+      'SOURCE !
+      ;
+
+...woooorks?
+
+Crap. I see it. Fixed:
+
+    : load
+      blk @ >r
+      dup blk !
+      SOURCE >r >r  >IN @ >r
+      block 'SOURCE !  1024 'SOURCE cell+ !  0 >IN !
+      [ ' interpret ] literal catch
+      r> >IN !
+      r> r> 'SOURCE cell+ !  'SOURCE !
+      r> blk !
+      throw ;
+
+To allow a block to load another, we need to update SOURCE with the (possibly
+changed) block address when unstacking:
+
+    : load
+      blk @ >r
+      dup blk !
+      SOURCE >r >r  >IN @ >r
+      block 'SOURCE !  1024 'SOURCE cell+ !  0 >IN !
+      [ ' interpret ] literal catch
+      r> >IN !
+      r> r> 'SOURCE cell+ !  'SOURCE !
+      r> dup blk !
+         ?dup if
+            block 'SOURCE !
+         then
+      throw ;
+
+    : list
+      block 1024 bounds
+      begin
+        over over xor
+      while
+        dup 64 cr type
+        64 +
+      repeat
+      2drop ;
 
