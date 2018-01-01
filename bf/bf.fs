@@ -926,6 +926,9 @@ TARGET-MASK: postpone
   then
   ?? ; immediate
 
+\ TARGET-MASK: [']
+\ : [']  ' postpone literal ; immediate
+
 \ -----------------------------------------------------------------------------
 \ Programming tools.
 
