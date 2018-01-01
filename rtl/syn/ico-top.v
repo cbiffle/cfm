@@ -27,6 +27,8 @@ module top(
 
   input pmod4_7,
   inout pmod4_8,
+
+  input S2,
   );
 
 wire clk_core, clk_core90;
@@ -143,7 +145,7 @@ wire reset_n = ~S1;
         assign led = out1[8:5];
         assign cts_n = out1[1];
         assign {sd_cs_n, sd_mosi, sd_sck} = out1[4:2];
-        assign in = {pmod4_7, sd_cd, sd_miso, ps2_clk};
+        assign in = {S2, pmod4_7, sd_cd, sd_miso, ps2_clk};
 
         assign {vga_r[4], vga_g[4], vga_b[4], vga_r[3], vga_g[3], vga_b[3]}
           = vid;

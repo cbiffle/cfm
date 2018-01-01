@@ -1670,13 +1670,21 @@ create TIB 80 allot
     cr
   again ;
 
-' tx 'emit !
-' rx! 'key !
-
 : cold
-  347 UARTRD ! \ Set baud rate to 115200
   uart-rx-init
-  \ vid
+  347 UARTRD ! \ Set baud rate to 115200
+
+  \ Take a best-effort crack at initializing the disk
+  [ ' sdinit ] literal catch drop
+
+  IN @  4 #bit and if   \ If S2 is held, boot with serial console
+    [ ' tx ] literal 'emit !
+    [ ' rx! ] literal 'key !
+  else  \ otherwise, normal config
+    vid
+    [ ' vemit ] literal 'emit !
+    [ ' kbdkey ] literal 'key !
+  then
   ei
   10 base !
   35 emit
