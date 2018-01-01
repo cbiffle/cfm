@@ -1,0 +1,215 @@
+More hacking on the SD card.
+
+I bet I can read blocks.
+
+    : sdrd  ( seclo sechi -- )
+      base @ >r
+      16 base !
+      17 sdcmd sdr1 . cr
+      begin
+        $FF sdx $FF xor
+      until
+
+      512 begin
+        dup
+      while
+        1-
+        $FF sdx .
+      repeat
+      
+      drop
+      cr
+      $FF sdx . $FF sdx .
+      cr
+      sdidle
+      r> base !
+      ;
+
+Yup. How about reading it to memory?
+
+    : sdrd ( dest seclo sechi -- )
+      17 sdcmd sdr1 throw
+      begin $FF sdx $FF xor until
+
+      512 bounds begin
+        over over xor
+      while
+        $FF sdx over c!
+        1+
+      repeat 2drop
+      $FF sdx drop $FF sdx drop  \ checksum
+      sdidle
+      ;
+
+Yup. Works too.
+
+
+Probably the simplest useful thing I could do with the SD card is implement the
+traditional Forth blocks interface.
+
+Delightfully, SRAM works as of last night, so I can place the buffers up there
+and save primary RAM.
+
+For that to work I should implement the SD checksum algorithm. Otherwise I can't
+write. Using it to verify reads seems like a good starting point.
+
+    : sdcrc16  ( c-addr u -- crc )
+      0   \ initial CRC seed
+      [:
+        \ Swap bytes
+        dup 8 lshift swap 8 rshift or
+        xor
+        $FF over and 4 rshift xor
+        dup 12 lshift xor
+        $FF over and 5 lshift xor
+      ;] sfoldl ;
+
+This produces the same value that I'm reading from the card. Adapting the read
+code to verify:
+
+    : sdrd ( dest seclo sechi -- )
+      17 sdcmd sdr1 throw
+      begin $FF sdx $FF xor until
+
+      dup >r    \ stash the buffer address
+      512 bounds begin
+        over over xor
+      while
+        $FF sdx over c!
+        1+
+      repeat 2drop
+      $FF sdx 8 lshift $FF sdx or   \ read the CRC16
+      r> 512 sdcrc16
+      xor throw
+      sdidle ;
+
+Works!
+
+Writing:
+
+    : sdwr ( src seclo sechi -- )
+      24 sdcmd sdr1 throw
+      sdidle
+
+      $FE sdx drop
+      dup >r
+      512 bounds begin
+        over over xor
+      while
+        dup c@ sdx drop
+        1+
+      repeat 2drop
+      r> 512 sdcrc16
+      dup 8 rshift sdx drop sdx drop
+
+      begin
+        $FF sdx
+        dup $FF =
+      while
+        drop
+      repeat \ leaving response code on stack
+      $1F and
+
+      begin $FF sdx $FF xor until  \ <-- see notes below
+
+      sdidle
+
+      5 <> throw ;
+
+That works, but the immediate next command fails with illegal command, which is
+the sort of weird stuff the card will do if I forget the inter-command idle. But
+it's there. And in fact I can insert eight of them and it still fails.
+
+I can actually insert 100 of them, and it still fails. So that's not it.
+
+The failure is independent of clock rate. The next command received after a
+successful write fails with illegal command (code 4). Reissue it, and it works.
+
+It's consistent across two standard-capacity SD Cards I've tested. So that's
+good. At least it's not a single card driving me batty.
+
+Aaaaaand it's a typo. My logic for detecting the end of the busy condition was
+backwards, on the line noted above. Yay.
+
+Here's a fixed version.
+
+    : sdwr ( src seclo sechi -- )
+      24 sdcmd sdr1 throw
+      sdidle
+
+      $FE sdx drop
+      dup >r
+      512 bounds begin
+        over over xor
+      while
+        dup c@ sdx drop
+        1+
+      repeat 2drop
+      r> 512 sdcrc16
+      dup 8 rshift sdx drop sdx drop
+
+      begin
+        $FF sdx
+        dup $FF =
+      while
+        drop
+      repeat \ leaving response code on stack
+      $1F and
+
+      begin $FF sdx $FF = until
+
+      sdidle
+
+      5 <> throw ;
+
+Okay! Now I have basic sector read and write working.
+
+---
+
+Here's an untested sketch of some block words.
+
+    variable #block
+    variable blkstat
+    $8000 constant blkbuf
+
+    : update  blkstat @ 2 or blkstat ! ;
+
+    : flush
+      \ If the buffer is not assigned and updated, we have nothing to do.
+      blkstat @ 3 and 3 = if
+        \ Compute the sector number
+        #block @ 2* >r
+        \ Write the first sector
+        $8000  r@ 9 lshift  r@ 7 rshift  sdwr
+        \ Write the second sector
+        $8200  r@ 1+ 9 lshift  r> 1+ 7 rshift  sdwr
+      then
+      \ Indicate that the buffer is unassigned
+      0 blkstat ! ;
+
+    : block
+      \ Empty out the buffer.
+      flush
+      \ Load data from SD
+      dup 2* >r
+      $8000  r@ 9 lshift  r@ 7 rshift  sdrd
+      $8200  r@ 1+ 9 lshift  r> 1+ 7 rshift  sdrd
+      \ Record the buffer assignment.
+      #block !
+      1 blkstat !
+      $8000 ;
+
+    variable blk
+    : load
+      blk @ >r
+      dup blk !
+      SOURCE >r >r  >IN @ >r
+      block 'SOURCE !  1024 'SOURCE cell+ !  0 >IN !
+      ['] interpret catch
+      r> >IN !
+      >r 'SOURCE cell+ !  >r 'SOURCE !
+      >r blk !
+      throw ;
+
+
+

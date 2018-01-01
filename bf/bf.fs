@@ -1217,25 +1217,21 @@ variable sdcyc  50 sdcyc !
 3 outpin >sdmosi
 4 outpin >sdcs_
 
-: sdx1
-  $80 over and >sdmosi
+: sdx1  ( bits -- bits' )
+  $8000 over and >sdmosi
   1 lshift
 
   sddelay  1 >sdclk
   sddelay
 
-  swap
-  1 lshift
   IN @ 2 and 1 rshift  or
-  swap
   
   0 >sdclk ;
 
 : sdx  ( tx -- rx )
-  0 swap
+  8 lshift
   sdx1 sdx1 sdx1 sdx1
-  sdx1 sdx1 sdx1 sdx1
-  drop ;
+  sdx1 sdx1 sdx1 sdx1 ;
 
 : sdidle $FF sdx drop ;
 
@@ -1248,9 +1244,9 @@ variable sdcyc  50 sdcyc !
 
 : sdcmd  ( arglo arghi cmd -- )
   $40 or sdx drop         \ start bit + cmd
-  dup 8 lshift sdx drop   \ arg[31:24]
+  dup 8 rshift sdx drop   \ arg[31:24]
   sdx drop                \ arg[23:16]
-  dup 8 lshift sdx drop   \ arg[15:8]
+  dup 8 rshift sdx drop   \ arg[15:8]
   sdx drop                \ arg[7:0]
   $95 sdx drop ;          \ checksum, hardcoded for CMD0
 
@@ -1287,7 +1283,64 @@ variable sdcyc  50 sdcyc !
   begin
     sdacmd41 0=
   until
+  1 sdcyc !   \ high speed
   ;
+
+: sdcrc16  ( c-addr u -- crc )
+  0   \ initial CRC seed
+  [:
+    \ Swap bytes
+    dup 8 lshift swap 8 rshift or
+    xor
+    $FF over and 4 rshift xor
+    dup 12 lshift xor
+    $FF over and 5 lshift xor
+  ;] sfoldl ;
+
+: sdrd ( dest seclo sechi -- )
+  17 sdcmd sdr1 throw
+  begin $FF sdx $FF xor until
+
+  dup >r    \ stash the buffer address
+  512 bounds begin
+    over over xor
+  while
+    $FF sdx over c!
+    1+
+  repeat 2drop
+  $FF sdx 8 lshift $FF sdx or   \ read the CRC16
+  r> 512 sdcrc16
+  xor throw
+  sdidle ;
+
+: sdwr ( src seclo sechi -- )
+  24 sdcmd sdr1 throw
+  sdidle
+
+  $FE sdx drop
+  dup >r
+  512 bounds begin
+    over over xor
+  while
+    dup c@ sdx drop
+    1+
+  repeat 2drop
+  r> 512 sdcrc16
+  dup 8 rshift sdx drop sdx drop
+
+  begin
+    $FF sdx
+    dup $FF =
+  while
+    drop
+  repeat \ leaving response code on stack
+  $1F and
+
+  begin $FF sdx $FF = until
+
+  sdidle
+
+  5 <> throw ;
 
 \ -------------------------------------------------------------------
 \ PS/2 keyboard GPIO interface
