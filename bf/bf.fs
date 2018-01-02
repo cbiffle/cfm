@@ -967,10 +967,10 @@ here host.
 ( ----------------------------------------------------------- )
 ( Interrupt Controller )
 
-$D800 constant IRQST  ( status / enable trigger )
+$B000 constant IRQST  ( status / enable trigger )
 \ $D802 constant IRQEN  ( enable )
-$D804 constant IRQSE  ( set enable )
-$D806 constant IRQCE  ( clear enable )
+$B004 constant IRQSE  ( set enable )
+$B006 constant IRQCE  ( clear enable )
 
 ( Atomically enables interrupts and returns. This is intended to be tail )
 ( called from the end of an ISR. )
@@ -987,24 +987,24 @@ $D806 constant IRQCE  ( clear enable )
 ( I/O ports )
 
 \ $8000 constant outport      ( literal value)
-$C002 constant OUTSET  ( 1s set pins, 0s do nothing)
-$C004 constant OUTCLR  ( 1s clear pins, 0s do nothing)
-$C006 constant OUTTOG  ( 1s toggle pins, 0s do nothing)
+$8002 constant OUTSET  ( 1s set pins, 0s do nothing)
+$8004 constant OUTCLR  ( 1s clear pins, 0s do nothing)
+$8006 constant OUTTOG  ( 1s toggle pins, 0s do nothing)
 
 TARGET-PARSER: outpin
 : outpin
   create #bit ,
   does> @ swap if OUTSET else OUTCLR then ! ;
 
-$C800 constant IN
+$9000 constant IN
 
 ( ----------------------------------------------------------- )
 ( Timer )
 
-$D000 constant TIMV
-$D002 constant TIMF
-$D004 constant TIMM0
-$D006 constant TIMM1
+$A000 constant TIMV
+$A002 constant TIMF
+$A004 constant TIMM0
+$A006 constant TIMM1
 
 ( ----------------------------------------------------------- )
 ( UART receive queue and flow control )
@@ -1044,10 +1044,10 @@ variable uart-rx-tl
 ( ----------------------------------------------------------- )
 ( Hard UART )
 
-$E800 constant UARTST
-$E802 constant UARTRD
-$E804 constant UARTTX
-$E806 constant UARTRX
+$D000 constant UARTST
+$D002 constant UARTRD
+$D004 constant UARTTX
+$D006 constant UARTRX
 
 9 constant irq#rxne
 
@@ -1075,14 +1075,14 @@ $E806 constant UARTRX
 \ ----------------------------------------------------------------------
 \ Text mode video display
 
-$E000 constant VTH  \ video - timing - horizontal
-$E008 constant VTV  \ video - timing - vertical
-$E010 constant VPX  \ video - pixel count
-$E012 constant VIA  \ video - interrupt acknowledge
-$E014 constant VFB  \ video - font base
-$E016 constant VWA  \ video - write address
-$E018 constant VWD  \ video - write data
-$E01A constant VC0  \ video - character 0
+$C000 constant VTH  \ video - timing - horizontal
+$C008 constant VTV  \ video - timing - vertical
+$C010 constant VPX  \ video - pixel count
+$C012 constant VIA  \ video - interrupt acknowledge
+$C014 constant VFB  \ video - font base
+$C016 constant VWA  \ video - write address
+$C018 constant VWD  \ video - write data
+$C01A constant VC0  \ video - character 0
 
 \ Overwrites a section of video memory with a given value.
 : vfill  ( v-addr u x -- )
@@ -1348,8 +1348,8 @@ variable sdcyc  50 sdcyc !
 \ -------------------------------------------------------------------
 \ Block support
 
-\ We place a single 1kiB block buffer at the top of data SRAM.
-$8000 16384 + 1024 - constant blkbuf
+\ We place a single 1kiB block buffer at the top of SRAM.
+$8000 1024 - constant blkbuf
 
 \ If bit 0 of blkstat is set, the buffer is allocated to a disk block. If bit 1
 \ of blkstat is also set, the buffer is dirty.
@@ -1697,7 +1697,7 @@ create TIB 80 allot
 ( install isr as the interrupt vector )
 ' isr  u2/  2 !
 ( adjust U0 to mapped RAM for the Icoboard )
-8064 U0 !
+$7B80 U0 !
 
 true remarker empty
 

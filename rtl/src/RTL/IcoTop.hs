@@ -38,11 +38,8 @@ system raminit ins sram2h urx = (outs, hsync, vsync, vid, sramA, sramW, h2sram, 
   where
     (mreq, ioreq, fetch) = coreWithStacks ram ioresp
 
-    (_ :> ioreqOthers :> Nil, ioch0) = ioDecoder @1 ioreq
-    ioresp = responseMux (pure 0 :> iorespOthers :> Nil) ioch0
-
-    (ioreq0 :> ioreq1 :> ioreq2 :> ioreq3 :> ioreq4 :> ioreq5 :> _, ioch1) = ioDecoder @3 ioreqOthers
-    iorespOthers = responseMux (ioresp0 :> ioresp1 :> ioresp2 :> ioresp3 :> ioresp4 :> ioresp5 :> repeat (pure 0)) ioch1
+    (ioreq0 :> ioreq1 :> ioreq2 :> ioreq3 :> ioreq4 :> ioreq5 :> _, ioch1) = ioDecoder @3 ioreq
+    ioresp = responseMux (ioresp0 :> ioresp1 :> ioresp2 :> ioresp3 :> ioresp4 :> ioresp5 :> repeat (pure 0)) ioch1
 
     ram = ramRewrite $ mux shadowed iram sram2h
     shadowed = regEn False (isJust <$> mreq) $
