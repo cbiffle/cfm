@@ -1,0 +1,127 @@
+Bringing up SPI flash.
+
+I've already added routing constraints earlier in the break.
+
+Piping signals thusly:
+
+    CS    OUT[11]
+    MOSI  OUT[10]
+    SCK   OUT[9]
+    MISO  IN[5]
+
+I can reuse the delay-for-cycles code from the SD driver.
+
+Let's use the prefix 'sf' for SPI flash.
+
+    variable sfcyc    10 sfcyc !
+    : sfdelay  sfcyc @ cycles ;
+
+    9 outpin >sfclk
+    10 outpin >sfmosi
+    11 outpin >sfcs_
+
+    : sfx1
+      $8000 over and >sfmosi
+      1 lshift
+      
+      sfdelay 1 >sfclk
+      sfdelay
+      IN @ 5 rshift 1 and or
+      0 >sfclk ;
+
+    : sfx
+      8 lshift
+      sfx1 sfx1 sfx1 sfx1
+      sfx1 sfx1 sfx1 sfx1 ;
+    
+    : >sfx sfx drop ;
+    : sfx> 0 sfx ;
+
+    \ Executes code while asserting CS. Ensures that CS is released.
+    : sfsel   ( i*x xt -- j*x )
+      0 >sfcs_
+      catch
+      1 >sfcs_
+      throw ;
+
+    \ Reads an arbitrary byte string from a given address.
+    : sfrd  ( c-addr u faddrlo faddrhi -- )
+      [:
+        $03 >sfx 
+        >sfx
+        dup 8 rshift >sfx
+        >sfx
+        bounds begin
+          over over xor
+        while
+          sfx> over c!
+          1+
+        repeat 2drop
+      ;] sfsel ;
+
+    : sfinit
+      1 >sfcs_    \ start CS off unasserted
+      ;
+
+That all seems to work. (After I spent an hour+ "debugging" a failure to flash
+the updated bitstream on the board.)
+
+So, SPI flash. How does it work? I've got the specific datasheet for this part,
+a couple of generic tutorials, and the icoprog code. The commands I've
+identified so far are
+
+    06
+      write enable, must be sent just before a programming command
+    C7
+      bulk erase, probably needs write enable
+    D8 AA BB CC
+      erase a 64kiB sector starting at 0xAABBCC
+    02 AA BB CC .. .. .. ..
+      program bytes starting at 0xAABBCC
+      Acts on a 256-byte page, and will wrap within it!
+    03 AA BB CC .. .. ..
+      read bytes starting at 0xAABBCC
+    05 ..
+      read status register 1 (S25FL127S-specific? section 7.6.1)
+    AB
+      power up (appears obsolescent?)
+    B9
+      power down (obsolescent?)
+    9F .. ..
+      Read identification info
+
+Looks like the identification info would allow me to determine device size.
+
+    : sfcfi  ( c-addr u -- )
+      [:
+        $9F >sfx
+        bounds begin
+          over over xor
+        while
+          sfx> over c!
+          1+
+        repeat 2drop
+      ;] sfsel ;
+
+    blkbuf 256 sfcfi
+    blkbuf $27 + c@   \ device size from manual, gives 24
+
+Sweet.
+
+---
+
+It probably makes sense to treat the SPI flash as a fixed boot device, to free
+up BRAM from having to pretend to be ROM. The simplest version of this would
+read a section of flash (high enough to dodge the FPGA's own bitstream!) into
+RAM and then jump into it.
+
+Which is really easy.
+
+Workflow implications:
+
+- New versions of the system would need to get stuffed into SPI flash instead of
+  loaded into FPGA SRAM.
+
+That's easy enough to do from within the system, if I get programming working.
+Harder to do from my desktop. Icoprog doesn't seem to support partial updates of
+flash (though I could patch it).
