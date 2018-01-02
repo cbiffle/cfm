@@ -1070,7 +1070,7 @@ $D006 constant UARTRX
 ( ----------------------------------------------------------- )
 ( Icestick board features )
 
-: ledtog  4 + #bit OUTTOG ! ;
+: ledtog  5 + #bit OUTTOG ! ;
 
 \ ----------------------------------------------------------------------
 \ Text mode video display
