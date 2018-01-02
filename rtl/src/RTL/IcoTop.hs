@@ -7,6 +7,8 @@
 module RTL.IcoTop where
 
 import Clash.Prelude hiding (readIO, read)
+import Data.Maybe (isJust)
+import Control.Lens ((<&>))
 import CFM.Types
 import RTL.IOBus
 import RTL.IRQ
@@ -27,24 +29,33 @@ system :: (HasClockReset dom gated synchronous)
           , Signal dom Bool
           , Signal dom Bool
           , Signal dom (BitVector 6)
-          , Signal dom (BitVector 13)  -- SRAM address
+          , Signal dom (BitVector 14)  -- SRAM address
           , Signal dom Bool  -- SRAM write
           , Signal dom Cell  -- SRAM data
           , Signal dom Bit  -- UART TX
           )
 system raminit ins sram2h urx = (outs, hsync, vsync, vid, sramA, sramW, h2sram, utx)
   where
-    (ioreq, fetch) = coreWithRAM ram ioresp
+    (mreq, ioreq, fetch) = coreWithStacks ram ioresp
 
-    (ioreqSram :> ioreqOthers :> Nil, ioch0) = ioDecoder @1 ioreq
-    ioresp = responseMux (iorespSram :> iorespOthers :> Nil) ioch0
+    (_ :> ioreqOthers :> Nil, ioch0) = ioDecoder @1 ioreq
+    ioresp = responseMux (pure 0 :> iorespOthers :> Nil) ioch0
 
     (ioreq0 :> ioreq1 :> ioreq2 :> ioreq3 :> ioreq4 :> ioreq5 :> _, ioch1) = ioDecoder @3 ioreqOthers
     iorespOthers = responseMux (ioresp0 :> ioresp1 :> ioresp2 :> ioresp3 :> ioresp4 :> ioresp5 :> repeat (pure 0)) ioch1
 
-    ram = ramRewrite . singlePorted (blockRamFile (SNat @4096) raminit)
+    ram = ramRewrite $ mux shadowed iram sram2h
+    shadowed = regEn False (isJust <$> mreq) $
+               mreq <&> \r -> case r of
+                 Just (a, _) -> slice d13 d12 a == 0
+                 _ -> undefined
 
-    (iorespSram, sramA, sramW, h2sram) = extsram sram2h ioreqSram
+    mreqi = mreq <&> \r -> case r of
+                 Just (a, v) | slice d13 d12 a == 0 -> Just (a, v)
+                 _ -> Nothing
+     
+    iram = singlePorted (blockRamFile (SNat @4096) raminit) mreqi
+    (_, sramA, sramW, h2sram) = extsram undefined mreq
 
     -- I/O devices
     (ioresp0, outs) = outport $ partialDecode ioreq0
@@ -56,6 +67,7 @@ system raminit ins sram2h urx = (outs, hsync, vsync, vid, sramA, sramW, h2sram, 
     (ioresp4, hsync, vsync, hirq, virq, evirq, vid) = chargen (partialDecode ioreq4)
 
     (ioresp5, _, _, urxne, utx) = U.uart urx $ partialDecode ioreq5
+
 
 {-# ANN topEntity (defTop { t_name = "ico_soc"
                           , t_inputs = [ PortName "clk_core"
@@ -84,7 +96,7 @@ topEntity :: Clock System 'Source
              , Signal System Bool
              , Signal System Bool
              , Signal System (BitVector 6)
-             , Signal System (BitVector 13)  -- SRAM address
+             , Signal System (BitVector 14)  -- SRAM address
              , Signal System Bool  -- SRAM write
              , Signal System Cell  -- SRAM data
              , Signal System Bit
