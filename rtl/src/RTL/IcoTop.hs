@@ -42,7 +42,7 @@ system raminit ins sram2h urx = (outs, hsync, vsync, vid, sramA, sramW, h2sram, 
     (ioreq0 :> ioreq1 :> ioreq2 :> ioreq3 :> ioreq4 :> ioreq5 :> _, ioch1) = ioDecoder @3 ioreqOthers
     iorespOthers = responseMux (ioresp0 :> ioresp1 :> ioresp2 :> ioresp3 :> ioresp4 :> ioresp5 :> repeat (pure 0)) ioch1
 
-    ram r w = ramRewrite $ blockRamFile (SNat @4096) raminit r w
+    ram = ramRewrite . singlePorted (blockRamFile (SNat @4096) raminit)
 
     (iorespSram, sramA, sramW, h2sram) = extsram sram2h ioreqSram
 

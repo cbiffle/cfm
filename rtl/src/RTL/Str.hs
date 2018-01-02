@@ -15,17 +15,18 @@ import RTL.CoreInterface
 
 -- | Combinational datapath for CFM core.
 datapath :: MS -> IS -> (MS, OS)
-datapath (MS dptr rptr pc t lf lastSpace) (IS m i n r) =
+datapath (MS dptr rptr pc t bs lastSpace) (IS m i n r) =
   let -- things that do not depend on instruction decoding
-      -- Factored pattern: a mux that depends on the state of the Load Flag
-      -- register, for doing something different during a load cycle.
-      duringLoadElse :: t -> t -> t
-      a `duringLoadElse` b = if lf then a else b
+      instValid = bs == BusFetch
+      -- Factored pattern: a mux that depends on the state of the bus,
+      -- for doing something different during a load/store cycle.
+      duringLoadStoreElse :: t -> t -> t
+      a `duringLoadStoreElse` b = if instValid then b else a
 
       -- Common stack logic. Preserves stack during load, otherwise applies the
       -- delta and write operation.
       stack :: SP -> (SDelta, Maybe Cell) -> (SP, SDelta, Maybe Cell)
-      stack ptr ~(d, wr) = (ptr, 0, Nothing) `duringLoadElse`
+      stack ptr ~(d, wr) = (ptr, 0, Nothing) `duringLoadStoreElse`
                            (ptr + pack (signExtend d), d, wr)
 
       pc1 = pc + 1
@@ -52,10 +53,13 @@ datapath (MS dptr rptr pc t lf lastSpace) (IS m i n r) =
             NotLit (ALU _ _ _ tr _ _ d _) -> (d, if tr then Just t else Nothing)
             _                             -> (0, Nothing)
       -- Register updates other than the ALU
-      lf' = not lf && case inst of
-            NotLit (ALU _ MemAtT _ _ _ _ _ _) -> True
-            _                                 -> False
-      pc' = pc `duringLoadElse` case inst of
+      bs' = case inst of
+            _ | not instValid                 -> BusFetch
+            NotLit (ALU _ MemAtT _ _ _ _ _ _) -> BusData True
+            NotLit (ALU _ _ _ _ True _ _ _)   -> BusData False
+            _                                 -> BusFetch
+
+      pc' = pc `duringLoadStoreElse` case inst of
             NotLit (Jump tgt)               -> zeroExtend tgt
             NotLit (Call tgt)               -> zeroExtend tgt
             NotLit (JumpZ tgt) | t == 0     -> zeroExtend tgt
@@ -87,26 +91,42 @@ datapath (MS dptr rptr pc t lf lastSpace) (IS m i n r) =
             NLshiftT -> n `leftShift` slice d3 d0 t
             Depth    -> rptr ++# dptr
             NULtT    -> signExtend lessThan
-      -- Bus output.
-      write = Nothing `duringLoadElse` case inst of
-            NotLit (ALU _ _ _ _ True _ _ _) -> Just (space, slice d14 d1 t, n)
-            _                               -> Nothing
+
+      mreq = case inst of
+            _ | not instValid                 -> Just (pc', Nothing)
+            NotLit (ALU _ MemAtT _ _ _ _ _ _) ->
+              if space == MSpace
+                then Just (slice d14 d1 t, Nothing)
+                else Nothing
+            NotLit (ALU _ _ _ _ True _ _ _)   ->
+              if space == MSpace
+                then Just (slice d14 d1 t, Just n)
+                else Nothing
+            _ -> Just (pc', Nothing)
+
+      ireq = Nothing `duringLoadStoreElse` case inst of
+            NotLit (ALU _ MemAtT _ _ _ _ _ _) | space == ISpace ->
+                Just (slice d14 d1 t, Nothing)
+            NotLit (ALU _ _ _ _ True _ _ _)   | space == ISpace->
+                Just (slice d14 d1 t, Just n)
+            _ -> Nothing
+
   in ( MS { _msDPtr = dptr'
           , _msRPtr = rptr'
           , _msPC = pc'
-          , _msLoadFlag = lf'
+          , _msBusState = bs'
           , _msLastSpace = space
-          , _msT = loadResult `duringLoadElse` case inst of
+          , _msT = case bs of
+              BusData True -> loadResult
+              BusData False -> t
+              BusFetch -> case inst of
                 Lit v -> zeroExtend v
                 _     -> t'
           }
-     , OS { _osBusReq = if lf'
-                  then case space of
-                    MSpace -> MReq (slice d14 d1 t) write
-                    ISpace -> IReq (slice d14 d1 t)
-                  else MReq pc' write
+     , OS { _osMReq = mreq
+          , _osIReq = ireq
           , _osDOp = (dptr', ddlt, dop)
           , _osROp = (rptr', rdlt, rop)
-          , _osFetch = not lf'
+          , _osFetch = bs' == BusFetch
           }
      )

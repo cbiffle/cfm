@@ -26,16 +26,18 @@ instance BitPack Space where
 instance Arbitrary Space where
   arbitrary = arbitraryBoundedEnum
 
-data BusReq = MReq SAddr (Maybe (Space, SAddr, Cell))
-                -- ^ An M-type request specifies a memory read and a write to
-                -- either memory or I/O space.
-            | IReq SAddr
-                -- ^ An I-type request specifies only an I/O read.
-            deriving (Eq, Show, Generic, ShowX, NFData)
+type BusReq = Maybe (SAddr, Maybe Cell)
 
-instance Arbitrary BusReq where
-  arbitrary = oneof [ MReq <$> arbitrary <*> arbitrary
-                    , IReq <$> arbitrary
+data BusState = BusFetch
+                -- ^ The bus was used to fetch; response is an instruction.
+              | BusData Bool
+                -- ^ The bus was used for something else. The bool flag
+                -- indicates that the bus response should be written to T.
+  deriving (Eq, Show, Generic, ShowX, NFData)
+
+instance Arbitrary BusState where
+  arbitrary = oneof [ pure BusFetch
+                    , BusData <$> arbitrary
                     ]
 
 data IS = IS
@@ -51,27 +53,26 @@ data MS = MS
   , _msRPtr :: SP
   , _msPC :: SAddr
   , _msT :: Cell
-  , _msLoadFlag :: Bool
+  , _msBusState :: BusState
   , _msLastSpace :: Space
-    -- Note: if loads don't corrupt T, this value is present in the MSB.
-    -- Currently loads defensively corrupt T.
   } deriving (Show, Generic, ShowX, NFData)
 makeLenses ''MS
 
--- At reset, pretend we're in the second phase of a load. The undefined initial
--- memory contents will overwrite T and then we'll fetch 0.
+-- At reset, pretend we're in the second phase of a store. We'll ignore the
+-- undefined memory contents and then fetch 0.
 instance Default MS where
   def = MS
     { _msDPtr = 0
     , _msRPtr = 0
     , _msPC = 0
     , _msT = 0
-    , _msLoadFlag = True
+    , _msBusState = BusData False
     , _msLastSpace = MSpace
     }
 
 data OS = OS
-  { _osBusReq :: BusReq
+  { _osMReq :: BusReq
+  , _osIReq :: BusReq
   , _osDOp :: (SP, SDelta, Maybe Cell)
   , _osROp :: (SP, SDelta, Maybe Cell)
   , _osFetch :: Bool

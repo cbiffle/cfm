@@ -3,6 +3,7 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE BinaryLiterals #-}
+{-# LANGUAGE TupleSections #-}
 module RTL.Core where
 
 import Clash.Prelude hiding (readIO, read)
@@ -23,13 +24,15 @@ coreWithStacks
   => Signal dom Cell    -- ^ read response from memory
   -> Signal dom Cell    -- ^ read response from I/O
   -> ( Signal dom BusReq
+     , Signal dom BusReq
      , Signal dom Bool
-     )  -- ^ Bus request and fetch signal, respectively.
-coreWithStacks mresp ioresp = (busReq, fetch)
+     )  -- ^ Memory and I/O Bus requests and fetch signal, respectively.
+coreWithStacks mresp ioresp = (mreq, ireq, fetch)
   where
     coreOuts = core $ IS <$> mresp <*> ioresp <*> n <*> r
 
-    busReq = coreOuts <&> (^. osBusReq)
+    mreq = coreOuts <&> (^. osMReq)
+    ireq = coreOuts <&> (^. osIReq)
     fetch = coreOuts <&> (^. osFetch)
 
     n = stack "D" $ coreOuts <&> (^. osDOp)
@@ -48,7 +51,7 @@ stack name op = readNew (blockRamPow2 (repeat $ errorX name))
 -- an I/O bridge, exposing the I/O bus.
 coreWithRAM
   :: (HasClockReset dom gated synchronous)
-  => (Signal dom SAddr -> Signal dom (Maybe (SAddr, Cell)) -> Signal dom Cell)
+  => (Signal dom (Maybe (SAddr, Maybe Cell)) -> Signal dom Cell)
     -- ^ RAM constructor
   -> Signal dom Cell    -- ^ I/O read response, valid when addressed.
   -> ( Signal dom (Maybe (SAddr, Maybe Cell))
@@ -56,25 +59,16 @@ coreWithRAM
      ) -- ^ I/O bus outputs and fetch signal, respectively.
 coreWithRAM ram ioresp = (ioreq, fetch)
   where
-    (busReq, fetch) = coreWithStacks mresp ioresp
+    (mreq, ioreq, fetch) = coreWithStacks mresp ioresp
+    mresp = ram mreq
 
-    -- Memory reads on a blockRam do not have an enable line, i.e. a read
-    -- occurs every cycle whether we like it or not. Since the reads are not
-    -- effectful, that's okay, and we route the address bits to RAM independent
-    -- of the type of request to save hardware.
-    mread = busReq <&> \b -> case b of
-      MReq a _ -> a
-      IReq a   -> a
-
-    -- Memory writes can only occur from an MReq against MSpace.
-    mwrite = busReq <&> \b -> case b of
-      MReq _ (Just (MSpace, a, v)) -> Just (a, v)
-      _                            -> Nothing
-
-    -- IO requests are either IReqs (reads) or MReqs against ISpace (writes).
-    ioreq = busReq <&> \b -> case b of
-      IReq a                       -> Just (a, Nothing)
-      MReq _ (Just (ISpace, a, v)) -> Just (a, Just v)
-      _                            -> Nothing
-
-    mresp = ram mread mwrite
+singlePorted
+  :: (Signal dom SAddr -> Signal dom (Maybe (SAddr, Cell)) -> Signal dom Cell)
+  -> Signal dom (Maybe (SAddr, Maybe Cell))
+  -> Signal dom Cell
+singlePorted ram mreq = ram rd wr
+  where
+    rd = maybe undefined fst <$> mreq
+    wr = mreq <&> \r -> case r of
+                          Just (a, Just v) -> Just (a, v)
+                          _ -> Nothing

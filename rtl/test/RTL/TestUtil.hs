@@ -18,16 +18,16 @@ newtype Fetch = Fetch MS deriving (Show)
 
 instance Arbitrary Fetch where
   arbitrary = Fetch <$> (MS <$> arbitrary <*> arbitrary <*> arbitrary
-                            <*> arbitrary <*> pure False <*> arbitrary)
+                            <*> arbitrary <*> pure BusFetch <*> arbitrary)
 
 newtype Load = Load MS deriving (Show)
 
 instance Arbitrary Load where
   arbitrary = Load <$> (MS <$> arbitrary <*> arbitrary <*> arbitrary
-                           <*> arbitrary <*> pure True <*> arbitrary)
+                           <*> arbitrary <*> pure (BusData True) <*> arbitrary)
 
 isWrite :: BusReq -> Bool
-isWrite (MReq _ (Just _)) = True
+isWrite (_, _, Just _) = True
 isWrite _ = False
 
 genspec :: (MS -> IS -> (MS, OS)) -> Spec
@@ -36,7 +36,7 @@ genspec sf = do
     let u = errorX "inputs undefined at reset"
         inputs = IS u u u u
     it "fetches first instruction from memory, no write" $ property $
-      sf def inputs ^. _2 . osBusReq `shouldBe` MReq 0 Nothing
+      sf def inputs ^. _2 . osBusReq `shouldBe` (MSpace, 0, Nothing)
     it "starts out stack at 0" $ property $
       sf def inputs ^. _2 . osDOp == (0, 0, Nothing)
     it "starts out return stack at 0" $ property $
@@ -49,7 +49,7 @@ genspec sf = do
     it "doesn't write Return" $ property $ test isNothing (_2 . osROp . _3)
     it "doesn't write Data" $ property $ test isNothing (_2 . osDOp . _3)
     it "fetches current" $ property $ \(Load s) ->
-      go s u u ^. _2 . osBusReq `shouldBe` MReq (s ^. msPC) Nothing
+      go s u u ^. _2 . osBusReq `shouldBe` (MSpace, s ^. msPC, Nothing)
     it "asserts fetch" $ property $ \(Load s) ->
       go s u u ^. _2 . osFetch `shouldBe` True
     it "addresses D" $ property $ \(Load s) ->
@@ -59,7 +59,7 @@ genspec sf = do
 
     let stdelta f l = \(Load s) -> (go s u u ^. _1 . l) == f (s ^. l)
 
-    it "clears load flag" $ property $ stdelta (const False) msLoadFlag
+    it "returns to fetch state" $ property $ stdelta (const BusFetch) msBusState
     it "preserves DPtr" $ property $ stdelta id msDPtr
     it "preserves RPtr" $ property $ stdelta id msRPtr
     it "preserves PC" $ property $ stdelta id msPC
@@ -87,7 +87,7 @@ genspec sf = do
     instDoesNotWriteM mklit
     instDoesNotWriteR mklit
     instPreservesRPtr mklit
-    instLeavesLFClear mklit
+    instRemainsInFetchState mklit
     instFetches mklit
     it "increments DPtr" $ instChanges mklit msDPtr (+1)
     it "advances PC" $ instChanges mklit msPC (+1)
@@ -105,7 +105,7 @@ genspec sf = do
     instDoesNotWriteM mkjmp
     instDoesNotWriteR mkjmp
     instDoesNotWriteD mkjmp
-    instLeavesLFClear mkjmp
+    instRemainsInFetchState mkjmp
     instPreservesDPtr mkjmp
     instPreservesRPtr mkjmp
     instFetches mkjmp
@@ -124,7 +124,7 @@ genspec sf = do
     instDoesNotWriteM mkjmp
     instDoesNotWriteR mkjmp
     instDoesNotWriteD mkjmp
-    instLeavesLFClear mkjmp
+    instRemainsInFetchState mkjmp
     instPreservesRPtr mkjmp
     instFetches mkjmp
 
@@ -147,7 +147,7 @@ genspec sf = do
         mkcall x = 0b010 ++# x
     instDoesNotWriteM mkcall
     instDoesNotWriteD mkcall
-    instLeavesLFClear mkcall
+    instRemainsInFetchState mkcall
     instPreservesDPtr mkcall
     instFetches mkcall
 
@@ -239,10 +239,10 @@ genspec sf = do
           (slice d5 d5 x == 0) ==> -- ignore simultaneous loads/stores
             go' 12 s x d r ^. _2 . osBusReq `shouldBe`
               case msb (s ^. msT) of
-                1 -> IReq $ slice d14 d1 (s ^. msT)
-                0 -> MReq (slice d14 d1 (s ^. msT)) Nothing
-        it "sets load flag" $ property $ \(Fetch s) x d r ->
-          go' 12 s x d r ^. _1 . msLoadFlag == True
+                1 -> (ISpace, slice d14 d1 (s ^. msT), Nothing)
+                0 -> (MSpace, slice d14 d1 (s ^. msT), Nothing)
+        it "enters load state" $ property $ \(Fetch s) x d r ->
+          go' 12 s x d r ^. _1 . msBusState == BusData True
         it "does not assert fetch" $ property $ \(Fetch s) x d r ->
           go' 12 s x d r ^. _2 . osFetch `shouldBe` False
 
@@ -263,8 +263,9 @@ genspec sf = do
     \(Fetch s) x -> isNothing $ sf s (IS (mkinst x) u u u) ^. _2 . osDOp . _3
       where u = errorX "must be unused"
   
-  instLeavesLFClear mkinst = it "leaves load flag clear" $ property $
-    \(Fetch s) x -> not $ sf s (IS (mkinst x) u u u) ^. _1 . msLoadFlag
+  instRemainsInFetchState mkinst = it "remains in fetch state" $ property $
+    \(Fetch s) x ->
+      sf s (IS (mkinst x) u u u) ^. _1 . msBusState `shouldBe` BusFetch
       where u = errorX "must be unused"
   
   instChanges mkinst l f = property $
@@ -281,7 +282,7 @@ genspec sf = do
     it "right address" $ property $
       \(Fetch s) x ->
         let (s', o) = sf s (IS (mkinst x) u u u)
-        in o ^. osBusReq `shouldBe` MReq (s' ^. msPC) Nothing
+        in o ^. osBusReq `shouldBe` (MSpace, s' ^. msPC, Nothing)
     it "asserts fetch" $ property $
       \(Fetch s) x ->
         let (s', o) = sf s (IS (mkinst x) u u u)

@@ -3,7 +3,6 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE BinaryLiterals #-}
 {-# LANGUAGE TypeApplications #-}
-{-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE TypeFamilies #-}
 module RTL.Beh where
 
@@ -22,18 +21,19 @@ datapath m = swap . runReader (runStateT cycle m)
 
 cycle :: (MonadState MS m, MonadReader IS m) => m OS
 cycle = do
-  lf <- use msLoadFlag
-  if lf
-    then finishLoad
-    else executeNormally
+  bs <- use msBusState
+  case bs of
+    BusFetch -> executeNormally
+    BusData ld -> finishLoadStore ld
 
-finishLoad :: (MonadState MS m, MonadReader IS m) => m OS
-finishLoad = do
-  lastSpace <- use msLastSpace
-  assign msT =<< view (case lastSpace of
-                         ISpace -> isIData
-                         MSpace -> isMData)
-  msLoadFlag .= False
+finishLoadStore :: (MonadState MS m, MonadReader IS m) => Bool -> m OS
+finishLoadStore ld = do
+  when ld $ do
+    lastSpace <- use msLastSpace
+    assign msT =<< view (case lastSpace of
+                           ISpace -> isIData
+                           MSpace -> isMData)
+  msBusState .= BusFetch
   fetch
     <&> osFetch .~ True
 
@@ -94,17 +94,25 @@ executeNormally = do
                   else Nothing
       -- Bit 5: N -> [T]
       let space = unpack (msb t)
-      let write = if nm
-                    then Just (space, slice d14 d1 t, n)
-                    else Nothing
 
-      let busReq = if t' == MemAtT
-                     then case space of
-                            MSpace -> MReq (slice d14 d1 t) write
-                            ISpace -> IReq (slice d14 d1 t)
-                     else MReq pc' write
+      let busState
+            | t' == MemAtT = BusData True
+            | nm           = BusData False
+            | otherwise    = BusFetch
 
-      msLoadFlag .= (t' == MemAtT)
+      let mreq
+            | t' == MemAtT = if space == MSpace then Just (slice d14 d1 t, Nothing)
+                                                else Nothing
+            | nm = if space == MSpace then Just (slice d14 d1 t, Just n)
+                                      else Nothing
+            | otherwise = Just (pc', Nothing)
+
+      let ireq
+            | t' == MemAtT && space == ISpace = Just (slice d14 d1 t, Nothing)
+            | nm && space == ISpace           = Just (slice d14 d1 t, Just n)
+            | otherwise = Nothing
+
+      msBusState .= busState
       msLastSpace .= space
 
       depth <- use msDPtr
@@ -132,12 +140,13 @@ executeNormally = do
         NULtT    -> signExtend $ pack $ n < t
 
       outputs
-        <&> osBusReq .~ busReq
+        <&> osMReq .~ mreq
+        <&> osIReq .~ ireq
         <&> osDOp . _2 .~ dd
         <&> osDOp . _3 .~ dop
         <&> osROp . _2 .~ rd
         <&> osROp . _3 .~ rop
-        <&> osFetch .~ (t' /= MemAtT)
+        <&> osFetch .~ (t' /= MemAtT && not nm)
 
 next :: (MonadState MS m) => m OS
 next = do
@@ -148,14 +157,15 @@ fetch :: (MonadState MS m) => m OS
 fetch = do
   pc <- use msPC
   outputs
-    <&> osBusReq .~ MReq pc Nothing
+    <&> osMReq .~ Just (pc, Nothing)
     <&> osFetch .~ True
 
 outputs :: (MonadState MS m) => m OS
 outputs = do
   dsp <- use msDPtr
   rsp <- use msRPtr
-  pure $ OS (errorX "busreq undefined")
+  pure $ OS (errorX "mreq undefined")
+            Nothing
             (dsp, 0, Nothing)
             (rsp, 0, Nothing)
             (errorX "fetch undefined")

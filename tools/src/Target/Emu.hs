@@ -36,7 +36,7 @@ makeLenses ''S
 withMem :: Vector Word16 -> S
 withMem mem = S
     { _sMS = def
-    , _sLastOS = OS (MReq 0 Nothing) (0, 0, Nothing) (0, 0, Nothing) False
+    , _sLastOS = OS Nothing Nothing (0, 0, Nothing) (0, 0, Nothing) False
     , _sMEM = mem
     , _sDS = V.replicate 256 0xDDDD
     , _sRS = V.replicate 256 0x4444
@@ -48,17 +48,18 @@ withMem mem = S
 inputs :: S -> IS
 inputs s = IS mdata idata ddata rdata
   where
-    mdata = fromIntegral $ case s ^. sLastOS . osBusReq of
-      MReq a _ -> fromMaybe (error "bad M addr") $ s ^? sMEM . ix (fromIntegral a)
-      IReq _ -> error "M access on I/O cycle"
+    mdata = fromIntegral $ case s ^. sLastOS . osMReq of
+      Just (a, _) ->
+        fromMaybe (error "bad M addr") $ s ^? sMEM . ix (fromIntegral a)
+      _ -> error "M access on I/O cycle"
 
-    idata = fromIntegral $ case s ^.sLastOS . osBusReq of
-      MReq _ _ -> error "I/O access on M cycle"
-      IReq 0 -> maybe 0 (const 0xFFFF) $ s ^. sH2T
-      IReq 1 -> fromMaybe (error "H2T empty") $ s ^. sH2T
-      IReq 2 -> maybe 0xFFFF (const 0) $ s ^. sT2H
-      IReq 3 -> error "T2H write only"
-      IReq a -> error $ "unimplemented I/O " ++ show a
+    idata = fromIntegral $ case s ^.sLastOS . osIReq of
+      Just (0, _) -> maybe 0 (const 0xFFFF) $ s ^. sH2T
+      Just (1, _) -> fromMaybe (error "H2T empty") $ s ^. sH2T
+      Just (2, _) -> maybe 0xFFFF (const 0) $ s ^. sT2H
+      Just (3, _) -> error "T2H write only"
+      Just (a, _) -> error $ "unimplemented I/O " ++ show a
+      _ -> error "I/O access on memory cycle"
 
     stack opl srl = case s ^. sLastOS . opl of
       (_, _, Just v) -> v
@@ -75,8 +76,8 @@ update (h, htake) s = S ms' os' mem' ds' rs' h2t' t2h' cyc'
     is = inputs s
     (ms', os') = R.datapath (s ^. sMS) is
 
-    mem' = case s ^. sLastOS . osBusReq of
-      MReq _ (Just (MSpace, a, v)) -> set (ix (fromIntegral a)) (fromIntegral v) (s ^. sMEM)
+    mem' = case s ^. sLastOS . osMReq of
+      Just (a, Just v) -> set (ix (fromIntegral a)) (fromIntegral v) (s ^. sMEM)
       _ -> s ^. sMEM
 
     ds' = case s ^. sLastOS . osDOp of
@@ -88,11 +89,11 @@ update (h, htake) s = S ms' os' mem' ds' rs' h2t' t2h' cyc'
       _ -> s ^. sRS
 
     h2t' | isJust h = h
-         | IReq 1 <- s ^. sLastOS . osBusReq = Nothing
+         | Just (1, Nothing) <- s ^. sLastOS . osIReq = Nothing
          | otherwise = s ^. sH2T
 
     t2h' | htake = Nothing
-         | MReq _ (Just (ISpace, 3, v)) <- s ^. sLastOS . osBusReq = Just (fromIntegral v)
+         | Just (3, Just v) <- s ^. sLastOS . osIReq = Just (fromIntegral v)
          | otherwise = s ^. sT2H
 
     cyc' = s ^. sCyc + 1

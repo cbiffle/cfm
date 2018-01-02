@@ -56,7 +56,7 @@ target :: (HasClockReset dom gated synchronous, KnownNat n)
           ) -- ^ Target-to-host channel, and H2T empty signal, respectively.
 target raminit h2t htake = (t2h, h2tEmpty)
   where
-    (ioreq, _) = coreWithRAM (blockRam raminit) ioresp
+    (ioreq, _) = coreWithRAM (singlePorted $ blockRam raminit) ioresp
     (t2h, h2tEmpty, ioresp) = host h2t htake (partialDecode ioreq)
 
 targetTop :: (KnownNat n)
