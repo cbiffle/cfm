@@ -17,6 +17,9 @@ program-icestick: build/icestick-prog.bin
 program-ico: build/ico-prog.bin
 	icoprog -p < $<
 
+program-ico-boot: build/test.hbin
+	icoprog -f -O 4 < $<
+
 build/test.hex: bf/bf.fs
 	mkdir -p build
 	stack --silent setup && \
@@ -46,6 +49,9 @@ build/icestick.asc:
 	icebram -v rtl/syn/random-4k.hex build/test.hex \
 	  < $< \
 	  > $@
+
+%.hbin: %.hex
+	cat $< | sed 's/^\([0-9a-f][0-9a-f]\)\(..\)/\2 \1/g' | xxd -r -p > $@
 
 %.bin: %.asc
 	icepack < $< > $@

@@ -124,4 +124,6 @@ Workflow implications:
 
 That's easy enough to do from within the system, if I get programming working.
 Harder to do from my desktop. Icoprog doesn't seem to support partial updates of
-flash (though I could patch it).
+flash (though I could patch it). (Update: it actually does, with the -O flag.)
+
+
