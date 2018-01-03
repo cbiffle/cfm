@@ -17,11 +17,11 @@ program-icestick: build/icestick-prog.bin
 program-ico: build/ico-prog.bin
 	icoprog -p < $<
 
-build/test.hex: tools/test.fs
+build/test.hex: bf/bf.fs
 	mkdir -p build
 	stack --silent setup && \
 	  stack --silent build && \
-	  stack --silent exec cfm-as tools/test.fs build/test.hex
+	  stack --silent exec bsforth $< $@
 
 %.readmemb: %.hex
 	ruby -e 'STDIN.each_line { |line| printf("%016b\n", line.to_i(16)) }' \
