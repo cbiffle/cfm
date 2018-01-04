@@ -8,45 +8,45 @@
 \ SPI flash unselected.
 
 \ Assembler primitives
-0x6023 alu: !a            ( a b -- b )
-0x6081 alu: dup           ( x -- x x )
-0x6103 alu: drop          ( x -- )
-0x6123 alu: !d            ( a b -- a )
-0x6147 alu: >r            ( a --  R: -- a )
-0x6180 alu: swap          ( a b -- b a )
-0x6181 alu: over          ( a b -- a b a )
-0x6203 alu: +             ( a b -- a+b)
-0x6303 alu: and           ( a b -- a&b)
-0x6403 alu: or            ( a b -- a|b)
-0x6703 alu: =             ( a b -- a=b )
-0x6781 alu: 2dup_=        ( a b -- a b a=b )
-0x6903 alu: rshift        ( a b -- a>>b )
-0x6a03 alu: -             ( a b -- a-b)
-0x6c00 alu: @             ( x -- [x] )
-0x6d03 alu: lshift        ( a b -- a<<b )
+$6023 alu: !a            ( a b -- b )
+$6081 alu: dup           ( x -- x x )
+$6103 alu: drop          ( x -- )
+$6123 alu: !d            ( a b -- a )
+$6147 alu: >r            ( a --  R: -- a )
+$6180 alu: swap          ( a b -- b a )
+$6181 alu: over          ( a b -- a b a )
+$6203 alu: +             ( a b -- a+b)
+$6303 alu: and           ( a b -- a&b)
+$6403 alu: or            ( a b -- a|b)
+$6703 alu: =             ( a b -- a=b )
+$6781 alu: 2dup_=        ( a b -- a b a=b )
+$6903 alu: rshift        ( a b -- a>>b )
+$6a03 alu: -             ( a b -- a-b)
+$6c00 alu: @             ( x -- [x] )
+$6d03 alu: lshift        ( a b -- a<<b )
 
 
 2 org \ leave room for the reset vector
 
 \ Port definitions
-0x8002 constant OUTSET
-0x8004 constant OUTCLR
-0x9000 constant IN
+$8002 constant OUTSET
+$8004 constant OUTCLR
+$9000 constant IN
 
 \ Loaded RAM region
 0 constant RAM_BEGIN
-0x8000 constant RAM_END
+$8000 constant RAM_END
 
-: select 0x800 OUTCLR ! ;
-: deselect 0x800 OUTSET ! ;
+: select $800 OUTCLR ! ;
+: deselect $800 OUTSET ! ;
 
 : spibits   ( data n -- data' )
   swap
-  0x400 over 15 rshift if OUTSET else OUTCLR then !
+  $400 over 15 rshift if OUTSET else OUTCLR then !
   1 lshift
-  0x200 OUTSET !    \ sclk high
+  $200 OUTSET !    \ sclk high
   IN @ 5 rshift 1 and or
-  0x200 OUTCLR !    \ sclk low
+  $200 OUTCLR !    \ sclk low
   swap
   1 - dup if spibits exit then
   drop ;
@@ -68,17 +68,17 @@
 \ to release the SPI bus. Until it does so, we can't talk to the Flash.
 : poll
   select
-  0xAB00 >spi 0 >spi
+  $AB00 >spi 0 >spi
   0 8 spibits
   deselect
-  dup 0 =  swap 0xFF = or if poll exit then ;
+  dup 0 =  swap $FF = or if poll exit then ;
   
 : go
   deselect
   poll
 
   select
-  0x0304 >spi 0x0000 >spi
+  $0304 >spi $0000 >spi
   RAM_END RAM_BEGIN (read)
   deselect
 

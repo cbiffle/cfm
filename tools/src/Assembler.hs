@@ -88,10 +88,14 @@ find :: String -> Asm Def
 find n = do
   md <- gets (M.lookup n . asDict)
   case md of
-    Nothing -> case reads n of
-      [(x, "")] -> pure (InlineLit x)
-      _         -> throwError ("use of unknown word " ++ n)
+    Nothing -> number n
     Just d -> pure d
+
+number :: String -> Asm Def
+number ('$' : rest) = number $ '0' : 'x' : rest
+number n = case reads n of
+  [(x, "")] -> pure (InlineLit x)
+  _         -> throwError ("use of unknown word " ++ n)
 
 store :: Val -> Int -> Asm ()
 store v a = do
