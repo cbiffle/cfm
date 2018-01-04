@@ -26,6 +26,12 @@ build/test.hex: bf/bf.fs
 	  stack --silent build && \
 	  stack --silent exec bsforth $< $@
 
+build/boot.hex: bios/boot.fs
+	mkdir -p build
+	stack --silent setup && \
+	  stack --silent build && \
+	  stack --silent exec cfm-as $< $@
+
 %.readmemb: %.hex
 	ruby -e 'STDIN.each_line { |line| printf("%016b\n", line.to_i(16)) }' \
 	  < $< \
@@ -45,13 +51,13 @@ build/icestick.asc:
 	rtl/syn/syn-1k.sh
 	cp rtl/syn/out/syn1k.asc build/icestick.asc
 
-%-prog.asc: %.asc build/test.hex
-	icebram -v rtl/syn/random-4k.hex build/test.hex \
+build/ico-prog.asc: build/ico.asc build/boot.hex
+	icebram -v rtl/syn/random-256.hex build/boot.hex \
 	  < $< \
 	  > $@
 
 %.hbin: %.hex
-	cat $< | sed 's/^\([0-9a-f][0-9a-f]\)\(..\)/\2 \1/g' | xxd -r -p > $@
+	xxd -r -p < $< > $@
 
 %.bin: %.asc
 	icepack < $< > $@

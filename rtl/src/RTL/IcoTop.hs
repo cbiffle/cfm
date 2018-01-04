@@ -7,8 +7,6 @@
 module RTL.IcoTop where
 
 import Clash.Prelude hiding (readIO, read)
-import Data.Maybe (isJust)
-import Control.Lens ((<&>))
 import CFM.Types
 import RTL.IOBus
 import RTL.IRQ
@@ -41,17 +39,17 @@ system raminit ins sram2h urx = (outs, hsync, vsync, vid, sramA, sramW, h2sram, 
     (ioreq0 :> ioreq1 :> ioreq2 :> ioreq3 :> ioreq4 :> ioreq5 :> _, ioch1) = ioDecoder @3 ioreq
     ioresp = responseMux (ioresp0 :> ioresp1 :> ioresp2 :> ioresp3 :> ioresp4 :> ioresp5 :> repeat (pure 0)) ioch1
 
-    ram = ramRewrite $ mux shadowed iram sram2h
-    shadowed = regEn False (isJust <$> mreq) $
-               mreq <&> \r -> case r of
-                 Just (a, _) -> slice d13 d12 a == 0
-                 _ -> undefined
+    ram = ramRewrite $ mux shadowed romout sram2h
+    -- shadowed will go to False on the second fetch0
+    shadowed = regEn True fetch0 $
+               regEn True fetch0 $
+               pure False
 
-    mreqi = mreq <&> \r -> case r of
-                 Just (a, v) | slice d13 d12 a == 0 -> Just (a, v)
-                 _ -> Nothing
+    fetch0 = (&&) <$> fetch <*> (mreq .==. pure (Just (0, Nothing)))
+
+    romread = maybe undefined fst <$> mreq
      
-    iram = singlePorted (blockRamFile (SNat @4096) raminit) mreqi
+    romout = blockRamFile (SNat @256) raminit romread (pure Nothing)
     (_, sramA, sramW, h2sram) = extsram undefined mreq
 
     -- I/O devices
@@ -98,4 +96,4 @@ topEntity :: Clock System 'Source
              , Signal System Cell  -- SRAM data
              , Signal System Bit
              )
-topEntity c r = withClockReset c r $ system "random-4k.readmemb"
+topEntity c r = withClockReset c r $ system "random-256.readmemb"
