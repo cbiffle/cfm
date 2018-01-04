@@ -37,22 +37,16 @@
 0 constant RAM_BEGIN
 0x8000 constant RAM_END
 
-: >pin  ( ? mask -- )
-  swap if OUTSET else OUTCLR then !d drop ;
-  \ 7 cells
-
-: >cs_n 0x800 >pin ;
-: >mosi 0x400 >pin ;
-: >sclk 0x200 >pin ;
-  \ 2 cells ea
+: select 0x800 OUTCLR ! ;
+: deselect 0x800 OUTSET ! ;
 
 : spibits   ( data n -- data' )
   swap
-  dup 15 rshift >mosi
+  0x400 over 15 rshift if OUTSET else OUTCLR then !
   1 lshift
-  1 >sclk
+  0x200 OUTSET !    \ sclk high
   IN @ 5 rshift 1 and or
-  0 >sclk
+  0x200 OUTCLR !    \ sclk low
   swap
   1 - dup if spibits exit then
   drop ;
@@ -73,20 +67,20 @@
 \ for booting after loading the FPGA SRAM with icoprog, because icoprog is slow
 \ to release the SPI bus. Until it does so, we can't talk to the Flash.
 : poll
-  0 >cs_n
+  select
   0xAB00 >spi 0 >spi
   0 8 spibits
-  1 >cs_n
+  deselect
   dup 0 =  swap 0xFF = or if poll exit then ;
   
 : go
-  1 >cs_n
+  deselect
   poll
 
-  0 >cs_n
+  select
   0x0304 >spi 0x0000 >spi
   RAM_END RAM_BEGIN (read)
-  1 >cs_n
+  deselect
 
   0 >r ;
 
