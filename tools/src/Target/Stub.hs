@@ -41,6 +41,7 @@ debugStub = foldl' (\v (a, i) -> V.replace a i v)
 
             variable last-error
             : err? last-error @ ;
+            : 0err 0 last-error ! ;
 
             0x8000 constant in-ready?   ( reads non-zero when a word awaits )
             0x8002 constant in-value    ( reads as last word from host, clears in-ready)
@@ -65,6 +66,7 @@ debugStub = foldl' (\v (a, i) -> V.replace a i v)
                 if drop
                 else @ >host
                 then
+                0err
                 debug-loop exit
               then
               1 over = if drop  ( poke )
@@ -84,6 +86,7 @@ debugStub = foldl' (\v (a, i) -> V.replace a i v)
                 if ( nothing )
                 else >host
                 then
+                0err
                 debug-loop exit
               then
               4 over = if drop  ( execute )
