@@ -1,4 +1,5 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE FlexibleContexts #-}
 module Main where
 
 import Prelude hiding (pi)
@@ -38,7 +39,7 @@ main = do
         liftIO $ print (fromIntegral h :: Integer)
         out <- liftIO $ openFile outputPath WriteMode
         forM_ [0 .. h-1] $ \a -> do
-          x <- tload a
+          Right x <- tload a
           liftIO $ hPrintf out "%04x\n" (fromIntegral x :: Int)
         liftIO $ hClose out
         cycles
@@ -93,6 +94,12 @@ instance (MonadTarget m) => MonadTarget (BsT m) where
 
   tstore a = lift . tstore a
 
+tload' :: (MonadTarget m, MonadError ForthErr m) => CellAddr -> m Cell
+tload' a = tload a >>= either (throwError . TargetError) pure
+
+tpop' :: (MonadTarget m, MonadError ForthErr m) => m Cell
+tpop' = tpop >>= either (throwError . TargetError) pure
+
 data ForthState = Interpreting | Compiling
      deriving (Eq, Show)
 
@@ -123,6 +130,7 @@ data ForthErr = WordExpected
               | UnknownWord String
               | BadState ForthState ForthState String
               | ParserPhase
+              | TargetError Cell
   deriving (Eq, Show)
 
 hostlog :: (MonadIO m) => String -> BsT m ()
@@ -131,14 +139,18 @@ hostlog m = liftIO $ putStrLn m
 bootstrap :: (MonadTarget m, MonadIO m)
           => BsT m () -> String -> m (Either ForthErr CellAddr)
 bootstrap a source = do
-  r <- runExceptT $ runStateT (unBsT (initializeTarget >> a)) s
+  let action = do
+        initializeTarget
+        a
+        readHere
+  r <- runExceptT $ runStateT (unBsT action) s
   case r of
     Left e -> pure $ Left e
-    Right (_, s') -> do
+    Right (h, s') -> do
       liftIO $ putStrLn "Frequency of fallback emulation after last evolution:"
       forM_ (M.toList (fsFallbacks s')) $ \(w, c) ->
         liftIO $ putStrLn $ w ++ ": " ++ show c
-      Right . word2wa <$> readHere
+      pure $ Right $ word2wa h
   where
     s = FS
       { fsInput = source
@@ -197,24 +209,24 @@ takeWord = do
   pure w
 
 -- | Reads the vocabulary head cell, giving the LFA of the latest definition.
-readLatest :: (MonadTarget m) => m CellAddr
-readLatest = word2wa <$> tload 2
+readLatest :: (MonadTarget m, MonadError ForthErr m) => m CellAddr
+readLatest = word2wa <$> tload' 2
 
 writeLatest :: (MonadTarget m) => CellAddr -> m ()
 writeLatest = tstore 2 . wa2word
 
 -- | Reads the dictionary pointer cell, giving the next free cell after the end
 -- of the dictionary.
-readHere :: (MonadTarget m) => m Cell
-readHere = tload 3
+readHere :: (MonadTarget m, MonadError ForthErr m) => m Cell
+readHere = tload' 3
 
 -- | Writes the dictionary pointer cell.
 writeHere :: (MonadTarget m) => Cell -> m ()
 writeHere = tstore 3
 
-readState :: (MonadTarget m) => m ForthState
+readState :: (MonadTarget m, MonadError ForthErr m) => m ForthState
 readState = do
-  f <- tload 5
+  f <- tload' 5
   if f /= 0
     then pure Compiling
     else pure Interpreting
@@ -224,13 +236,13 @@ writeState s = tstore 5 $ case s of
   Interpreting -> 0
   Compiling -> -1
 
-readFreeze :: (MonadTarget m) => m Cell
-readFreeze = tload 6
+readFreeze :: (MonadTarget m, MonadError ForthErr m) => m Cell
+readFreeze = tload' 6
 
 writeFreeze :: (MonadTarget m) => Cell -> m ()
 writeFreeze = tstore 6
 
-freeze :: (MonadTarget m) => m ()
+freeze :: (MonadTarget m, MonadError ForthErr m) => m ()
 freeze = readHere >>= writeFreeze
 
 -- | Searches for a word in the target dictionary. Returns its code field
@@ -243,7 +255,7 @@ lookupWord name = do
     Just xt -> lookupWordT name xt
 
 -- | Host-emulated version of lookupWord.
-lookupWordH :: (MonadTarget m) => String -> m (Maybe (CellAddr, Cell))
+lookupWordH :: (MonadTarget m) => String -> BsT m (Maybe (CellAddr, Cell))
 lookupWordH nameS = readLatest >>= lookupWordFrom
   where
     name = nameFromString nameS
@@ -255,31 +267,32 @@ lookupWordH nameS = readLatest >>= lookupWordFrom
       if match
         then do
           let nl = fromIntegral $ length name
-          flags <- tload (lfa + 1 + nl)
+          flags <- tload' (lfa + 1 + nl)
           pure $ Just (lfa + 1 + nl + 1, flags)
-        else tload lfa >>= lookupWordFrom . word2wa
+        else tload' lfa >>= lookupWordFrom . word2wa
 
     nameEqual [] _ = pure True
     nameEqual (w : ws) a = do
-      w' <- tload a
+      w' <- tload' a
       if w' == w
         then nameEqual ws (a + 1)
         else pure False
 
 -- | Target-implemented version of lookupWord based on SFind.
-lookupWordT :: (MonadTarget m) => String -> CellAddr -> m (Maybe (CellAddr, Cell))
+lookupWordT :: (MonadTarget m)
+            => String -> CellAddr -> BsT m (Maybe (CellAddr, Cell))
 lookupWordT name xt = do
   h <- (80 +) . aligned <$> readHere
   zipWithM_ tstore [word2wa h ..] $ nameFromString name
   tpush (h + 1)
   tpush (fromIntegral (length name))
   tcall xt
-  flag <- tpop
+  flag <- tpop'
   if flag == 0
-    then tpop >> tpop >> pure Nothing
+    then tpop' >> tpop' >> pure Nothing
     else do
-      flags <- tpop
-      newXt <- tpop
+      flags <- tpop'
+      newXt <- tpop'
       pure $ Just (word2wa newXt, flags)
 
 -- | Encloses a cell into the dictionary. The cell is treated as data and is
@@ -306,7 +319,7 @@ literal w = do
 compile :: (MonadTarget m) => Cell -> BsT m ()
 compile w = cached_1_0 CompileCommaXT w $ do
   -- Fetch the instruction on the far end of the call.
-  dst <- unpack <$> tload (word2wa w)
+  dst <- unpack <$> tload' (word2wa w)
   case dst of
     -- Returning ALU instruction?
     NotLit (ALU True t tn tr nm _ (-1) dadj) ->
@@ -328,7 +341,7 @@ rawInst i = do
   if fp == h
     then rawComma i
     else do -- Previous instruction is not frozen, we can do stuff.
-      pi <- tload $ word2wa (h - 2)
+      pi <- tload' $ word2wa (h - 2)
       case () of
         -- (ALU without return) - (return) fusion
         _ | (pi .&. 0x704C) == 0x6000 && i == 0x700C -> fuse (pi .|. 0x100C)
@@ -414,7 +427,7 @@ fallback "constant" = do
   interpretationOnly "constant"
 
   xt <- requireWord "(docon)"
-  v <- tpop
+  v <- tpop'
   w <- nameFromString <$> takeWord
   createHeader w 0
   inst $ NotLit $ Call $ truncateB xt
@@ -429,7 +442,7 @@ fallback "variable" = do
 
 fallback "asm," = do
   interpretationOnly "asm,"
-  v <- tpop
+  v <- tpop'
   rawInst v
 
 fallback "[" = do
@@ -476,20 +489,20 @@ fallback "if" = do
 
 fallback "else" = do
   compileOnly "else"
-  ifA <- tpop
+  ifA <- tpop'
   readHere >>= tpush
   freeze
   inst $ NotLit $ Jump 0  -- placeholder
   h <- readHere
-  i <- tload (word2wa ifA)
+  i <- tload' (word2wa ifA)
   tstore (word2wa ifA) $ i .|. (h `shiftR` 1)
 
 fallback "then" = do
   compileOnly "then"
   h <- readHere
   freeze
-  a <- tpop
-  i <- tload (word2wa a)
+  a <- tpop'
+  i <- tload' (word2wa a)
   tstore (word2wa a) $ i .|. (h `shiftR` 1)
 
 fallback "<TARGET-EVOLVE>" = do
@@ -499,7 +512,7 @@ fallback "<TARGET-EVOLVE>" = do
 
 fallback "host." = do
   interpretationOnly "host."
-  v <- tpop
+  v <- tpop'
   hostlog $ show (fromIntegral v :: Integer)
 
 fallback "TARGET-PARSER:" = do

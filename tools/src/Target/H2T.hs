@@ -41,12 +41,12 @@ tget = do
 -- | Implementation factor of debug protocol commands: checks for the
 -- conventional 0 success code, and executes @action@ only if the command
 -- succeeded.
-checkResponse :: MonadH2T m => m x -> m x
+checkResponse :: (MonadH2T m) => m x -> m (Either Cell x)
 checkResponse action = do
   r <- tget
   if r == 0
-    then action
-    else error $ "target command failed: " ++ show r
+    then Right <$> action
+    else pure $ Left r
 
 newtype H2T m x = H2T { runH2T :: m x }
   deriving (Functor, Applicative, Monad, MonadIO)
