@@ -1,617 +1,610 @@
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 module Main where
 
 import Prelude hiding (pi)
 
-import Clash.Class.Resize (truncateB, zeroExtend)
-import Clash.Class.BitPack (pack, unpack)
-import Data.Bits
-import Data.Char (ord, isSpace, isHexDigit, digitToInt, isDigit)
-import Data.List (foldl')
-import qualified Data.Map.Strict as M
-import qualified Data.Set as S
-import Control.Monad.State.Strict
-import Control.Monad.Except
-import Text.Printf
 import System.Environment (getArgs)
 import System.Exit (exitWith, ExitCode(..))
 import System.IO (hClose, IOMode(WriteMode), openFile)
-
+import Text.Printf
+import Control.Monad.Except
+import Control.Monad.State
+import Clash.Class.Resize (truncateB)
+import Data.Bits
+import Data.Maybe (fromMaybe)
+import Data.Char (digitToInt)
+import Data.List (foldl')
+import Data.Word
 import CFM.Types
-import CFM.Inst
 import Target
 import Target.Emu
 
-main :: IO ()
-main = do
-  [inputPath, outputPath] <- getArgs
-  input <- readFile inputPath
-  putStrLn "Bootstrapping..."
-  c <- runEmu $ do
-    r <- bootstrap interpreter input
-    case r of
-      Left e -> liftIO $ do
-        print e
-        exitWith (ExitFailure 1)
-      Right h -> do
-        liftIO $ print (fromIntegral h :: Integer)
-        out <- liftIO $ openFile outputPath WriteMode
-        forM_ [0 .. h-1] $ \a -> do
-          Right x <- tload a
-          liftIO $ hPrintf out "%04x\n" (fromIntegral x :: Int)
-        liftIO $ hClose out
-        cycles
-  putStrLn $ "Cycles: " ++ show c
+{-
 
-type Name = [Cell]
+ABI notes:
 
-nameFromString :: String -> Name
+The shape of the system variables has changed. It's given by the SysVar enum.
 
-nameFromString [] = [0]
-nameFromString (c : cs) = w0 : packS cs
-  where
-    c2w = fromIntegral . ord
-    w0 = fromIntegral (length cs + 1) .|. (c2w c `shiftL` 8)
-    packS (x : y : rest) = (c2w x .|. (c2w y `shiftL` 8)) : packS rest
-    packS [x] = [c2w x]
-    packS [] = []
+The bootstrap now assumes the existence of user variables, and interacts with
+the ones listed in UVar.
 
--- | Converts a 'Cell' into the 'CellAddr' it would dereference as, by dropping
--- the LSB.
-word2wa :: Cell -> CellAddr
-word2wa x = truncateB (x `shiftR` 1)
+-}
 
-wa2word :: CellAddr -> Cell
-wa2word x = zeroExtend x `shiftL` 1
+------------------------------------------------------------------------------
+-- Our Monad.
 
-dropWhile' :: (a -> Bool) -> [a] -> [a]
-dropWhile' p s = case dropWhile p s of
-  [] -> []
-  (_ : rest) -> rest
-
-ret, invert :: Inst
-ret = NotLit $ ALU True T False False False (Res 0) (-1) 0
-invert = NotLit $ ALU False NotT False False False (Res 0) 0 0
-
-parseHex :: String -> Cell
-parseHex = foldl' (\n c -> n * 16 + fromIntegral (digitToInt c)) 0
-
-newtype BsT m x = BsT { unBsT :: StateT FS (ExceptT ForthErr m) x }
-  deriving (Functor, Applicative, Monad,
-            MonadState FS, MonadError ForthErr, MonadIO)
-
-instance MonadTrans BsT where
-  lift = BsT . lift . lift
-
-instance (MonadTarget m) => MonadTarget (BsT m) where
-  tload = lift . tload
-  tpush = lift . tpush
-  tcall = lift . tcall
-
-  tpop = lift tpop
-
-  tstore a = lift . tstore a
-
-tload' :: (MonadTarget m, MonadError ForthErr m) => CellAddr -> m Cell
-tload' a = tload a >>= either (throwError . TargetError) pure
-
-tpop' :: (MonadTarget m, MonadError ForthErr m) => m Cell
-tpop' = tpop >>= either (throwError . TargetError) pure
-
-data ForthState = Interpreting | Compiling
-     deriving (Eq, Show)
+newtype ForthT m x = ForthT { runForthT :: StateT FS (ExceptT ForthErr m) x }
+  deriving (Functor, Applicative, Monad, MonadError ForthErr, MonadIO)
 
 data FS = FS
-  { fsInput :: String
-  , fsCache :: M.Map KnownXT CellAddr
-  , fsFallbacks :: M.Map String Int
-  , fsParsers :: S.Set String
-  , fsMasked :: S.Set String
-  }
+  { fsInput :: [String]
+  , fsCatch :: Maybe Cell
+  , fsAsm :: Maybe Cell
+  } deriving (Eq, Show)
 
-data KnownXT = CommaXT
-             | CompileCommaXT
-             | SfindXT
-             | TickSourceXT
-             | ToInXT
-    deriving (Show, Eq, Enum, Bounded, Ord)
+instance MonadTrans ForthT where
+  lift = ForthT . lift . lift
 
-nameForXT :: KnownXT -> String
-nameForXT x = case x of
-  CommaXT         -> ","
-  CompileCommaXT  -> "compile,"
-  SfindXT         -> "sfind"
-  TickSourceXT    -> "'SOURCE"
-  ToInXT          -> ">IN"
-
-data ForthErr = WordExpected
-              | UnknownWord String
-              | BadState ForthState ForthState String
-              | ParserPhase
+data ForthErr = UnknownWord String
+              | PhaseError String
               | TargetError Cell
   deriving (Eq, Show)
 
-hostlog :: (MonadIO m) => String -> BsT m ()
-hostlog m = liftIO $ putStrLn m
+takeInputLine :: (Monad m) => ForthT m (Maybe String)
+takeInputLine = do
+  i <- ForthT $ gets fsInput
+  case i of
+    (l : ls) -> do
+      ForthT $ modify $ \s -> s { fsInput = ls }
+      pure $ Just l
+    [] -> pure Nothing
 
-bootstrap :: (MonadTarget m, MonadIO m)
-          => BsT m () -> String -> m (Either ForthErr CellAddr)
-bootstrap a source = do
-  let action = do
-        initializeTarget
-        a
-        readHere
-  r <- runExceptT $ runStateT (unBsT action) s
-  case r of
-    Left e -> pure $ Left e
-    Right (h, s') -> do
-      liftIO $ putStrLn "Frequency of fallback emulation after last evolution:"
-      forM_ (M.toList (fsFallbacks s')) $ \(w, c) ->
-        liftIO $ putStrLn $ w ++ ": " ++ show c
-      pure $ Right $ word2wa h
+------------------------------------------------------------------------------
+-- Wrapped target operations.
+pop :: MonadTarget m => ForthT m Cell
+pop = lift tpop >>= either (throwError . TargetError) pure
+
+push :: MonadTarget m => Cell -> ForthT m ()
+push x = lift $ tpush x
+
+peek :: MonadTarget m => Cell -> ForthT m Cell
+peek a = do
+  x <- lift (tload $ truncateB $ a `shiftR` 1)
+  either (throwError . TargetError) pure x
+
+poke :: MonadTarget m => Cell -> Cell -> ForthT m ()
+poke a = lift . tstore (truncateB $ a `shiftR` 1)
+
+peek8 :: MonadTarget m => Cell -> ForthT m Word8
+peek8 a = do
+  x <- peek a
+  pure $ fromIntegral $ if a .&. 1 /= 0
+                           then x `shiftR` 8
+                           else x
+
+poke8 :: MonadTarget m => Cell -> Word8 -> ForthT m ()
+poke8 a v = do
+  x <- peek a
+  poke a $ if a .&. 1 /= 0
+             then (x .&. 0x00FF) .|. (fromIntegral v `shiftL` 8)
+             else (x .&. 0xFF00) .|. fromIntegral v
+
+data TString = TString Cell Cell
+  deriving (Show)
+
+pokeString :: MonadTarget m => Cell -> String -> ForthT m TString
+pokeString a s = do
+  zipWithM_ poke8 [a..] $ map (fromIntegral . fromEnum) s
+  pure $ TString a $ fromIntegral $ length s
+
+peekString :: MonadTarget m => TString -> ForthT m String
+peekString (TString s n) = mapM (\a -> toEnum . fromIntegral <$> peek8 a)
+                                [s..(s+n-1)]
+
+------------------------------------------------------------------------------
+-- System variable access.
+
+data SysVar = ResetVector
+            | IrqVector
+            | U0
+            | RootWordlist
+            deriving (Eq, Show, Enum, Bounded)
+
+sysaddr :: SysVar -> Cell
+sysaddr = fromIntegral . (* 2) . fromEnum
+
+getsys :: (MonadTarget m) => SysVar -> ForthT m Cell
+getsys v = peek $ sysaddr v
+
+setsys :: MonadTarget m => SysVar -> Cell -> ForthT m ()
+setsys v = poke (sysaddr v)
+
+------------------------------------------------------------------------------
+-- User variable access.
+
+data UVar = HANDLER
+          | STATE
+          | DP
+          | FREEZEP
+          | SOURCE0
+          | SOURCE1
+          | ToIN
+          | BASE
+          | CURRENT
+          deriving (Eq, Show, Enum, Bounded)
+
+getu :: MonadTarget m => UVar -> ForthT m Cell
+getu v = do
+  u <- getsys U0
+  peek (fromIntegral (fromEnum v * 2) + u)
+
+setu :: MonadTarget m => UVar -> Cell -> ForthT m ()
+setu v x = do
+  u <- getsys U0
+  poke (fromIntegral (fromEnum v * 2) + u) x
+
+getSOURCE :: MonadTarget m => ForthT m TString
+getSOURCE = TString <$> getu SOURCE0 <*> getu SOURCE1
+
+setSOURCE :: MonadTarget m => TString -> ForthT m ()
+setSOURCE (TString s e) = setu SOURCE0 s >> setu SOURCE1 e
+
+------------------------------------------------------------------------------
+-- Initial image prep.
+
+initialUser :: Cell
+initialUser = 0x1FF0    -- TODO: base on RAM size
+
+inputBuffer :: Cell
+inputBuffer = initialUser - 80
+
+nameBuffer :: Cell
+nameBuffer = inputBuffer - 80
+
+initializeVars :: MonadTarget m => ForthT m ()
+initializeVars = do
+  mapM_ (uncurry setsys) [ (ResetVector,  0)
+                         , (IrqVector,    2)
+                         , (U0,           initialUser)
+                         , (RootWordlist, 0)
+                         ]
+  let numSysVars = fromEnum (maxBound @SysVar) + 1
+      initialHERE = fromIntegral $ numSysVars * 2
+  mapM_ (uncurry setu) [ (HANDLER, 0)
+                       , (STATE, 0)
+                       , (DP,      initialHERE)
+                       , (FREEZEP, initialHERE)
+                       , (SOURCE0, 0)
+                       , (SOURCE1, 0)
+                       , (ToIN, 0)
+                       , (BASE, 10)
+                       , (CURRENT, sysaddr RootWordlist)
+                       ]
+
+----------------
+-- Hosted wordlists.
+
+tick :: (MonadTarget m) => String -> ForthT m Cell
+tick n = do
+  ns <- pokeString nameBuffer n
+  docon <- find ns
+  case docon of
+    Nothing -> throwError $ PhaseError $ n ++ " must be defined already"
+    Just (xt, _) -> pure xt
+
+outside :: (MonadIO m, MonadTarget m) => [(String, ForthT m ())]
+outside =
+  [ ("(", emuParen)
+  , ("\\", emuWhack)
+  , (".(", emuDotParen)
+  , (":", emuColon)
+  , ("asm,", emuAsmComma)
+  , ("]", emuRBrack)
+  , ("constant", emuConstant)
+  , ("variable", emuVariable)
+  , ("'", emuTick)
+  , ("host.", emuHostDot)
+
+  , ("<TARGET-CATCH>", targetCatch)
+  , ("<TARGET-ASM>", targetAsm)
+  ]
+
+targetCatch :: (MonadTarget m) => ForthT m ()
+targetCatch = do
+  cxt <- tick "catch"
+  ForthT $ modify $ \s -> s { fsCatch = Just cxt }
+
+targetAsm :: (MonadTarget m) => ForthT m ()
+targetAsm = do
+  cxt <- tick "asm,"
+  ForthT $ modify $ \s -> s { fsAsm = Just cxt }
+
+emuParen :: (MonadTarget m) => ForthT m ()
+emuParen = do
+  TString s n <- getSOURCE
+  tin <- getu ToIN
+  TString s' n' <- skipWhileT (/= fromIntegral (fromEnum ')')) $
+                   TString (s+tin) (n-tin)
+  setu ToIN $ (s' + min n' 1) - s
+
+emuDotParen :: (MonadIO m, MonadTarget m) => ForthT m ()
+emuDotParen = do
+  TString s n <- getSOURCE
+  tin <- getu ToIN
+  TString s' n' <- skipWhileT (/= fromIntegral (fromEnum ')')) $
+                   TString (s+tin) (n-tin)
+  setu ToIN $ (s' + min n' 1) - s
+  text <- peekString $ TString (s+tin) (s' - (s+tin))
+  liftIO $ putStrLn text
+
+emuHostDot :: (MonadIO m, MonadTarget m) => ForthT m ()
+emuHostDot = do
+  x <- pop
+  liftIO $ print (fromIntegral x :: Int)
+
+emuWhack :: (MonadTarget m) => ForthT m ()
+emuWhack = do
+  TString _ n <- getSOURCE
+  setu ToIN n
+
+emuColon :: (MonadTarget m) => ForthT m ()
+emuColon = do
+  createCommon
+  setu STATE 1
+
+emuConstant :: (MonadTarget m) => ForthT m ()
+emuConstant = do
+  docon <- tick "(docon)"
+  createCommon
+  compileComma docon
+  pop >>= comma
+
+emuVariable :: (MonadTarget m) => ForthT m ()
+emuVariable = do
+  dovar <- tick "(dovar)"
+  createCommon
+  compileComma dovar
+  comma 0
+
+emuTick :: (MonadTarget m) => ForthT m ()
+emuTick = do
+  ns <- parseName
+  mdef <- find ns
+  case mdef of
+    Nothing -> peekString ns >>= throwError . UnknownWord
+    Just (xt, _) -> push xt
+
+createCommon :: (MonadTarget m) => ForthT m ()
+createCommon = do
+  align
+  h <- here
+  wl <- getu CURRENT
+  peek wl >>= comma
+  poke wl h
+  parseName >>= sComma
+  comma 0  -- flags
+
+inside :: (MonadIO m, MonadTarget m) => [(String, ForthT m ())]
+inside =
+  [ ("[", emuLBrack)
+  , (";", emuSemi)
+  , ("exit", emuExit)
+  , ("(", emuParen)
+  , ("\\", emuWhack)
+  , (".(", emuDotParen)
+  , ("if", emuIf)
+  , ("else", emuElse)
+  , ("then", emuThen)
+  , ("postpone", emuPostpone)
+  ]
+
+emuLBrack :: (MonadTarget m) => ForthT m ()
+emuLBrack = setu STATE 0
+
+emuRBrack :: (MonadTarget m) => ForthT m ()
+emuRBrack = setu STATE 1
+
+emuAsmComma :: (MonadTarget m) => ForthT m ()
+emuAsmComma = do
+  x <- lift tpop
+  either (throwError . TargetError) asmComma x
+
+emuExit :: (MonadTarget m) => ForthT m ()
+emuExit = asmComma 0x700C
+
+emuSemi :: (MonadTarget m) => ForthT m ()
+emuSemi = do
+  emuExit
+  emuLBrack
+
+emuIf, emuElse, emuThen :: (MonadTarget m) => ForthT m ()
+emuIf = markF 0x2000
+emuThen = pop >>= resolveF
+emuElse = do
+  x <- pop
+  markF 0
+  resolveF x
+
+emuPostpone :: (MonadTarget m) => ForthT m ()
+emuPostpone = do
+  ccxt <- tick "compile,"
+  n <- parseName
+  mdef <- find n
+  case mdef of
+    Nothing -> peekString n >>= throwError . UnknownWord
+    Just (xt, 0) -> do
+      literal xt
+      compileComma ccxt
+    Just (xt, _) -> compileComma xt
+
+markF :: (MonadTarget m) => Cell -> ForthT m ()
+markF x = do
+  freeze >>= push
+  asmComma x
+
+resolveF :: (MonadTarget m) => Cell -> ForthT m ()
+resolveF x = do
+  inst <- peek x
+  h <- freeze
+  poke x $ inst .|. (h `shiftR` 1)
+
+----------------
+-- Emulated text interpreter.
+
+skipWhileT :: (MonadTarget m) => (Word8 -> Bool) -> TString -> ForthT m TString
+skipWhileT _ s@(TString _ 0) = pure s
+skipWhileT f x@(TString s n) = do
+  c <- peek8 s
+  if f c
+    then skipWhileT f (TString (s + 1) (n - 1))
+    else pure x
+
+quitloop :: (MonadIO m, MonadTarget m) => ForthT m ()
+quitloop = do
+  line <- takeInputLine
+  case line of
+    Nothing -> pure ()
+    Just x -> do
+      ts <- pokeString inputBuffer x
+      setSOURCE ts
+      setu ToIN 0
+      interpret
+      quitloop
+
+interpret :: (MonadIO m, MonadTarget m) => ForthT m ()
+interpret = do
+  n <- parseName
+  case n of
+    TString _ 0 -> pure ()
+    _ -> do
+      mdef <- find n
+      s <- getu STATE
+      case mdef of
+        -- Normal definition in target:
+        Just (xt, 0) ->
+          if s /= 0
+            then compileComma xt
+            else execute xt
+        -- Immediate definition in target:
+        Just (xt, _) -> execute xt
+        -- Definition does not exist in target:
+        Nothing -> do
+          nameStr <- peekString n
+          fromMaybe (tryNumber nameStr) $ if s /= 0
+            then lookup nameStr inside
+            else lookup nameStr outside
+      interpret
+
+tryNumber :: (MonadTarget m) => String -> ForthT m ()
+tryNumber s = do
+  n <- tryNumber' s
+  st <- getu STATE
+  if st /= 0
+    then literal n
+    else lift $ tpush n
+
+tryNumber' :: (MonadTarget m) => String -> ForthT m Cell
+tryNumber' ['\'', c, '\''] = pure $ fromIntegral $ fromEnum c
+tryNumber' ('$' : s) = do
+  oldBase <- getu BASE
+  setu BASE 16
+  n <- (tryNumber' s)
+        `catchError` (\e -> setu BASE oldBase >> throwError e)
+  setu BASE oldBase
+  pure n
+tryNumber' ('-' : s) = negate <$> tryNumber' s
+
+tryNumber' s = do
+  b <- getu BASE
+  when (any (not . digitInBase b) s) (throwError $ UnknownWord s)
+  pure $ foldl' (\n c -> n * b + fromIntegral (digitToInt c)) 0 s
   where
-    s = FS
-      { fsInput = source
-      , fsCache = M.empty
-      , fsFallbacks = M.empty
-      , fsParsers = S.empty
-      , fsMasked = S.empty
-      }
+    digitInBase b c
+      | c >= '0' && c <= '9' = (fromEnum c - fromEnum '0') < fromIntegral b
+      | c >= 'a' = (fromEnum c - fromEnum 'a') + 10 < fromIntegral b
+      | c >= 'A' = (fromEnum c - fromEnum 'A') + 10 < fromIntegral b
+      | otherwise = False
 
-clearFallbacks :: Monad m => BsT m ()
-clearFallbacks = modify $ \s -> s { fsFallbacks = M.empty }
+execute :: (MonadTarget m) => Cell -> ForthT m ()
+execute xt = do
+  catchXT <- ForthT $ gets fsCatch
+  case catchXT of
+    Just c -> do
+      push xt
+      lift $ tcall $ truncateB $ c `shiftR` 1
+      r <- pop
+      when (r /= 0) $ throwError $ TargetError r
 
--- | Sets up the basic memory contents we expect in the target system.
-initializeTarget :: (MonadIO m, MonadTarget m) => BsT m ()
-initializeTarget = do
-  tstore 0 0  -- reset vector
-  tstore 1 0  -- interrupt vector
-  tstore 2 0  -- vocabulary root
-  tstore 3 14 -- dictionary pointer
-  tstore 4 0x1FF0 -- user area base
-  tstore 5 0  -- STATE
-  tstore 6 0  -- compilation freeze pointer
-  hostlog "Target initialized."
+    Nothing -> do
+      lift $ tcall $ truncateB $ xt `shiftR` 1
+      void $ peek 0  -- detect exception
 
-cached_1_0 :: (MonadTarget m)
-           => KnownXT
-           -> Cell
-           -> BsT m ()
-           -> BsT m ()
-cached_1_0 name arg impl = do
-  mxt <- gets $ M.lookup name . fsCache
-  case mxt of
-    Nothing -> impl
-    Just xt -> tpush arg >> tcall xt
+find :: (MonadTarget m) => TString -> ForthT m (Maybe (Cell, Cell))
+find n = do
+  -- TODO search order
+  getsys RootWordlist >>= findLFA n
 
-rescan :: (MonadIO m, MonadTarget m) => BsT m ()
-rescan = do
-  h <- readHere
-  hostlog $ "Evolving target, HERE=" ++ show h
-  forM_ [minBound .. maxBound] $ \xt -> do
-    mx <- lookupWord $ nameForXT xt
-    case mx of
-      Nothing -> pure ()
-      Just (cfa, _) -> do
-        hostlog $ "Found " ++ nameForXT xt ++ " at " ++ show cfa
-        modify $ \s -> s { fsCache = M.insert xt cfa (fsCache s) }
+findLFA :: (MonadTarget m)
+           => TString -> Cell -> ForthT m (Maybe (Cell, Cell))
+findLFA _ 0 = pure Nothing
+findLFA ts lfa = do
+  let nfa = lfa + 2
+  nlen <- fromIntegral <$> peek8 (lfa + 2)
+  eq <- stringComp ts $ TString (nfa + 1) nlen
+  if eq
+    then do
+      let ffa = aligned (nfa + 1 + nlen)
+      flags <- peek ffa
+      pure $ Just (ffa + 2, flags)
+    else peek lfa >>= findLFA ts
 
-endOfInput :: (Monad m) => BsT m Bool
-endOfInput = gets $ null . fsInput
+stringComp :: (MonadTarget m) => TString -> TString -> ForthT m Bool
+stringComp s1@(TString _ n1) s2@(TString _ n2)
+  | n1 /= n2 = pure False
+  | otherwise = do
+  s1' <- peekString s1
+  s2' <- peekString s2
+  pure $ s1' == s2'
 
-takeWord :: (Monad m) => BsT m String
-takeWord = do
-  (w, rest) <- gets $ break isSpace . dropWhile isSpace . fsInput
-  when (null w) (throwError WordExpected)
-  modify $ \s -> s { fsInput = if null rest then [] else tail rest }
-  pure w
+compileComma, asmComma, asmCommaE, rawComma, comma
+  :: (MonadTarget m) => Cell -> ForthT m ()
+compileComma xt = do
+  i <- peek xt
+  asmComma $ if (i .&. 0xF04C) == 0x700C
+    then i .&. 0xEFF3
+    else 0x4000 .|. (xt `shiftR` 1)
 
--- | Reads the vocabulary head cell, giving the LFA of the latest definition.
-readLatest :: (MonadTarget m, MonadError ForthErr m) => m CellAddr
-readLatest = word2wa <$> tload' 2
+asmComma x = do
+  maxt <- ForthT $ gets fsAsm
+  case maxt of
+    Nothing -> asmCommaE x
+    Just axt -> do
+      push x
+      execute axt
 
-writeLatest :: (MonadTarget m) => CellAddr -> m ()
-writeLatest = tstore 2 . wa2word
-
--- | Reads the dictionary pointer cell, giving the next free cell after the end
--- of the dictionary.
-readHere :: (MonadTarget m, MonadError ForthErr m) => m Cell
-readHere = tload' 3
-
--- | Writes the dictionary pointer cell.
-writeHere :: (MonadTarget m) => Cell -> m ()
-writeHere = tstore 3
-
-readState :: (MonadTarget m, MonadError ForthErr m) => m ForthState
-readState = do
-  f <- tload' 5
-  if f /= 0
-    then pure Compiling
-    else pure Interpreting
-
-writeState :: (MonadTarget m) => ForthState -> m ()
-writeState s = tstore 5 $ case s of
-  Interpreting -> 0
-  Compiling -> -1
-
-readFreeze :: (MonadTarget m, MonadError ForthErr m) => m Cell
-readFreeze = tload' 6
-
-writeFreeze :: (MonadTarget m) => Cell -> m ()
-writeFreeze = tstore 6
-
-freeze :: (MonadTarget m, MonadError ForthErr m) => m ()
-freeze = readHere >>= writeFreeze
-
--- | Searches for a word in the target dictionary. Returns its code field
--- address and flags word if found.
-lookupWord :: (MonadTarget m) => String -> BsT m (Maybe (CellAddr, Cell))
-lookupWord name = do
-  mxt <- gets $ M.lookup SfindXT . fsCache
-  case mxt of
-    Nothing -> lookupWordH name
-    Just xt -> lookupWordT name xt
-
--- | Host-emulated version of lookupWord.
-lookupWordH :: (MonadTarget m) => String -> BsT m (Maybe (CellAddr, Cell))
-lookupWordH nameS = readLatest >>= lookupWordFrom
-  where
-    name = nameFromString nameS
-
-    lookupWordFrom 0 = pure Nothing
-
-    lookupWordFrom lfa = do
-      match <- nameEqual name (lfa + 1)
-      if match
-        then do
-          let nl = fromIntegral $ length name
-          flags <- tload' (lfa + 1 + nl)
-          pure $ Just (lfa + 1 + nl + 1, flags)
-        else tload' lfa >>= lookupWordFrom . word2wa
-
-    nameEqual [] _ = pure True
-    nameEqual (w : ws) a = do
-      w' <- tload' a
-      if w' == w
-        then nameEqual ws (a + 1)
-        else pure False
-
--- | Target-implemented version of lookupWord based on SFind.
-lookupWordT :: (MonadTarget m)
-            => String -> CellAddr -> BsT m (Maybe (CellAddr, Cell))
-lookupWordT name xt = do
-  h <- (80 +) . aligned <$> readHere
-  zipWithM_ tstore [word2wa h ..] $ nameFromString name
-  tpush (h + 1)
-  tpush (fromIntegral (length name))
-  tcall xt
-  flag <- tpop'
-  if flag == 0
-    then tpop' >> tpop' >> pure Nothing
-    else do
-      flags <- tpop'
-      newXt <- tpop'
-      pure $ Just (word2wa newXt, flags)
-
--- | Encloses a cell into the dictionary. The cell is treated as data and is
--- frozen from fusion.
-comma :: (MonadTarget m) => Cell -> BsT m ()
-comma x = cached_1_0 CommaXT x $ do
-  rawComma x
-  freeze
-
--- | Encloses a cell into the dictionary without having an opinion on whether
--- it's data or code.
-rawComma :: (MonadTarget m) => Cell -> BsT m ()
-rawComma x = do
-  h <- readHere
-  writeHere (h + 2)
-  tstore (word2wa h) x
-
--- | Compiles instructions for materializing a literal value.
-literal :: (MonadTarget m) => Cell -> BsT m ()
-literal w = do
-  inst $ Lit $ truncateB $ if w >= 0x8000 then complement w else w
-  when (w >= 0x8000) $ inst invert
-
-compile :: (MonadTarget m) => Cell -> BsT m ()
-compile w = cached_1_0 CompileCommaXT w $ do
-  -- Fetch the instruction on the far end of the call.
-  dst <- unpack <$> tload' (word2wa w)
-  case dst of
-    -- Returning ALU instruction?
-    NotLit (ALU True t tn tr nm _ (-1) dadj) ->
-      -- Inline it without the return.
-      inst $ NotLit $ ALU False t tn tr nm (Res 0) 0 dadj
-    -- Otherwise, compile the call as planned.
-    _ -> inst $ NotLit $ Call $ truncateB $ word2wa w
-
--- | Compiles an instruction into the target's dictionary. This is the analog
--- of the word asm, .
---
--- This is where simple peephole optimizations can occur, subject to the freeze
--- line.
-rawInst :: (MonadTarget m) => Cell -> BsT m ()
-rawInst i = do
-  h <- readHere
-  fp <- readFreeze
+asmCommaE ni = do
+  h <- here
+  fp <- getu FREEZEP
 
   if fp == h
-    then rawComma i
-    else do -- Previous instruction is not frozen, we can do stuff.
-      pi <- tload' $ word2wa (h - 2)
+    then rawComma ni
+    else do
+      pi <- peek (h - 2)
+
       case () of
-        -- (ALU without return) - (return) fusion
-        _ | (pi .&. 0x704C) == 0x6000 && i == 0x700C -> fuse (pi .|. 0x100C)
-        -- (call) - (return) fusion
-        _ | (pi .&. 0xE000) == 0x4000 && i == 0x700C -> fuse (pi .&. 0x1FFF)
-        -- (OVER/SWAP) - COMMUTATIVE fusion
-        _ | ((i .&. 0xF0FF) == 0x6003 || (i .&. 0xF0FF) == 0x6000)
-            && ((i .&. 0xF00) - 0x200 < 0x400 || (i .&. 0xF00) == 0x700)
-            && (pi .&. 0xFFFE) == 0x6180
-            -> let i' = (i + (pi .&. 1)) .&. 0xFFF3
-                   i'' = if (i' .&. 3) == 1 then i' .|. 0x80 else i'
-               in fuse i''
-        -- DUP - UNARY fusion
+        _ | (pi .&. 0xF04C) == 0x6000 && ni == 0x700C -> do
+          allot (-2)
+          asmComma $ 0x100C .|. pi
+        _ | (pi .&. 0xE000) == 0x4000 && ni == 0x700C -> do
+          allot (-2)
+          asmComma $ pi .&. 0x1FFF
+        _ | ((ni .&. 0xF0FF) == 0x6003 || (ni .&. 0xF0FF) == 0x6000)
+            && ((ni .&. 0xF00) - 0x200 < 0x400 || (ni .&. 0xF00) == 0x700)
+            && (pi .&. 0xFFFE) == 0x6180 -> do
+          let i' = (ni + (pi .&. 1)) .&. 0xFFF3
+              i'' = if (i' .&. 3) == 1 then i' .|. 0x80 else i'
+          allot (-2)
+          asmComma i''
         _ | pi == 0x6081  -- dup
-            && (i .&. 0xF0FF) == 0x6000  -- ALU w/o stack effect
-            && (i .&. 0x0F00) `elem` [0, 0x0600, 0x0C00]  -- unary op
-            -> fuse (i .|. 0x81)
-        _ -> rawComma i
+            && (ni .&. 0xF0FF) == 0x6000  -- ALU w/o stack effect
+            && (ni .&. 0x0F00) `elem` [0, 0x0600, 0x0C00]  -- unary op
+            -> allot (-2) >> asmComma (ni .|. 0x81)
+        _ -> rawComma ni
 
-fuse :: (MonadTarget m) => Cell -> BsT m ()
-fuse i = do
-  h <- readHere
-  writeHere (h - 2)
-  rawInst i
+rawComma c = do
+  h <- here
+  poke h c
+  allot 2
 
-inst :: (MonadTarget m) => Inst -> BsT m ()
-inst = rawInst . pack
+comma c = do
+  rawComma c
+  void freeze
+
+freeze :: (MonadTarget m) => ForthT m Cell
+freeze = do
+  h <- here
+  setu FREEZEP h
+  pure h
+
+here :: (MonadTarget m) => ForthT m Cell
+here = getu DP
+
+allot :: (MonadTarget m) => Cell -> ForthT m ()
+allot u = do
+  h <- here
+  setu DP (h + u)
 
 aligned :: Cell -> Cell
 aligned x = x + (x .&. 1)
 
-align :: (MonadTarget m) => BsT m ()
+align :: (MonadTarget m) => ForthT m ()
 align = do
-  h <- readHere
-  if (h .&. 1) /= 0
-    then writeHere (h + 1)
-    else pure ()
+  h <- here
+  setu DP $ aligned h
 
-createHeader :: (MonadTarget m) => Name -> Cell -> BsT m ()
-createHeader name flags = do
+literal :: (MonadTarget m) => Cell -> ForthT m ()
+literal v = do
+  let large = v .&. 0x8000 /= 0
+  asmComma $ 0x8000 .|. (if large then complement v else v)
+  when large $ asmComma invertInst
+
+sComma :: (MonadTarget m) => TString -> ForthT m ()
+sComma ts@(TString _ n) = do
+  h <- here
+  poke8 h (fromIntegral n)
+  s <- peekString ts
+  void $ pokeString (h+1) s
+  setu DP $ h + 1 + n
   align
-  h <- readHere
-  readLatest >>= comma . wa2word
-  mapM_ comma name
-  comma flags
 
-  writeLatest (word2wa h)
+invertInst :: Cell
+invertInst = 0x6600
 
-interpretationOnly, compileOnly :: (MonadTarget m) => String -> BsT m ()
-interpretationOnly name = do
-  s <- readState
-  when (s /= Interpreting) (throwError (BadState s Interpreting name))
+-- | Scans a whitespace-delimited name from the unused portion of the input.
+-- If end-of-input is reached, the result will be zero-length.
+parseName :: (MonadTarget m) => ForthT m TString
+parseName = do
+  TString srcS srcL <- getSOURCE
+  tin <- getu ToIN
+  sw@(TString wordS _) <- skipWhileT (< 0x21) $
+                          TString (srcS + tin) (srcL - tin)
+  TString restS restL' <- skipWhileT (0x20 <) sw
+  setu ToIN $ (restS + min 1 restL') - srcS
+  pure $ TString wordS (restS - wordS)
 
-compileOnly name = do
-  s <- readState
-  when (s /= Compiling) (throwError (BadState s Compiling name))
 
-requireWord' :: (MonadTarget m) => String -> BsT m (CellAddr, Cell)
-requireWord' name = do
-  def <- lookupWord name
-  maybe (throwError (UnknownWord name)) pure def
+----------------
+-- Main.
 
-requireWord :: (MonadTarget m) => String -> BsT m CellAddr
-requireWord = fmap fst . requireWord'
+bootstrap :: (MonadTarget m, MonadIO m)
+          => ForthT m r -> [String] -> m (Either ForthErr r)
+bootstrap a source = do
+  let s = FS
+        { fsInput = source
+        , fsCatch = Nothing
+        , fsAsm = Nothing
+        }
+  runExceptT $ evalStateT (runForthT (initializeVars >> a)) s
 
-fallback :: (MonadIO m, MonadTarget m) => String -> BsT m ()
-fallback ":" = do
-  interpretationOnly ":"
-  mcreate
-  writeState Compiling
-
-fallback ";" = do
-  compileOnly ";"
-  inst ret
-  freeze
-  writeState Interpreting
-
-fallback "exit" = do
-  compileOnly "exit"
-  inst ret
-
-fallback "constant" = do
-  interpretationOnly "constant"
-
-  xt <- requireWord "(docon)"
-  v <- tpop'
-  w <- nameFromString <$> takeWord
-  createHeader w 0
-  inst $ NotLit $ Call $ truncateB xt
-  comma v
-
-fallback "variable" = do
-  interpretationOnly "variable"
-  xt <- requireWord "(dovar)"
-  mcreate
-  inst $ NotLit $ Call $ truncateB xt
-  comma 0
-
-fallback "asm," = do
-  interpretationOnly "asm,"
-  v <- tpop'
-  rawInst v
-
-fallback "[" = do
-  compileOnly "["
-  writeState Interpreting
-
-fallback "]" = do
-  interpretationOnly "]"
-  writeState Compiling
-
-fallback "(" = modify $ \s -> s { fsInput = dropWhile' (/= ')') (fsInput s) }
-fallback "\\" = modify $ \s -> s { fsInput = dropWhile' (/= '\n') (fsInput s) }
-
-fallback ".(" = do
-  i <- gets fsInput
-  hostlog $ takeWhile (/= ')') i
-  modify $ \s -> s { fsInput = dropWhile' (/= ')') i }
-
-fallback "'" = do
-  interpretationOnly "'"
-  w <- takeWord
-  xt <- requireWord w
-  tpush (wa2word xt)
-
-fallback "postpone" = do
-  compileOnly "postpone"
-  w <- takeWord
-
-  compileXt <- requireWord "compile,"
-  (xt, flags) <- requireWord' w
-
-  if flags == 0
-    then do
-      literal $ wa2word xt
-      compile $ wa2word compileXt
-    else
-      compile $ wa2word xt
-
-fallback "if" = do
-  compileOnly "if"
-  readHere >>= tpush
-  freeze
-  inst $ NotLit $ JumpZ 0  -- placeholder
-
-fallback "else" = do
-  compileOnly "else"
-  ifA <- tpop'
-  readHere >>= tpush
-  freeze
-  inst $ NotLit $ Jump 0  -- placeholder
-  h <- readHere
-  i <- tload' (word2wa ifA)
-  tstore (word2wa ifA) $ i .|. (h `shiftR` 1)
-
-fallback "then" = do
-  compileOnly "then"
-  h <- readHere
-  freeze
-  a <- tpop'
-  i <- tload' (word2wa a)
-  tstore (word2wa a) $ i .|. (h `shiftR` 1)
-
-fallback "<TARGET-EVOLVE>" = do
-  interpretationOnly "<TARGET-EVOLVE>"
-  rescan
-  clearFallbacks
-
-fallback "host." = do
-  interpretationOnly "host."
-  v <- tpop'
-  hostlog $ show (fromIntegral v :: Integer)
-
-fallback "TARGET-PARSER:" = do
-  w <- takeWord
-  liftIO $ putStrLn $ "TARGET-PARSER: " ++ w
-  modify $ \s -> s { fsParsers = S.insert w (fsParsers s) }
-
-fallback "TARGET-MASK:" = do
-  w <- takeWord
-  liftIO $ putStrLn $ "TARGET-MASK: " ++ w
-  modify $ \s -> s { fsMasked = S.insert w (fsMasked s) }
-
-fallback ['\'', c, '\''] = do
-  s <- readState
-  case s of
-    Interpreting -> tpush $ fromIntegral $ ord c
-    Compiling -> literal $ fromIntegral $ ord c
-
-fallback ('$' : hnum) | all isHexDigit hnum = do
-  s <- readState
-  case s of
-    Interpreting -> tpush $ parseHex hnum
-    Compiling -> literal $ parseHex hnum
-
-fallback ('$' : '-' : hnum) | all isHexDigit hnum = do
-  s <- readState
-  case s of
-    Interpreting -> tpush $ negate $ parseHex hnum
-    Compiling -> literal $ negate $ parseHex hnum
-
-fallback num | all isDigit num = do
-  s <- readState
-  case s of
-    Interpreting -> tpush $ fromIntegral (read num :: Integer)
-    Compiling -> literal $ fromIntegral (read num :: Integer)
-  
-fallback ('-' : num) | all isDigit num = do
-  s <- readState
-  case s of
-    Interpreting -> tpush $ negate $ fromIntegral (read num :: Integer)
-    Compiling -> literal $ negate $ fromIntegral (read num :: Integer)
-  
-fallback unk = throwError (UnknownWord unk)
-
--- | Host-implemented (CREATE) wrapper.
-mcreate :: (MonadIO m, MonadTarget m) => BsT m ()
-mcreate = do
-  interpretationOnly "(CREATE)"
-  w <- nameFromString <$> takeWord
-  createHeader w 0
-
-callParser :: (MonadIO m, MonadTarget m)
-           => CellAddr
-           -> BsT m ()
-callParser xt = do
-  tsourcem <- gets $ M.lookup TickSourceXT . fsCache
-  toinm <- gets $ M.lookup ToInXT . fsCache
-  case (,) <$> tsourcem <*> toinm of
-    Nothing ->
-      throwError ParserPhase
-    Just (tsource, toin) -> do
-      -- Parse a name from host input.
-      w <- takeWord
-      liftIO $ putStrLn $ "Calling target parsing word " ++ show xt ++ " with: " ++ w
-      -- Copy it into a PAD-like transient region. We'll copy it as a counted
-      -- string because I've already got code for that.
-      buf <- (word2wa . (+ 80) . aligned) <$> readHere
-      zipWithM_ tstore [buf ..] (nameFromString w)
-      -- Designate its location in 'SOURCE.
-      tstore (tsource + 1) (wa2word buf + 1)
-      tstore (tsource + 2) (fromIntegral $ length w)
-      -- zero >IN
-      tstore (toin + 1) 0
-      -- execute
-      tcall xt
-
-interpreter :: (MonadIO m, MonadTarget m) => BsT m ()
-interpreter = do
-  modify $ \s -> s { fsInput = dropWhile isSpace (fsInput s) }
-  eoi <- endOfInput
-  unless eoi $ do
-    w <- takeWord
-    me <- lookupWord w
-    mask <- gets fsMasked
-    case me of
-      Just (cfa, flags) | not (S.member w mask) -> do
-        s <- readState
-        case s of
-          Interpreting
-            | flags == 0 -> do
-              ps <- gets fsParsers
-              if S.member w ps
-                then callParser cfa
-                else tcall cfa
-            | otherwise -> throwError (BadState Interpreting Compiling w)
-          Compiling    -> if flags == 0
-                            then compile $ wa2word cfa
-                            else tcall cfa
-      _ -> do
-        modify $ \s -> s { fsFallbacks =
-          M.insert w (M.findWithDefault 0 w (fsFallbacks s) + 1) (fsFallbacks s) }
-        fallback w
-    interpreter
+main :: IO ()
+main = do
+  [inputPath, outputPath] <- getArgs
+  input <- lines <$> readFile inputPath
+  putStrLn "Bootstrapping..."
+  c <- runEmu $ do
+    r <- bootstrap (quitloop >> here) input
+    case r of
+      Left e -> do
+        liftIO $ print e
+        liftIO $ exitWith $ ExitFailure 1
+      Right h -> do
+        liftIO $ print (fromIntegral h :: Int)
+        out <- liftIO $ openFile outputPath WriteMode
+        forM_ [0, 2 .. h-2] $ \a -> do
+          Right x <- tload $ truncateB $ a `shiftR` 1
+          liftIO $ hPrintf out "%04x\n" (fromIntegral x :: Int)
+        liftIO $ hClose out
+    cycles
+  putStrLn $ "Cycles: " ++ show c

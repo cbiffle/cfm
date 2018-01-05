@@ -10,7 +10,7 @@ import Data.List (foldl')
 import CFM.Types
 import Assembler (asmQQ)
 
-debugStub :: Vec 8192 Cell
+debugStub :: Vec 16384 Cell
 debugStub = foldl' (\v (a, i) -> V.replace a i v)
                    (V.repeat 0xDEAD) $
             zip [0 :: Int ..] $

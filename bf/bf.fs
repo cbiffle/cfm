@@ -60,11 +60,17 @@
 
 \ System variables. These memory locations are wired into the bootstrap
 \ program.
-4 constant LATEST  ( head of wordlist )
-6 constant DP  ( dictionary pointer, read by HERE )
-8 constant U0  ( address of user area )
-10 constant STATE  ( compiler state )
-12 constant FREEZEP  ( high-water-mark for code immune to fusion )
+4 constant U0  ( address of user area )
+6 constant LATEST  ( head of wordlist )
+
+: handler U0 @ ;
+: STATE U0 @ 2 + ;
+: DP U0 @ 4 + ;
+: FREEZEP U0 @ 6 + ;
+: 'SOURCE U0 @ 8 + ;
+: >IN U0 @ 12 + ;
+: base U0 @ 14 + ;
+: CURRENT U0 @ 16 + ;
 
 $FFFF constant true  ( also abused as -1 below, since it's cheaper )
 0 constant false
@@ -176,6 +182,8 @@ $FFFF constant true  ( also abused as -1 below, since it's cheaper )
   then
   ( Fusion was not possible, simply append the bits. )
   raw, ;
+
+<TARGET-ASM>
 
 \ Sometimes we want a clear separation between one instruction and the next.
 \ For example, if the second instruction is the target of control flow like a
@@ -323,12 +331,6 @@ $FFFF constant true  ( also abused as -1 below, since it's cheaper )
     again
   then ;
 
-\ The variable HANDLER holds the depth of the return stack at the last call to
-\ CATCH. However, it's a USER variable, and we don't have USER variables yet.
-\ So we vector it for now.
-variable 'handler
-: handler 'handler @ execute ;
-
 : catch
   depth >r
   handler @ >r
@@ -346,6 +348,7 @@ variable 'handler
     SP! drop r>
   then ;
 
+<TARGET-CATCH>
 
 \ -----------------------------------------------------------------------------
 \ LITERAL
@@ -379,16 +382,6 @@ variable 'handler
     u2/ $4000 or
   then
   asm, ;
-
-
-\ -----------------------------------------------------------------------------
-\ Our first evolution. This jettisons the host's implementation of the XT
-\ compiler and dictionary maintenance words, and switches to using the target
-\ versions, thus improving performance (and ensuring correctness).
-
-\ In particular, this lets us start using POSTPONE.
-
-<TARGET-EVOLVE>
 
 
 \ -----------------------------------------------------------------------------
@@ -455,9 +448,6 @@ variable 'handler
     then    ( c-addr u ) ( R: lfa )
     r>      ( c-addr u lfa )
   repeat ;
-
-\ Jettison the host's dictionary search code.
-<TARGET-EVOLVE>
 
 
 \ -----------------------------------------------------------------------------
@@ -529,13 +519,8 @@ variable 'handler
 \ -----------------------------------------------------------------------------
 \ Basic source code input support and parsing.
 
-\ Address and length of current input SOURCE.
-variable 'SOURCE  cell allot
 \ Returns the current input as a string.
 : SOURCE  ( -- c-addr u )  'SOURCE dup @ swap cell+ @ ;
-
-\ Holds the number of characters consumed from SOURCE so far.
-variable >IN
 
 : /string   ( c-addr u n -- c-addr' u' )
   >r  r@ - swap  r> + swap ;
@@ -578,30 +563,17 @@ variable >IN
   ( flags )
   0 , ;
 
-<TARGET-EVOLVE>
-  \ Cause the host to notice 'SOURCE and >IN, which enables the use of target
-  \ parsing words. Because our definitions for CONSTANT , VARIABLE , and : are
-  \ about to shadow the host emulated versions, this support is important!
-
-TARGET-PARSER: :
-
 : :  (CREATE) ] ;
   \ Note that this definition gets used immediately.
-
-TARGET-PARSER: create
 
 : create
   (CREATE)
   postpone (dovar) ;
 
-TARGET-PARSER: constant
-
 : constant
   (CREATE)
   postpone (docon)
   , ;
-
-TARGET-PARSER: variable
 
 : variable create 0 , ;
 
@@ -654,15 +626,11 @@ TARGET-PARSER: variable
   postpone r>
   ; immediate
 
-variable #user
+variable #user  9 #user !
   \ Holds the number of user variables that have been defined.
-TARGET-PARSER: user
 : user
   create  #user @ cells ,  1 #user +!
   does> @  U0 @ + ;
-
-user (handler)
-' (handler) 'handler !
 
 : u<= swap u< 0= ;
 
@@ -705,7 +673,7 @@ here host.
 \ using DEFER and should probably get changed later.
 variable 'key
 variable 'emit
-user base  10 base !
+10 base !
 
 : key 'key @ execute ;
 : emit 'emit @ execute ;
@@ -865,12 +833,6 @@ $20 constant bl
 \ -----------------------------------------------------------------------------
 \ Parsing words and target syntax.
 
-\ These can't use the TARGET-PARSER: support, because they are "partial
-\ functions" of the input text -- that is, there are input sequences that need
-\ to trigger failure, but the target has no good way of indicating that at this
-\ point. Thus we use TARGET-MASK: instead to keep using the host emulation.
-
-TARGET-MASK: '
 : '  ( "name" -- xt )
   parse-name dup if
     sfind if  ( xt flags )
@@ -880,16 +842,14 @@ TARGET-MASK: '
   then
   ?? ;
 
-TARGET-MASK: \
 \ Line comments simply discard the rest of input.
 : \
   SOURCE nip >IN ! ;  immediate
 
-TARGET-MASK: (
 \ Block comments look for a matching paren.
 : (
-  SOURCE  >IN @  /string  ( c-addr u )
-  [: ')' <> ;] skip-while  ( c-addr' u' )
+  SOURCE  >IN @  /string
+  [: ')' <> ;] skip-while
   1 min +  \ consume the trailing paren
   'SOURCE @ -  >IN ! ;  immediate
 
@@ -911,8 +871,8 @@ TARGET-MASK: (
   ;] compile,
   s, ;  immediate
 
-TARGET-MASK: postpone
 : postpone
+  [ 0  LATEST @ cell+  c! ]  \ smudge the length to 0 to hide the word
   parse-name dup if
     sfind if  ( xt flags )
       if  \ immediate
@@ -925,14 +885,13 @@ TARGET-MASK: postpone
     then
   then
   ?? ; immediate
+8  LATEST @ cell+  c!  \ fix the length
 
-\ TARGET-MASK: [']
-\ : [']  ' postpone literal ; immediate
+: [']  ' postpone literal ; immediate
 
 \ -----------------------------------------------------------------------------
 \ Programming tools.
 
-TARGET-PARSER: remarker
 \ Variant on ANS MARKER that takes a flag on stack indicating whether to
 \ preserve itself.
 : remarker  ( ? "name" -- )
@@ -943,7 +902,6 @@ TARGET-PARSER: remarker
   then
   does> dup @ LATEST !  cell+ @ DP ! ;
 
-TARGET-PARSER: marker
 \ 'marker foo' creates a word 'foo' that, when executed, restores the
 \ dictionary and search order to the state they had before 'foo' was defined,
 \ forgetting 'foo' in the process.
@@ -952,7 +910,6 @@ TARGET-PARSER: marker
 \ -----------------------------------------------------------------------------
 \ END OF GENERAL KERNEL CODE
 \ -----------------------------------------------------------------------------
-<TARGET-EVOLVE>  \ Clear stats on host emulated word usage.
 .( After compiling general-purpose code, HERE is... )
 here host.
 
@@ -991,7 +948,6 @@ $8002 constant OUTSET  ( 1s set pins, 0s do nothing)
 $8004 constant OUTCLR  ( 1s clear pins, 0s do nothing)
 $8006 constant OUTTOG  ( 1s toggle pins, 0s do nothing)
 
-TARGET-PARSER: outpin
 : outpin
   create #bit ,
   does> @ swap if OUTSET else OUTCLR then ! ;
@@ -1405,7 +1361,7 @@ variable blk
   dup blk !
   block 'SOURCE !  1024 'SOURCE cell+ !  0 >IN !
   \ Try to interpret.
-  [ ' interpret ] literal catch
+  ['] interpret catch
   \ Whether that succeeded or failed, restore the old input spec.
   r> >IN !  r> r> 'SOURCE cell+ !  'SOURCE !  r> dup blk !  ( except old-blk )
   \ If we were loading from a block before LOAD, the address is likely
@@ -1654,7 +1610,7 @@ create TIB 80 allot
     0 >IN !
     SOURCE accept  'SOURCE cell+ !
     space
-    [ ' interpret ] literal catch
+    ['] interpret catch
     ?dup if
       true over = if
         \ abort isn't supposed to print
@@ -1671,19 +1627,20 @@ create TIB 80 allot
   again ;
 
 : cold
+  $7B80 U0 !
   uart-rx-init
   347 UARTRD ! \ Set baud rate to 115200
 
   \ Take a best-effort crack at initializing the disk
-  [ ' sdinit ] literal catch drop
+  ['] sdinit catch drop
 
   IN @  4 #bit and if   \ If S2 is held, boot with serial console
-    [ ' tx ] literal 'emit !
-    [ ' rx! ] literal 'key !
+    ['] tx 'emit !
+    ['] rx! 'key !
   else  \ otherwise, normal config
     vid
-    [ ' vemit ] literal 'emit !
-    [ ' kbdkey ] literal 'key !
+    ['] vemit 'emit !
+    ['] kbdkey 'key !
   then
   ei
   10 base !
@@ -1696,8 +1653,6 @@ create TIB 80 allot
 ' cold  u2/  0 !
 ( install isr as the interrupt vector )
 ' isr  u2/  2 !
-( adjust U0 to mapped RAM for the Icoboard )
-$7B80 U0 !
 
 true remarker empty
 
