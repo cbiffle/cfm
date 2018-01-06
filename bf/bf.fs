@@ -873,8 +873,7 @@ $20 constant bl
   ;] compile,
   s, ;  immediate
 
-: postpone
-  [ 0  LATEST @ cell+  c! ]  \ smudge the length to 0 to hide the word
+: postpone_
   parse-name dup if
     sfind if  ( xt flags )
       if  \ immediate
