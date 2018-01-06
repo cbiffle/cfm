@@ -14,7 +14,7 @@ import Control.Monad.State
 import Clash.Class.Resize (truncateB)
 import Data.Bits
 import Data.Maybe (fromMaybe)
-import Data.Char (digitToInt)
+import Data.Char (digitToInt, isDigit)
 import Data.List (foldl')
 import Data.Word
 import CFM.Types
@@ -410,7 +410,7 @@ tryNumber' ['\'', c, '\''] = pure $ fromIntegral $ fromEnum c
 tryNumber' ('$' : s) = do
   oldBase <- getu BASE
   setu BASE 16
-  n <- (tryNumber' s)
+  n <- tryNumber' s
         `catchError` (\e -> setu BASE oldBase >> throwError e)
   setu BASE oldBase
   pure n
@@ -422,7 +422,7 @@ tryNumber' s = do
   pure $ foldl' (\n c -> n * b + fromIntegral (digitToInt c)) 0 s
   where
     digitInBase b c
-      | c >= '0' && c <= '9' = (fromEnum c - fromEnum '0') < fromIntegral b
+      | isDigit c = (fromEnum c - fromEnum '0') < fromIntegral b
       | c >= 'a' = (fromEnum c - fromEnum 'a') + 10 < fromIntegral b
       | c >= 'A' = (fromEnum c - fromEnum 'A') + 10 < fromIntegral b
       | otherwise = False
@@ -442,7 +442,7 @@ execute xt = do
       void $ peek 0  -- detect exception
 
 find :: (MonadTarget m) => TString -> ForthT m (Maybe (Cell, Cell))
-find n = do
+find n =
   -- TODO search order
   getsys RootWordlist >>= findLFA n
 
