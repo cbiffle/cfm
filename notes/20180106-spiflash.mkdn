@@ -1,0 +1,196 @@
+Now that we're booting out of SPI flash, it would be useful to be able to
+program it. Icoprog is mad slow at flash programming because of USB round trip
+delays in the FT232 (something like a 1% duty cycle on SCLK).
+
+Starting with the bootloader code, simplified:
+
+    : sf.sel  ( i*x xt -- j*x )
+      $800 OUTCLR !
+      catch
+      $800 OUTSET !
+      throw ;
+
+    : sf.bit  ( data -- data' )
+      $400 over 15 rshift if OUTSET else OUTCLR then !
+      1 lshift
+      $200 OUTSET !  \ sclk high
+      IN @ 5 rshift 1 and or
+      $200 OUTCLR !   \ sclk low
+      ;
+
+    : >sf>  ( c -- c' )
+      8 lshift
+      sf.bit sf.bit sf.bit sf.bit
+      sf.bit sf.bit sf.bit sf.bit ;
+
+    : >sf  ( c -- )  >sf> drop ;
+    : sf>  ( -- c )  0 >sf> ;
+
+    : sf.rd  ( c-addr u alo ahi -- )
+      [:
+        $03 >sf  >sf  dup 8 rshift >sf  >sf
+        bounds begin
+          over over xor
+        while
+          sf> over c!
+          1+
+        repeat
+        2drop
+      ;] sf.sel ;
+
+Now we need to erase and program. I can study the icoprog sources for this, they
+are clearer than the horrid Spansion datasheet.
+
+The 64kB block erase process:
+- Send write enable (byte command $06).
+- Send erase command with the address.
+  - $D8 aa bb cc
+  - Note that that's the byte address even though it must be aligned.
+- Wait for completion.
+  - Repeatedly send $05 and read one byte of response.
+  - Wait for bit 0 to be 0
+
+The programming process operates on pages of not more than 256 bytes. The
+Spansion chips will perform best if programming affects 16 byte chunks (it's
+their ECC granule). The page programming process consists of:
+
+- Send write enable as above.
+- Send program command.
+  - $02 aa bb cc daaaataaaaa
+  - Byte address again.
+- Wait, as above.
+- Icoprog reads the data back for verification. Note that there is no CRC in the
+  protocol, so this seems sane.
+
+Well.
+
+The normal SPI flash protocol uses 24-bit addresses, and requires programming at
+256-byte boundaries. Conveniently, this means programming works in terms of a
+16-bit page address.
+
+    : sf.wren [: $06 >sf ;] sf.sel ;
+
+    : sf.wait
+      begin
+        [: $05 >sf sf> ;] sf.sel
+        1 and
+      while repeat ;
+
+    : sf.prog256  ( a-addr page# -- )
+      sf.wren
+      [:
+        $02 >sf  dup 8 rshift >sf  >sf  0 >sf
+        256 bounds begin
+          over over xor
+        while
+          dup c@ >sf
+          1+
+        repeat
+        2drop
+      ;] sf.sel
+      sf.wait ;
+
+On my flash chip, page $0480 is erased already (being just past the end of the
+boot image), so I can program it as a test.
+
+    flush   \ free up the block buffers
+    blkbuf 256 $8000 4 sf.rd  \ read current contents
+    blkbuf 256 sdcrc16 .      \ show original CRC
+    blkbuf @ .                \ should show -1
+
+    blkbuf 256 0 4 sf.rd      \ Read first page of boot image
+    blkbuf 256 sdcrc16 .      \ Show CRC
+    blkbuf $0480 sf.prog256   \ Program!
+
+    blkbuf 256 $8100 4 sf.rd  \ Read back a different page to scramble RAM
+    blkbuf 256 $8000 4 sf.rd  \ Read back programmed page
+    blkbuf 256 sdcrc16 .      \ Show CRC, should match original
+
+Seems to work.
+
+How about erasing? Erasing acts on a group of 256 pages. I could have it accept
+an "erase group number" but I'm already getting kind of concerned about the
+number of address representations in the SPI flash code. So page number it is.
+Let's have it require alignment for security.
+
+    : sf.erase64k  ( page# -- )
+      \ Require a page number aligned to an erase block boundary.
+      dup $FF and if 1 throw then
+      sf.wren
+      [:
+        $D8 >sf  dup 8 rshift >sf  >sf  0 >sf
+      ;] sf.sel
+      sf.wait ;
+
+Let's blow away the boot image! I can always reflash it from my workstation.
+
+    $0400 sf.erase64k   \ caution to the wind!
+    blkbuf 256 0 4 sf.rd
+    blkbuf @ .          \ Should be -1 now
+
+Yay(?) my boot image is gone!
+
+I should be able to restore it from my running system by writing the dictionary
+to the boot image.
+
+    : save    \ BROKEN, see below
+      here 255 + 8 rshift   \ number of pages in dictionary
+      0 begin
+        over over xor
+      while
+        dup 8 lshift  \ page base address
+        over          \ page number
+        sf.prog256
+        1+
+      repeat
+      2drop ;
+
+Executes in, like, a quarter of a second. Seems suspiciously fast.
+
+    blkbuf 256 0 4 sf.rd
+    blkbuf @ .    \ 256
+
+Oh, heh, I just overwrote the FPGA bitstream. That's unfortunate. Let's try this
+again pointing to the boot sector though.
+
+    : save
+      here 255 + 8 rshift   \ number of pages in dictionary
+      0 begin
+        over over xor
+      while
+        dup 8 lshift  \ page base address
+        over $0400 +  \ page number
+        sf.prog256
+        1+
+      repeat
+      2drop ;
+
+Hm, maybe 1/2 second this time.
+
+Looks like it worked... now to reset only the core and not the FPGA since I have
+no bitstream.
+
+System comes up with all of my words, including SAVE, intact! Seems to work
+then.
+
+(Rewriting the bitstream from my workstation...)
+
+This seems dramatically faster than using an FT232 through Icoprog. From the
+logic analyzer...
+
+- The entire erase - save process takes 263 ms, or 8.2ms/page
+- 64k erase takes 161 ms.
+- Transmitting a 256B page takes 2.7 ms, followed by 0.5 ms of wait
+- So writing 32 pages takes 102 ms.
+- Average frequency with inter-byte and inter-command delays comes out to 757.3
+  kHz.
+- During full-out transmission of a page we lose about 570 ns between bytes.
+
+By comparison, with the FT232,
+
+- Average frequency is 18.4 kHz, 41x slower, though of course it makes some of
+  that up by not observing wait times.
+- Aggregate erase-program of 29 pages takes 2,532 ms, or 87ms/page, which is
+  about 10x slower overall.
+
+
