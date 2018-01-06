@@ -22,14 +22,13 @@ import CFM.Types
 import CFM.Inst
 import Target
 import Target.Emu
-import Target.H2T (cycles)
 
 main :: IO ()
 main = do
   [inputPath, outputPath] <- getArgs
   input <- readFile inputPath
   putStrLn "Bootstrapping..."
-  c <- runIOEmu emuStub $ do
+  c <- runEmu $ do
     r <- bootstrap interpreter input
     case r of
       Left e -> liftIO $ do
