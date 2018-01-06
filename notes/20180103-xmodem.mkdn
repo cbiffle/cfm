@@ -1,0 +1,29 @@
+
+    : xblks  ( start-block -- )
+      rx!
+      4 over = if 2drop $06 tx exit then
+      1 <> if -2 throw then
+      rx! rx! cr
+      over 255 swap - <> if -3 throw then
+      1-
+      2dup 10 rshift + block
+      swap 7 lshift +
+      128 bounds
+      0 >r
+      begin
+        over over xor
+      while
+        rx!
+        2dup swap c!
+        r> + >r
+        1+
+      repeat
+      2drop
+      rx! r> $FF and <> if -4 throw then
+      update
+      $06 tx
+      xblks ;
+    
+    : xrecv ( start-block -- )
+      $15 tx
+      xblks ;
