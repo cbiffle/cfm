@@ -674,6 +674,8 @@ here host.
 variable 'key
 variable 'emit
 10 base !
+:noname drop ; 'emit !
+:noname 0 ; 'key !
 
 : key 'key @ execute ;
 : emit 'emit @ execute ;
