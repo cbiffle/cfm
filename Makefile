@@ -57,7 +57,7 @@ build/ico-prog.asc: build/ico.asc build/boot.hex
 	  > $@
 
 %.hbin: %.hex
-	xxd -r -p < $< > $@
+	cat $< | sed 's/^\(..\)\(..\)/\2\1/g' | xxd -r -p > $@
 
 %.bin: %.asc
 	icepack < $< > $@

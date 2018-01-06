@@ -60,7 +60,8 @@ $8000 constant RAM_END
 \ Fills a buffer from 'start' to 'end' (exclusive) with bytes read from SPI.
 : (read)  ( end start -- )
   2dup_= if drop drop exit then
-  0 >spi> swap !a 2 + (read) ;
+  0 >spi>  dup 8 lshift  swap 8 rshift or
+  swap !a 2 + (read) ;
   \ 10 cells
 
 \ Polls the SPI flash until it responds with a sane ID byte. This is critical
