@@ -1336,7 +1336,7 @@ variable blkall
 \ Arrange for a block to be assigned to a buffer, and return its address.
 : block  ( u -- addr )
   \ If the requested block is already loaded, just return its address.
-  blkall @ over =  blkstat @ 1 and  and if  blkbuf exit  then
+  blkall @ over =  blkstat @ 1 and  and if  drop blkbuf exit  then
 
   \ This is written in an attempt to keep I/O exceptions from corrupting state.
   flush
