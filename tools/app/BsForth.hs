@@ -11,6 +11,7 @@ import System.IO (hClose, IOMode(WriteMode), openFile)
 import Text.Printf
 import Control.Monad.Except
 import Control.Monad.State
+import Control.Monad.Reader
 import Clash.Class.Resize (truncateB)
 import Data.Bits
 import Data.Maybe (fromMaybe)
@@ -35,8 +36,15 @@ the ones listed in UVar.
 ------------------------------------------------------------------------------
 -- Our Monad.
 
-newtype ForthT m x = ForthT { runForthT :: StateT FS (ExceptT ForthErr m) x }
-  deriving (Functor, Applicative, Monad, MonadError ForthErr, MonadIO)
+newtype ForthT m x = ForthT { runForthT :: ReaderT CFG
+                                           (StateT FS
+                                           (ExceptT ForthErr m)) x }
+  deriving (Functor, Applicative, Monad, MonadError ForthErr, MonadIO,
+            MonadReader CFG)
+
+data CFG = CFG
+  { cfgList :: Bool
+  } deriving (Eq, Show)
 
 data FS = FS
   { fsInput :: [String]
@@ -45,7 +53,7 @@ data FS = FS
   } deriving (Eq, Show)
 
 instance MonadTrans ForthT where
-  lift = ForthT . lift . lift
+  lift = ForthT . lift . lift . lift
 
 data ForthErr = UnknownWord String
               | PhaseError String
@@ -367,6 +375,8 @@ quitloop = do
   case line of
     Nothing -> pure ()
     Just x -> do
+      listing <- asks cfgList
+      when listing $ liftIO $ putStrLn x
       ts <- pokeString inputBuffer x
       setSOURCE ts
       setu ToIN 0
@@ -586,7 +596,9 @@ bootstrap a source = do
         , fsCatch = Nothing
         , fsAsm = Nothing
         }
-  runExceptT $ evalStateT (runForthT (initializeVars >> a)) s
+      cfg = CFG { cfgList = False }
+  runExceptT $ evalStateT (runReaderT (runForthT (initializeVars >> a)) cfg)
+                          s
 
 main :: IO ()
 main = do
