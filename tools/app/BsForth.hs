@@ -112,30 +112,36 @@ peekString (TString s n) = mapM (\a -> toEnum . fromIntegral <$> peek8 a)
                                 [s..(s+n-1)]
 
 ------------------------------------------------------------------------------
+-- Abstract variables.
+
+class Var v where
+  getv :: (MonadTarget m) => v -> ForthT m Cell
+  setv :: (MonadTarget m) => v -> Cell -> ForthT m ()
+
+------------------------------------------------------------------------------
 -- System variable access.
 
 data SysVar = ResetVector
             | IrqVector
             | U0
             | RootWordlist
+            | DP
+            | FREEZEP
             deriving (Eq, Show, Enum, Bounded)
 
 sysaddr :: SysVar -> Cell
 sysaddr = fromIntegral . (* 2) . fromEnum
 
-getsys :: (MonadTarget m) => SysVar -> ForthT m Cell
-getsys v = peek $ sysaddr v
+instance Var SysVar where
+  getv v = peek $ sysaddr v
 
-setsys :: MonadTarget m => SysVar -> Cell -> ForthT m ()
-setsys v = poke (sysaddr v)
+  setv v = poke (sysaddr v)
 
 ------------------------------------------------------------------------------
 -- User variable access.
 
 data UVar = HANDLER
           | STATE
-          | DP
-          | FREEZEP
           | SOURCE0
           | SOURCE1
           | ToIN
@@ -143,21 +149,20 @@ data UVar = HANDLER
           | CURRENT
           deriving (Eq, Show, Enum, Bounded)
 
-getu :: MonadTarget m => UVar -> ForthT m Cell
-getu v = do
-  u <- getsys U0
-  peek (fromIntegral (fromEnum v * 2) + u)
+instance Var UVar where
+  getv v = do
+    u <- getv U0
+    peek (fromIntegral (fromEnum v * 2) + u)
 
-setu :: MonadTarget m => UVar -> Cell -> ForthT m ()
-setu v x = do
-  u <- getsys U0
-  poke (fromIntegral (fromEnum v * 2) + u) x
+  setv v x = do
+    u <- getv U0
+    poke (fromIntegral (fromEnum v * 2) + u) x
 
 getSOURCE :: MonadTarget m => ForthT m TString
-getSOURCE = TString <$> getu SOURCE0 <*> getu SOURCE1
+getSOURCE = TString <$> getv SOURCE0 <*> getv SOURCE1
 
 setSOURCE :: MonadTarget m => TString -> ForthT m ()
-setSOURCE (TString s e) = setu SOURCE0 s >> setu SOURCE1 e
+setSOURCE (TString s e) = setv SOURCE0 s >> setv SOURCE1 e
 
 ------------------------------------------------------------------------------
 -- Initial image prep.
@@ -173,17 +178,17 @@ nameBuffer = inputBuffer - 80
 
 initializeVars :: MonadTarget m => ForthT m ()
 initializeVars = do
-  mapM_ (uncurry setsys) [ (ResetVector,  0)
-                         , (IrqVector,    2)
-                         , (U0,           initialUser)
-                         , (RootWordlist, 0)
-                         ]
   let numSysVars = fromEnum (maxBound @SysVar) + 1
       initialHERE = fromIntegral $ numSysVars * 2
-  mapM_ (uncurry setu) [ (HANDLER, 0)
-                       , (STATE, 0)
+  mapM_ (uncurry setv) [ (ResetVector,  0)
+                       , (IrqVector,    2)
+                       , (U0,           initialUser)
+                       , (RootWordlist, 0)
                        , (DP,      initialHERE)
                        , (FREEZEP, initialHERE)
+                       ]
+  mapM_ (uncurry setv) [ (HANDLER, 0)
+                       , (STATE, 0)
                        , (SOURCE0, 0)
                        , (SOURCE1, 0)
                        , (ToIN, 0)
@@ -232,18 +237,18 @@ targetAsm = do
 emuParen :: (MonadTarget m) => ForthT m ()
 emuParen = do
   TString s n <- getSOURCE
-  tin <- getu ToIN
+  tin <- getv ToIN
   TString s' n' <- skipWhileT (/= fromIntegral (fromEnum ')')) $
                    TString (s+tin) (n-tin)
-  setu ToIN $ (s' + min n' 1) - s
+  setv ToIN $ (s' + min n' 1) - s
 
 emuDotParen :: (MonadIO m, MonadTarget m) => ForthT m ()
 emuDotParen = do
   TString s n <- getSOURCE
-  tin <- getu ToIN
+  tin <- getv ToIN
   TString s' n' <- skipWhileT (/= fromIntegral (fromEnum ')')) $
                    TString (s+tin) (n-tin)
-  setu ToIN $ (s' + min n' 1) - s
+  setv ToIN $ (s' + min n' 1) - s
   text <- peekString $ TString (s+tin) (s' - (s+tin))
   liftIO $ putStrLn text
 
@@ -255,12 +260,12 @@ emuHostDot = do
 emuWhack :: (MonadTarget m) => ForthT m ()
 emuWhack = do
   TString _ n <- getSOURCE
-  setu ToIN n
+  setv ToIN n
 
 emuColon :: (MonadTarget m) => ForthT m ()
 emuColon = do
   createCommon
-  setu STATE 1
+  setv STATE 1
 
 emuConstant :: (MonadTarget m) => ForthT m ()
 emuConstant = do
@@ -288,7 +293,7 @@ createCommon :: (MonadTarget m) => ForthT m ()
 createCommon = do
   align
   h <- here
-  wl <- getu CURRENT
+  wl <- getv CURRENT
   peek wl >>= comma
   poke wl h
   parseName >>= sComma
@@ -309,10 +314,10 @@ inside =
   ]
 
 emuLBrack :: (MonadTarget m) => ForthT m ()
-emuLBrack = setu STATE 0
+emuLBrack = setv STATE 0
 
 emuRBrack :: (MonadTarget m) => ForthT m ()
-emuRBrack = setu STATE 1
+emuRBrack = setv STATE 1
 
 emuAsmComma :: (MonadTarget m) => ForthT m ()
 emuAsmComma = do
@@ -379,7 +384,7 @@ quitloop = do
       when listing $ liftIO $ putStrLn x
       ts <- pokeString inputBuffer x
       setSOURCE ts
-      setu ToIN 0
+      setv ToIN 0
       interpret
       quitloop
 
@@ -390,7 +395,7 @@ interpret = do
     TString _ 0 -> pure ()
     _ -> do
       mdef <- find n
-      s <- getu STATE
+      s <- getv STATE
       case mdef of
         -- Normal definition in target:
         Just (xt, 0) ->
@@ -410,7 +415,7 @@ interpret = do
 tryNumber :: (MonadTarget m) => String -> ForthT m ()
 tryNumber s = do
   n <- tryNumber' s
-  st <- getu STATE
+  st <- getv STATE
   if st /= 0
     then literal n
     else lift $ tpush n
@@ -418,16 +423,16 @@ tryNumber s = do
 tryNumber' :: (MonadTarget m) => String -> ForthT m Cell
 tryNumber' ['\'', c, '\''] = pure $ fromIntegral $ fromEnum c
 tryNumber' ('$' : s) = do
-  oldBase <- getu BASE
-  setu BASE 16
+  oldBase <- getv BASE
+  setv BASE 16
   n <- tryNumber' s
-        `catchError` (\e -> setu BASE oldBase >> throwError e)
-  setu BASE oldBase
+        `catchError` (\e -> setv BASE oldBase >> throwError e)
+  setv BASE oldBase
   pure n
 tryNumber' ('-' : s) = negate <$> tryNumber' s
 
 tryNumber' s = do
-  b <- getu BASE
+  b <- getv BASE
   when (any (not . digitInBase b) s) (throwError $ UnknownWord s)
   pure $ foldl' (\n c -> n * b + fromIntegral (digitToInt c)) 0 s
   where
@@ -454,7 +459,7 @@ execute xt = do
 find :: (MonadTarget m) => TString -> ForthT m (Maybe (Cell, Cell))
 find n =
   -- TODO search order
-  getsys RootWordlist >>= findLFA n
+  getv RootWordlist >>= findLFA n
 
 findLFA :: (MonadTarget m)
            => TString -> Cell -> ForthT m (Maybe (Cell, Cell))
@@ -496,7 +501,7 @@ asmComma x = do
 
 asmCommaE ni = do
   h <- here
-  fp <- getu FREEZEP
+  fp <- getv FREEZEP
 
   if fp == h
     then rawComma ni
@@ -535,16 +540,16 @@ comma c = do
 freeze :: (MonadTarget m) => ForthT m Cell
 freeze = do
   h <- here
-  setu FREEZEP h
+  setv FREEZEP h
   pure h
 
 here :: (MonadTarget m) => ForthT m Cell
-here = getu DP
+here = getv DP
 
 allot :: (MonadTarget m) => Cell -> ForthT m ()
 allot u = do
   h <- here
-  setu DP (h + u)
+  setv DP (h + u)
 
 aligned :: Cell -> Cell
 aligned x = x + (x .&. 1)
@@ -552,7 +557,7 @@ aligned x = x + (x .&. 1)
 align :: (MonadTarget m) => ForthT m ()
 align = do
   h <- here
-  setu DP $ aligned h
+  setv DP $ aligned h
 
 literal :: (MonadTarget m) => Cell -> ForthT m ()
 literal v = do
@@ -566,7 +571,7 @@ sComma ts@(TString _ n) = do
   poke8 h (fromIntegral n)
   s <- peekString ts
   void $ pokeString (h+1) s
-  setu DP $ h + 1 + n
+  setv DP $ h + 1 + n
   align
 
 invertInst :: Cell
@@ -577,11 +582,11 @@ invertInst = 0x6600
 parseName :: (MonadTarget m) => ForthT m TString
 parseName = do
   TString srcS srcL <- getSOURCE
-  tin <- getu ToIN
+  tin <- getv ToIN
   sw@(TString wordS _) <- skipWhileT (< 0x21) $
                           TString (srcS + tin) (srcL - tin)
   TString restS restL' <- skipWhileT (0x20 <) sw
-  setu ToIN $ (restS + min 1 restL') - srcS
+  setv ToIN $ (restS + min 1 restL') - srcS
   pure $ TString wordS (restS - wordS)
 
 

@@ -62,15 +62,15 @@
 \ program.
 4 constant U0  ( address of user area )
 6 constant LATEST  ( head of wordlist )
+8 constant DP
+10 constant FREEZEP
 
 : handler U0 @ ;
 : STATE U0 @ 2 + ;
-: DP U0 @ 4 + ;
-: FREEZEP U0 @ 6 + ;
-: 'SOURCE U0 @ 8 + ;
-: >IN U0 @ 12 + ;
-: base U0 @ 14 + ;
-: CURRENT U0 @ 16 + ;
+: 'SOURCE U0 @ 4 + ;
+: >IN U0 @ 8 + ;
+: base U0 @ 10 + ;
+: CURRENT U0 @ 12 + ;
 
 $FFFF constant true  ( also abused as -1 below, since it's cheaper )
 0 constant false
@@ -1628,7 +1628,10 @@ create TIB 80 allot
   again ;
 
 : cold
+  \ Initialize user area
   $7B80 U0 !
+  0 handler !
+
   uart-rx-init
   347 UARTRD ! \ Set baud rate to 115200
 
