@@ -891,6 +891,19 @@ $20 constant bl
 : [']  ' postpone literal ; immediate
 
 \ -----------------------------------------------------------------------------
+\ Utilities.
+
+: fill  ( c-addr u c -- )
+  >r
+  bounds begin
+    over over xor
+  while
+    r@ over c!
+    1+
+  repeat
+  rdrop 2drop ;
+
+\ -----------------------------------------------------------------------------
 \ Programming tools.
 
 \ Variant on ANS MARKER that takes a flag on stack indicating whether to
@@ -907,6 +920,17 @@ $20 constant bl
 \ dictionary and search order to the state they had before 'foo' was defined,
 \ forgetting 'foo' in the process.
 : marker  ( "name" -- )  false remarker ;
+
+: words
+  LATEST
+  begin
+    @ dup
+  while
+    2 over +  \ compute address of name field
+    count     \ convert to counted string
+    type space
+  repeat
+  drop ;
 
 \ -----------------------------------------------------------------------------
 \ END OF GENERAL KERNEL CODE
@@ -1142,20 +1166,6 @@ variable vatt   \ attributes for text in top 8 bits
   0 15 vcolor!
   vpage
   ;
-( ----------------------------------------------------------- )
-( Programming tools )
-
-: words
-  LATEST
-  begin
-    @ dup
-  while
-    2 over +  \ compute address of name field
-    count     \ convert to counted string
-    type space
-  repeat
-  drop ;
-
 ( ----------------------------------------------------------- )
 ( SD Card )
 
