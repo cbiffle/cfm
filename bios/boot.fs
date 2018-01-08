@@ -32,6 +32,8 @@ $6d03 alu: lshift        ( a b -- a<<b )
 $8002 constant OUTSET
 $8004 constant OUTCLR
 $9000 constant IN
+$E002 constant MMUP
+$E004 constant MMUD0
 
 \ Loaded RAM region
 0 constant RAM_BEGIN
@@ -73,9 +75,19 @@ $4000 constant RAM_END
   0 8 spibits
   deselect
   dup 0 =  swap $FF = or if poll exit then ;
-  
+
+: mmuwrite
+  1 -
+  dup MMUP !
+  dup MMUD0 !
+  dup if mmuwrite exit then ;
+
 : go
   deselect
+
+  \ Initialize the MMU with a direct map.
+  8 mmuwrite
+
   poll
 
   select
