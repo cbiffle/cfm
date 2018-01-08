@@ -1,0 +1,25 @@
+
+An MMU using 2^N-byte pages needs 
+
+- 2^(15-N) mappings from
+- 2^(20-N) options
+
+So the storage requirement is 2^(15-N) * (20-N) bits.
+
+To express this positively, to make solving the equations easier,
+
+- Pages are 2^N bytes in size.
+- Virtual addresses are V+N bits.
+- Physical addresses are P+N bits.
+- Storage required: 2^V * P
+
+So the MMU doesn't *really* care what n is.
+
+
+---
+
+Got an initial draft, but synthesis is going squirrely. Yosys is generating a
+warning about a reset-related construct Clash is producing (which is admittedly
+really weird), and then the system doesn't come up.
+
+So I've done something wrong and will look into it later.
