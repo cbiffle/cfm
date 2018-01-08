@@ -38,7 +38,7 @@ module top(
 
 wire clk_core, clk_core90;
 wire pll_locked;
-wire reset_n = ~S1;
+wire ext_reset_n = ~S1;
 
         SB_PLL40_2F_CORE #(
                 .FEEDBACK_PATH("PHASE_AND_DELAY"),
@@ -58,31 +58,24 @@ wire reset_n = ~S1;
                 .PLLOUTGLOBALA(clk_core  ),
                 .PLLOUTGLOBALB(clk_core90),
                 .LOCK         (pll_locked),
-                .BYPASS       (1'b0      ),
-                .RESETB       (reset_n   )
+                .BYPASS       (1'b0),
+                .RESETB       (1'b1),
         );
         reg [3:0] pll_lock_window = 0;
 	reg pll_stable = 0;
 
-	always @(posedge clk_core or negedge reset_n) begin
-          if (~reset_n) begin
-              pll_stable <= 0;
-              pll_lock_window <= 0;
-          end else begin
-		pll_stable <= &pll_lock_window;
-		pll_lock_window <= {pll_lock_window, pll_locked};
-          end
+	always @(posedge clk_core) begin
+          pll_stable <= &pll_lock_window;
+          pll_lock_window <= {pll_lock_window, pll_locked};
 	end
 
         reg [7:0] reset_delay = 0;
-        reg core_reset_n = 0;
+        wire core_reset_n = &reset_delay && ext_reset_n;
 
-        always @(posedge clk_core or negedge reset_n)
-          if (~reset_n) begin
-            core_reset_n <= 0;
+        always @(posedge clk_core)
+          if (~pll_stable) begin
             reset_delay <= 0;
-          end else if (pll_stable) begin
-            if (reset_delay == 128) core_reset_n <= 1;
+          end else if (~&reset_delay) begin
             reset_delay <= reset_delay + 1;
           end
 
@@ -121,9 +114,9 @@ wire reset_n = ~S1;
           .INPUT_CLK(clk_core),
         );
 
-        reg RX_;
-        always @(posedge clk_core or negedge reset_n)
-            if (~reset_n) begin
+        reg RX_ = 1;
+        always @(posedge clk_core)
+            if (~core_reset_n) begin
               RX_ <= 1;
             end else begin
               RX_ <= RX;
