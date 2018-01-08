@@ -1398,6 +1398,18 @@ variable blk
   ?dup if  block 'SOURCE !  then
   throw ;
 
+\ Loads a sequence of blocks
+: thru  ( i*x u1 u2 -- j*x )
+  begin
+    >r dup >r
+    load
+    r> r>
+    over over xor
+  while
+    swap 1+ swap
+  repeat
+  2drop ;
+
 \ Lists source code in a block using the conventional 64x16 format.
 : list  ( u -- )
   block 1024 bounds
