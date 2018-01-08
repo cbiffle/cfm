@@ -34,6 +34,8 @@
 
 \ Stores x at addr, leaving x (the data, or d) on the stack.
 : !d  ( x addr -- x )  [ $6123 asm, ] ;
+\ Stores x at addr, leaving addr on the stack.
+: !a  ( x addr -- addr )  [ $6023 asm, ] ;
 
 \ Pushes a word containing the depth of the parameter stack in bits 7:0, and
 \ the depth of the return stack in bits 15:8.
