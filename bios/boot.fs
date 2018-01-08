@@ -35,7 +35,7 @@ $9000 constant IN
 
 \ Loaded RAM region
 0 constant RAM_BEGIN
-$8000 constant RAM_END
+$4000 constant RAM_END
 
 : select $800 OUTCLR ! ;
 : deselect $800 OUTSET ! ;
