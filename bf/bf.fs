@@ -63,9 +63,10 @@
 \ System variables. These memory locations are wired into the bootstrap
 \ program.
 4 constant U0  ( address of user area )
-6 constant LATEST  ( head of wordlist )
+6 constant ROOTWL  ( head of wordlist )
 8 constant DP
 10 constant FREEZEP
+12 constant VOC-LINK
 
 : handler U0 @ ;
 : STATE U0 @ 2 + ;
@@ -73,6 +74,7 @@
 : >IN U0 @ 8 + ;
 : base U0 @ 10 + ;
 : CURRENT U0 @ 12 + ;
+: CONTEXT U0 @ 14 + ;
 
 $FFFF constant true  ( also abused as -1 below, since it's cheaper )
 0 constant false
@@ -116,7 +118,7 @@ $FFFF constant true  ( also abused as -1 below, since it's cheaper )
 \ The Dictionary and the Optimizing Assembler.
 
 \ Because the host manipulates the dictionary, it's important to keep the
-\ layout consistent between us and the host. This is why LATEST, DP, and
+\ layout consistent between us and the host. This is why ROOTWL, DP, and
 \ FREEZEP are part of the system variables block.
 
 : here  ( -- addr )  DP @ ;
@@ -127,7 +129,7 @@ $FFFF constant true  ( also abused as -1 below, since it's cheaper )
 
 \ Access to the CFA/xt of the most recently defined word.
 : lastxt  ( -- xt )
-  LATEST @  cell+      ( nfa )
+  CURRENT @ @  cell+      ( nfa )   \ TODO define actual LATEST
   dup c@ + 1+ aligned   ( ffa )
   cell+ ;
 
@@ -430,10 +432,9 @@ $FFFF constant true  ( also abused as -1 below, since it's cheaper )
   repeat
   2drop rdrop true ;
 
-\ Searches the dictionary for a definition with the given name. This is a
+\ Searches a wordlist for a definition with the given name. This is a
 \ variant of standard FIND, which uses a counted string for some reason.
-: sfind  ( c-addr u -- c-addr u 0 | xt flags true )
-  LATEST
+: find-in  ( c-addr u wl -- c-addr u 0 | xt flags true )
   begin          ( c-addr u lfa )
     @ dup
   while
@@ -451,6 +452,11 @@ $FFFF constant true  ( also abused as -1 below, since it's cheaper )
     r>      ( c-addr u lfa )
   repeat ;
 
+\ Searches CONTEXT, then CURRENT, for a definition with the given name. This is
+\ a variant of standard FIND, which uses a counted string for some reason.
+: sfind  ( c-addr u -- c-addr u 0 | xt flags true )
+  CONTEXT @ find-in if true exit then
+  CURRENT @ find-in ;
 
 \ -----------------------------------------------------------------------------
 \ More useful Forth words.
@@ -559,7 +565,7 @@ $FFFF constant true  ( also abused as -1 below, since it's cheaper )
 \ a header, without generating any code.
 : (CREATE)
   ( link field )
-  align here  LATEST @ ,  LATEST !
+  align here  CURRENT @ @ ,  CURRENT @ !
   ( name )
   parse-name s,
   ( flags )
@@ -597,6 +603,15 @@ variable #user  9 #user !
   create  #user @ cells ,  1 #user +!
   does> @  U0 @ + ;
 
+: vocabulary
+  create  here  VOC-LINK @ ,  VOC-LINK !
+          CURRENT @ @ ,
+  does> cell+ CONTEXT ! ;
+
+: definitions  CONTEXT @ CURRENT ! ;
+
+vocabulary forth
+forth definitions
 
 \ -----------------------------------------------------------------------------
 \ Semicolon. This is my favorite piece of code in the kernel, and the most
@@ -889,7 +904,7 @@ $20 constant bl
     then
   then
   ?? ; immediate
-8  LATEST @ cell+  c!  \ fix the length
+8  CURRENT @ @ cell+  c!  \ fix the length
 
 : [']  ' postpone literal ; immediate
 
@@ -911,21 +926,21 @@ $20 constant bl
 
 \ Variant on ANS MARKER that takes a flag on stack indicating whether to
 \ preserve itself.
-: remarker  ( ? "name" -- )
-  if
-    create LATEST @ , here cell+ ,
-  else
-    here LATEST @ create , ,
-  then
-  does> dup @ LATEST !  cell+ @ DP ! ;
+\ : remarker  ( ? "name" -- )
+\   if
+\     create CURRENT @ @ , here cell+ ,
+\   else
+\     here CURRENT @ @ create , ,
+\   then
+\   does> dup @ CURRENT @ !  cell+ @ DP ! ;
 
 \ 'marker foo' creates a word 'foo' that, when executed, restores the
 \ dictionary and search order to the state they had before 'foo' was defined,
 \ forgetting 'foo' in the process.
-: marker  ( "name" -- )  false remarker ;
+\ : marker  ( "name" -- )  false remarker ;
 
 : words
-  LATEST
+  CURRENT @
   begin
     @ dup
   while
@@ -1644,6 +1659,8 @@ create TIB 80 allot
   \ Initialize user area
   $7B80 U0 !
   0 handler !
+  10 base !
+  forth definitions
 
   uart-rx-init
   347 UARTRD ! \ Set baud rate to 115200
@@ -1660,9 +1677,8 @@ create TIB 80 allot
     ['] kbdkey 'key !
   then
   ei
-  10 base !
   35 emit
-  LATEST @ cell+ count type
+  CURRENT @ @ cell+ count type
   35 emit cr
   quit ;
 
@@ -1671,7 +1687,7 @@ create TIB 80 allot
 ( install isr as the interrupt vector )
 ' isr  u2/  2 !
 
-true remarker empty
+\ true remarker empty
 
 .( Compilation complete. HERE is... )
 here host.

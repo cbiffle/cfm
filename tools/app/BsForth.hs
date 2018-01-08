@@ -121,12 +121,13 @@ class Var v where
 ------------------------------------------------------------------------------
 -- System variable access.
 
-data SysVar = ResetVector
-            | IrqVector
-            | U0
-            | RootWordlist
-            | DP
-            | FREEZEP
+data SysVar = ResetVector   -- ^ Starting address.
+            | IrqVector     -- ^ Interrupt handler.
+            | U0            -- ^ User area base.
+            | RootWordlist  -- ^ Wordlist pointer for core definitions.
+            | DP            -- ^ Dictionary pointer.
+            | FREEZEP       -- ^ Frozen dictionary pointer.
+            | VocLink       -- ^ Root of list of all vocabularies.
             deriving (Eq, Show, Enum, Bounded)
 
 sysaddr :: SysVar -> Cell
@@ -147,6 +148,7 @@ data UVar = HANDLER
           | ToIN
           | BASE
           | CURRENT
+          | CONTEXT
           deriving (Eq, Show, Enum, Bounded)
 
 instance Var UVar where
@@ -194,6 +196,7 @@ initializeVars = do
                        , (ToIN, 0)
                        , (BASE, 10)
                        , (CURRENT, sysaddr RootWordlist)
+                       , (CONTEXT, sysaddr RootWordlist)
                        ]
 
 ----------------
@@ -457,14 +460,17 @@ execute xt = do
       void $ peek 0  -- detect exception
 
 find :: (MonadTarget m) => TString -> ForthT m (Maybe (Cell, Cell))
-find n =
-  -- TODO search order
-  getv RootWordlist >>= findLFA n
+find n = do
+  d <- findIn n =<< getv CONTEXT
+  case d of
+    Just _ -> pure d
+    Nothing -> findIn n =<< getv CURRENT
 
-findLFA :: (MonadTarget m)
-           => TString -> Cell -> ForthT m (Maybe (Cell, Cell))
-findLFA _ 0 = pure Nothing
-findLFA ts lfa = do
+findIn :: (MonadTarget m)
+       => TString -> Cell -> ForthT m (Maybe (Cell, Cell))
+findIn _ 0 = pure Nothing
+findIn ts wl = do
+  lfa <- peek wl
   let nfa = lfa + 2
   nlen <- fromIntegral <$> peek8 (lfa + 2)
   eq <- stringComp ts $ TString (nfa + 1) nlen
@@ -473,7 +479,7 @@ findLFA ts lfa = do
       let ffa = aligned (nfa + 1 + nlen)
       flags <- peek ffa
       pure $ Just (ffa + 2, flags)
-    else peek lfa >>= findLFA ts
+    else findIn ts lfa
 
 stringComp :: (MonadTarget m) => TString -> TString -> ForthT m Bool
 stringComp s1@(TString _ n1) s2@(TString _ n2)
