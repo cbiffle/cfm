@@ -577,6 +577,24 @@ $FFFF constant true  ( also abused as -1 below, since it's cheaper )
 
 : variable create 0 , ;
 
+: does>
+  \ End the defining code with a non-tail call to (does>)
+  [:  ( R: tail-addr -- )
+      \ Patch the first instruction of the last (current) definition to contain
+      \ a call to the code after DOES> .
+      lastxt  r> u2/ $4000 or  swap !
+  ;] compile,
+  \ Control will reach this point from the call instruction at the start of the
+  \ code field. We need to reveal the parameter field address by postponing r>
+  postpone r>
+  ; immediate
+
+variable #user  9 #user !
+  \ Holds the number of user variables that have been defined.
+: user
+  create  #user @ cells ,  1 #user +!
+  does> @  U0 @ + ;
+
 
 \ -----------------------------------------------------------------------------
 \ Semicolon. This is my favorite piece of code in the kernel, and the most
@@ -614,23 +632,6 @@ $FFFF constant true  ( also abused as -1 below, since it's cheaper )
 \ -----------------------------------------------------------------------------
 \ More useful Forth words.
 
-: does>
-  \ End the defining code with a non-tail call to (does>)
-  [:  ( R: tail-addr -- )
-      \ Patch the first instruction of the last (current) definition to contain
-      \ a call to the code after DOES> .
-      lastxt  r> u2/ $4000 or  swap !
-  ;] compile,
-  \ Control will reach this point from the call instruction at the start of the
-  \ code field. We need to reveal the parameter field address by postponing r>
-  postpone r>
-  ; immediate
-
-variable #user  9 #user !
-  \ Holds the number of user variables that have been defined.
-: user
-  create  #user @ cells ,  1 #user +!
-  does> @  U0 @ + ;
 
 : u<= swap u< 0= ;
 
