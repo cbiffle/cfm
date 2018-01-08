@@ -112,11 +112,14 @@ moorep :: (KnownNat a, HasClockReset dom gated synchronous, Default s)
        -> ( Signal dom Cell
           , Signal dom o
           )     -- ^ Response to I/O bus and peripheral-specific outputs.
-moorep ft fr fo inp ioreq = (ioresp, outp)
-  where
-    (ioresp, outp) = mooreB ft' fo' def (ioreq, inp)
-    ft' (s, a) (ioreq_, i) = (ft s (ioreq_, i), fromMaybe a (fst <$> ioreq_))
-    fo' (s, a) = (fr s !! a, fo s)
+moorep ft fr fo = \inp ioreq ->
+  let (ioresp, outp) = unbundle $
+                       moore ft' fo' def $
+                       bundle (ioreq, inp)
+      ft' (s, a) (ioreq_, i) = (ft s (ioreq_, i), fromMaybe a (fst <$> ioreq_))
+      fo' (s, a) = (fr s !! a, fo s)
+  in (ioresp, outp)
+{-# INLINE moorep #-}
 
 -- | Implementation strategy for a peripheral device that can be described as a
 -- Mealy machine. This is like Clash's 'mealy' but provides a bus read response
@@ -138,10 +141,14 @@ mealyp :: (KnownNat a, HasClockReset dom gated synchronous, Default s)
        -> ( Signal dom Cell
           , Signal dom o
           )     -- ^ Response to I/O bus and peripheral-specific outputs.
-mealyp ft fr inp ioreq = (ioresp, outp)
-  where
-    (ioresp, outp) = mealyB ft' def (ioreq, inp)
-    ft' (s, a) (ioreq_, i) = let (s', o) = ft s (ioreq_, i)
-                             in ( (s', fromMaybe a (fst <$> ioreq_))
-                                , (fr s !! a, o)
-                                )
+mealyp ft fr =
+  \inp ioreq ->
+    let (ioresp, outp) = unbundle $
+                         mealy ft' def $
+                         bundle (ioreq, inp)
+        ft' (s, a) (ioreq_, i) = let (s', o) = ft s (ioreq_, i)
+                                 in ( (s', fromMaybe a (fst <$> ioreq_))
+                                    , (fr s !! a, o)
+                                    )
+    in (ioresp, outp)
+{-# INLINE mealyp #-}
