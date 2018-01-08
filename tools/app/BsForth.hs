@@ -168,7 +168,7 @@ setSOURCE (TString s e) = setv SOURCE0 s >> setv SOURCE1 e
 -- Initial image prep.
 
 initialUser :: Cell
-initialUser = 0x1FF0    -- TODO: base on RAM size
+initialUser = 0x7B80    -- TODO: base on RAM size
 
 inputBuffer :: Cell
 inputBuffer = initialUser - 80
