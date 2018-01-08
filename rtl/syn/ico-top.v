@@ -115,7 +115,7 @@ wire reset_n = ~S1;
           .PULLUP(0),
         ) ps2_clk_io (
           .PACKAGE_PIN(pmod4_8),
-          .OUTPUT_ENABLE(out1[9]),
+          .OUTPUT_ENABLE(out1[12]),
           .D_OUT_0(1'b0),
           .D_IN_0(ps2_clk),
           .INPUT_CLK(clk_core),
@@ -151,7 +151,6 @@ wire reset_n = ~S1;
         assign cts_n = out1[1];
         assign {sd_cs_n, sd_mosi, sd_sck} = out1[4:2];
         assign {spi_flash_cs, spi_flash_mosi, spi_flash_sclk} = out1[11:9];
-        //assign {spi_flash_cs, spi_flash_mosi, spi_flash_sclk} = 3'b101;
         assign in = {spi_flash_miso, S2, pmod4_7, sd_cd, sd_miso, ps2_clk};
 
         assign {vga_r[4], vga_g[4], vga_b[4], vga_r[3], vga_g[3], vga_b[3]}

@@ -1433,14 +1433,14 @@ variable kbd#bit
   kbd#bit @ 1 - kbd#bit !d        \ decrement bit counter
   0= if   \ we're done
     irq#negedge irq-off           \ disable this IRQ
-    9 #bit OUTSET !               \ pull clock low
+    12 #bit OUTSET !               \ pull clock low
   else
     IN !d                         \ acknowledge IRQ
   then ;
 
 : kbd@
   11 kbd#bit !                    \ expecting 11 bits
-  9 #bit OUTCLR !                 \ release clock line
+  12 #bit OUTCLR !                 \ release clock line
   IN !d                           \ clear pending negedge IRQ
   irq#negedge irq-on              \ enable IRQ
   begin kbd#bit @ 0= until        \ wait for all bits
@@ -1448,7 +1448,7 @@ variable kbd#bit
   ;
 
 : kbdinit
-  9 #bit OUTSET !                 \ pull clock low
+  12 #bit OUTSET !                 \ pull clock low
   ;
 
 : kbdscan
