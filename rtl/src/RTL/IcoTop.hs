@@ -51,7 +51,7 @@ system raminit ins sram2h urx = (outs, hsync, vsync, vid, sramA, sramW, h2sram, 
     romread = maybe undefined fst <$> mreq
      
     romout = blockRamFile (SNat @256) raminit romread (pure Nothing)
-    (_, sramA, sramW, h2sram) = extsram undefined mreq
+    (_, sramA, sramW, h2sram) = extsram undefined $ mapper mreq
 
     -- I/O devices
     (ioresp0, outs) = outport $ partialDecode ioreq0
@@ -63,7 +63,7 @@ system raminit ins sram2h urx = (outs, hsync, vsync, vid, sramA, sramW, h2sram, 
     (ioresp4, hsync, vsync, hirq, virq, evirq, vid) = chargen (partialDecode ioreq4)
 
     (ioresp5, _, _, urxne, utx) = U.uart urx $ partialDecode ioreq5
-    (ioresp6, _) = mmu d3 d3 d11 $ partialDecode ioreq6
+    (ioresp6, mapper) = mmu d3 d3 d11 $ partialDecode ioreq6
 
 
 {-# ANN topEntity (defTop { t_name = "ico_soc"
