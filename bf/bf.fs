@@ -1173,11 +1173,11 @@ variable vatt   \ attributes for text in top 8 bits
 
 
 : vid
-  119 VTH !
-  167 VTH 4 + !
+  103 VTH !
+  207 VTH 4 + !
   639 VTH 6 + !
   100 VTV !
-  122 VTV 4 + !
+  121 VTV 4 + !
   399 VTV 6 + !
   80 vcols !
   25 vrows !
@@ -1675,7 +1675,7 @@ create TIB 80 allot
   forth definitions
 
   uart-rx-init
-  347 UARTRD ! \ Set baud rate to 115200
+  312 UARTRD ! \ Set baud rate to 115200
 
   \ Take a best-effort crack at initializing the disk
   ['] sdinit catch drop

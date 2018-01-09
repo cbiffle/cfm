@@ -47,10 +47,10 @@ wire pll_locked;
                 .SHIFTREG_DIV_MODE(0),
                 .FDA_FEEDBACK(4'b1111),
                 .FDA_RELATIVE(4'b1111),
-                .DIVR(4),
-                .DIVF(1),
+                .DIVR(7),
+                .DIVF(2),
                 .DIVQ(4),
-                .FILTER_RANGE(2),
+                .FILTER_RANGE(1),
         ) pll (
                 .REFERENCECLK (clk_100mhz),
                 .PLLOUTGLOBALA(clk_core  ),

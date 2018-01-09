@@ -41,9 +41,9 @@ timingT (Just (a, Just x)) = replace a x
 timingT _ = id
 
 -- | Here's an example of timing values for a common 800x600 mode.
-vesa800x600x60 :: (Timing 10, Timing 10)
-vesa800x600x60 = ( 39 :> 127 :> 87 :> 799 :> Nil
-                 , 0 :> 3 :> 22 :> 599 :> Nil
+vesa800x600x56 :: (Timing 10, Timing 10)
+vesa800x600x56 = ( 23 :> 71 :> 127 :> 799 :> Nil
+                 , 0 :> 1 :> 21 :> 599 :> Nil
                  )
 
 
@@ -145,8 +145,8 @@ makeLenses ''GState
 
 instance Default GState where
   def = GState
-    { _gsH = (def, fst vesa800x600x60)
-    , _gsV = (def, snd vesa800x600x60)
+    { _gsH = (def, fst vesa800x600x56)
+    , _gsV = (def, snd vesa800x600x56)
     , _gsPixels = def
     , _gsShadowPixels = def
     , _gsChar0 = def
