@@ -32,11 +32,13 @@ module top(
   output spi_flash_mosi,
   input spi_flash_miso,
 
+  input S1,
   input S2,
   );
 
 wire clk_core, clk_core90;
 wire pll_locked;
+wire ext_reset = S1;
 
         SB_PLL40_2F_CORE #(
                 .FEEDBACK_PATH("PHASE_AND_DELAY"),
@@ -71,7 +73,7 @@ wire pll_locked;
         wire core_reset_n = &reset_delay;
 
         always @(posedge clk_core)
-          if (~pll_stable) begin
+          if (~pll_stable || ext_reset) begin
             reset_delay <= 0;
           end else if (~&reset_delay) begin
             reset_delay <= reset_delay + 1;
