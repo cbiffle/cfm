@@ -4,7 +4,6 @@ module top(
   input clk_100mhz,
   output TX,
   input RX,
-  input S1,
   output cts_n,
   output [3:0] led,
   output vga_hsync,
@@ -38,7 +37,6 @@ module top(
 
 wire clk_core, clk_core90;
 wire pll_locked;
-wire ext_reset_n = ~S1;
 
         SB_PLL40_2F_CORE #(
                 .FEEDBACK_PATH("PHASE_AND_DELAY"),
@@ -70,7 +68,7 @@ wire ext_reset_n = ~S1;
 	end
 
         reg [7:0] reset_delay = 0;
-        wire core_reset_n = &reset_delay && ext_reset_n;
+        wire core_reset_n = &reset_delay;
 
         always @(posedge clk_core)
           if (~pll_stable) begin
