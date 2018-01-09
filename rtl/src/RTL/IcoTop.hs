@@ -85,7 +85,7 @@ system raminit ins sram2h urx = (outs, hsync, vsync, vid, sramA, sramW, h2sram, 
                                        ]
                           }) #-}
 topEntity :: Clock System 'Source
-          -> Reset System 'Asynchronous
+          -> Reset System 'Synchronous
           -> Signal System Cell
           -> Signal System Cell
           -> Signal System Bit
