@@ -131,7 +131,7 @@ wire ext_reset = S1;
           .hsync(vga_hsync),
           .vsync(vga_vsync),
           .vid(vid),
-          .sram_a(sram_a[13:0]),
+          .sram_a(sram_a),
           .sram_wr(sram_wr),
           .host_to_sram(host_to_sram),
 
@@ -139,7 +139,6 @@ wire ext_reset = S1;
           .uart_rx(RX_),
         );
 
-        assign sram_a[18:14] = 0;
         assign led = out1[8:5];
         assign cts_n = out1[1];
         assign {sd_cs_n, sd_mosi, sd_sck} = out1[4:2];

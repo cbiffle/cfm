@@ -28,7 +28,7 @@ system :: (HasClockReset dom gated synchronous)
           , Signal dom Bool
           , Signal dom Bool
           , Signal dom (BitVector 6)
-          , Signal dom (BitVector 14)  -- SRAM address
+          , Signal dom (BitVector 19)  -- SRAM address
           , Signal dom Bool  -- SRAM write
           , Signal dom Cell  -- SRAM data
           , Signal dom Bit  -- UART TX
@@ -63,7 +63,7 @@ system raminit ins sram2h urx = (outs, hsync, vsync, vid, sramA, sramW, h2sram, 
     (ioresp4, hsync, vsync, hirq, virq, evirq, vid) = chargen (partialDecode ioreq4)
 
     (ioresp5, _, _, urxne, utx) = U.uart urx $ partialDecode ioreq5
-    (ioresp6, mapper) = mmu d3 d3 d11 $ partialDecode ioreq6
+    (ioresp6, mapper) = mmu d3 d8 d11 $ partialDecode ioreq6
 
 
 {-# ANN topEntity (defTop { t_name = "ico_soc"
@@ -93,7 +93,7 @@ topEntity :: Clock System 'Source
              , Signal System Bool
              , Signal System Bool
              , Signal System (BitVector 6)
-             , Signal System (BitVector 14)  -- SRAM address
+             , Signal System (BitVector 19)  -- SRAM address
              , Signal System Bool  -- SRAM write
              , Signal System Cell  -- SRAM data
              , Signal System Bit
