@@ -361,10 +361,14 @@ chargen ioreq = ( resp
 
     (charAddr, pxlAddr) = unbundle $ split <$> pixel
 
+    -- Split up the writethrough to the two separate RAMs.
+    -- TODO: I feel like I've written this function a dozen times.
     ramsplit (Just ((0, a), v)) = (Just (unpack a, v), Nothing)
     ramsplit (Just ((_, a), v)) = (Nothing, Just (unpack a, v))
     ramsplit _ = (Nothing, Nothing)
-    (charWr, glyphWr) = unbundle $ ramsplit <$> wrth
+    -- And register the writethrough path, since latency doesn't
+    -- really matter.
+    (charWr, glyphWr) = unbundle $ ramsplit <$> register def wrth
 
     -- Past the character memory we are delayed one cycle.
     achar' = blockRamFilePow2 @_ @_ @11 @16 "random-2k.readmemb"
