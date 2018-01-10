@@ -123,8 +123,8 @@ instance (KnownNat v, KnownNat p) => Default (S v p) where
   -- | At reset, physical page 0 appears in every position, because it
   -- simplifies the hardware.
   def = S
-    { sMap0 = repeat 0
-    , sMap1 = repeat 0
+    { sMap0 = map fromIntegral indicesI
+    , sMap1 = map fromIntegral indicesI
     , sSel = False
     , sMapPtr = def
     }
