@@ -15,8 +15,22 @@ import Control.Arrow (first)
 import CFM.Types
 import RTL.IOBus
 
--- TODO fix all the fromIntegral uses in this module.
-
+-- | A Memory Management Unit that divides an address space into an array of
+-- equally-sized pages. The CPU-generated address is a "virtual" address; the
+-- MMU translates these addresses into physical addresses of implemented RAM.
+--
+-- In practice, this occurs by routing the top 'v' bits of the virtual address
+-- into a lookup table, producing a 'p' bit result. Thus CPU addresses of @v+n@
+-- bits are mapped into physical addresses of @p+n@ bits. 'p' is typically
+-- bigger than 'v' to allow access to more memory than the CPU can natively
+-- address, but this doesn't have to be the case.
+--
+-- Instantiating 'mmu' defines the I/O interface and registers to hold the
+-- page translation table. It returns a function, which acts as a constructor
+-- for instantiating address mapping hardware. This constructor could be used
+-- more than once, if you wanted to translate multiple independent addressing
+-- paths using the same translation tables. Each time the constructor is applied
+-- costs one read mux on the translation table.
 mmu :: forall n v p ev ep d g s.
        ( HasClockReset d g s
        , KnownNat v
@@ -24,17 +38,23 @@ mmu :: forall n v p ev ep d g s.
        , KnownNat n
        , KnownNat ev
        , KnownNat ep
-       , Width ~ (ev + v)
-       , Width ~ (ep + p)
+       , (v + ev) ~ Width
+       , (ev + v) ~ Width  -- seriously, NatNormalise does not obviate this
+       , (p + ep) ~ Width
+       , (ep + p) ~ Width
        )
     => SNat v
+      -- ^ Number of translated virtual address bits.
     -> SNat p
+      -- ^ Number of physical bits produced after translation.
     -> SNat n
+      -- ^ Number of untranslated bits. A page is @2^n@ words in size.
     -> Signal d (Maybe (BitVector 2, Maybe Cell))
+      -- ^ Connection to the I/O bus.
     -> ( Signal d Cell
         , Signal d (Maybe (BitVector (v+n), Maybe Cell))
           -> Signal d (Maybe (BitVector (p+n), Maybe Cell))
-        )
+        ) -- ^ I/O response and mapping constructor, respectively.
 mmu _ _ _ ioreq = (ioresp, liftA2 mmapper cmap)
   where
     (ioresp, cmap) = mmu' @v @p @ev @ep ioreq
@@ -49,14 +69,18 @@ mmu _ _ _ ioreq = (ioresp, liftA2 mmapper cmap)
             -> Maybe (BitVector (p+n), x)
     mmapper m a = first (mapper m) <$> a
 
+-- | Implementation factor of 'mmu' that gives access to the raw translation
+-- table, instead of providing a mapping constructor.
 mmu' :: forall v p ev ep d g s.
         ( HasClockReset d g s
         , KnownNat v
         , KnownNat p
         , KnownNat ev
         , KnownNat ep
-        , Width ~ (ev + v)
-        , Width ~ (ep + p)
+        , (ev + v) ~ Width
+        , (v + ev) ~ Width
+        , (ep + p) ~ Width
+        , (p + ep) ~ Width
         )
      => Signal d (Maybe (BitVector 2, Maybe Cell))
      -> ( Signal d Cell
@@ -70,14 +94,14 @@ mmu' = moorep fT fR fO (pure ())
         sel' | Just (0, Just v) <- req = v .&. 1 /= 0
              | otherwise = sel
 
-        mp' | Just (1, Just v) <- req = fromIntegral v
+        mp' | Just (1, Just v) <- req = truncateB v
             | Just (a, Just _) <- req, a == 2 || a == 3 = mp + 1
             | otherwise = mp
 
-        map0' | Just (2, Just v) <- req = replace mp (fromIntegral v) map0
+        map0' | Just (2, Just v) <- req = replace mp (truncateB v) map0
               | otherwise = map0
 
-        map1' | Just (3, Just v) <- req = replace mp (fromIntegral v) map1
+        map1' | Just (3, Just v) <- req = replace mp (truncateB v) map1
               | otherwise = map1
 
     fR s = zeroExtend (pack (sSel s)) :>
@@ -96,8 +120,8 @@ data S v p = S
   }
 
 instance (KnownNat v, KnownNat p) => Default (S v p) where
-  -- | The default mapping is the identity mapping for the bottom 32kiB.
-  -- At reset, map 0 is active.
+  -- | At reset, physical page 0 appears in every position, because it
+  -- simplifies the hardware.
   def = S
     { sMap0 = repeat 0
     , sMap1 = repeat 0
