@@ -1,7 +1,6 @@
 name:                cfm-tools
 version:             0.1.0.0
 license:             BSD3
-license-file:        LICENSE
 author:              Cliff L. Biffle
 maintainer:          code@cliffle.com
 copyright:           2017 Cliff L. Biffle
