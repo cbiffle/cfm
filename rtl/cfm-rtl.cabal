@@ -28,6 +28,7 @@ library
                        RTL.SRAM
                        RTL.UART
                        RTL.MMU
+                       RTL.BootROM
                        RTL.Common.Bits
   build-depends:       base >= 4.7 && < 5
                      , cfm-arch

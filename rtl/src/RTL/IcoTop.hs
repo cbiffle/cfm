@@ -15,6 +15,7 @@ import RTL.Core
 import RTL.VGA
 import RTL.SRAM
 import RTL.MMU
+import RTL.BootROM
 
 import qualified RTL.UART as U
 
@@ -49,21 +50,7 @@ system raminit ins sram2h urx =
 
     -- The RAM return path to the core is affected by the Boot ROM mux and the
     -- IRQ vector insertion logic.
-    ram = applyVector $ mux shadowed romout sram2h
-
-    -- The Boot ROM shadow flag is initially set, but will go False on the
-    -- second instruction fetch from address 0.
-    shadowed = regEn True fetch0 $
-               regEn True fetch0 $
-               pure False
-    fetch0 = (&&) <$> fetch <*> (mreq .==. pure (Just (0, Nothing)))
-
-    -- The Boot ROM itself. All memory reads are directed to the ROM, whether or
-    -- not it's still active, because there's little cost to doing so and it
-    -- saves a gate. Note that ROM reads use 'mreq' directly, bypassing the MMU.
-    romout = blockRamFile (SNat @256) raminit
-                          (maybe undefined fst <$> mreq)
-                          (pure Nothing)
+    ram = applyVector $ bootROM d256 raminit mreq fetch sram2h
 
     -- The external SRAM interface, which *is* affected by the MMU.
     (sramA, sramW, h2sram) = extsram $ mmuMap mreq
