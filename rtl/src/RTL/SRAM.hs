@@ -1,10 +1,6 @@
 {-# LANGUAGE NoImplicitPrelude #-}
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeOperators #-}
-{-# LANGUAGE TypeFamilies #-}
 
--- | IO bus to SRAM interface
+-- | External SRAM interface.
 module RTL.SRAM where
 
 import Clash.Prelude
@@ -12,27 +8,30 @@ import Data.Maybe (fromMaybe, isJust)
 
 import CFM.Types
 
+-- | Simple interface to external SRAM. This is only part of the circuit,
+-- Verilog support code is required.
+--
+-- This interface assumes SRAM with an access time significantly shorter than
+-- our clock cycle. It registers the memory access parameters during the initial
+-- access cycle, and presents them to the SRAM during the response cycle. The
+-- SRAM must therefore do its entire access in less than a cycle.
+--
+-- To ensure that outputs are held stable during writes, and that back-to-back
+-- writes work, this interface requires an external circuit to generate the SRAM
+-- /WE signal. The easiest method is AND-ing this circuit's write output with an
+-- out-of-phase version of the core clock, producing a write pulse of 1/2 clock
+-- period offset within the cycle.
+--
+-- It currently seems easier to do this outside of Clash than within it.
 extsram :: (HasClockReset d g s)
-        => Signal d Cell  -- ^ SRAM-to-host data bus
-        -> Signal d (Maybe (BitVector a, Maybe Cell)) -- ^ IOBus
-        -> ( Signal d Cell
-           , Signal d (BitVector a)
+        => Signal d (Maybe (BitVector a, Maybe Cell)) -- ^ Memory request.
+        -> ( Signal d (BitVector a)
            , Signal d Bool
            , Signal d Cell
-           )  -- ^ IO response, SRAM address, SRAM write, host-to-SRAM data
-extsram = curry $ mealyB extsramT def
-
-data S a = S
-  { sA :: BitVector a
-  , sWD :: Maybe Cell
-  } deriving (Show)
-
-instance Default (S a) where def = S def def
-
-extsramT :: S a
-         -> (Cell, Maybe (BitVector a, Maybe Cell))
-         -> (S a, (Cell, BitVector a, Bool, Cell))
-extsramT s (s2h, ioreq) = (s', (s2h, sA s, isJust (sWD s), h2s))
+           )  -- ^ SRAM address, SRAM write, host-to-SRAM data
+extsram = unbundle . moore extsramT extsramO def
   where
-    s' = uncurry S $ fromMaybe (sA s, Nothing) ioreq
-    h2s = fromMaybe (errorX "SRAM D undefined during read") (sWD s)
+    -- State type is simply (BitVector a, Maybe Cell)
+    extsramT s = fromMaybe (fst s, Nothing)
+    extsramO s = (fst s, isJust (snd s), fromMaybe rdu (snd s))
+    rdu = errorX "Host-to-SRAM data undefined during read"
