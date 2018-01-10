@@ -1,14 +1,21 @@
-Cliffle Forth Machine
-=====================
+CFM: the Cliffle Forth Machine
+==============================
 
-This is a Forth-inspired processor targeting the Lattice ICE40 FPGA series. As a
-result of the FPGA choice, we have some interesting limitations.
+This is a Forth-inspired processor targeting the Lattice ICE40 FPGA series,
+currently primarily targeting the Icoboard.
+
+As a result of the FPGA choice, we have some interesting limitations.
 
 1. Block RAM is 256 x 16 bits and pseudo-dual-ported (1R1W with independent
    addresses).
 2. No hard DSP blocks of any sort, but efficient carry chain hardware.
 3. Not a lot of room.
 
-To make things more interesting, I'm targeting the small 1k variant of the FPGA,
-and I'm working in a pre-release hardware description language. Hooray,
-constraints!
+To make things more interesting, I'm trying to maintain support for the small 1k
+variant of the FPGA, and I'm working in a pre-release hardware description
+language. Hooray, constraints!
+
+More reading:
+
+- [Docs on the instruction set and programmer's model](doc/core.mkdn)
+- [The interrupt model](doc/interrupts.mkdn)

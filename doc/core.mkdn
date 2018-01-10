@@ -15,6 +15,9 @@ The CFM core is a 16-bit dual-stack CPU patterned after James Bowman's J1 core.
 
 ## Compared to the J1
 
+I haven't attempted to maintain source, binary, or timing compatibility with the
+J1 core described in Bowman's original paper.
+
 ### Load Timing
 
 The CFM targets Lattice ICE40 FPGAs. The ICE40 series uses 1R1W RAM, i.e. simple
@@ -24,14 +27,22 @@ they can issue two reads or writes per cycle. The J1 used this to ensure that a
 code fetch could always overlap with a memory operation; on ICE40 we have no
 such luxury.
 
-As a result, loads (ALU instructions with `Tmux` set to memory) now take two
-cycles.
+As a result, loads (ALU instructions with `Tmux` set to memory) and stores (bit
+`NM` set) now take two cycles.
+
+On the up side, external memory is *also* single-ported, so the CFM can run from
+external SRAM.
 
 ### ALU changes
 
 - Tmux 10: decrement has been replaced with subtraction. The magnitude
   comparator used by `<` is already most of the way to a subtraction circuit, so
   exposing this actually makes the chip *smaller*.
+
+- The shifts are explicitly mod-16, which made the shift logic simpler.
+
+- The depth value at Tmux 14 returns the current depth of *both* stacks, packed
+  as bytes into the 16-bit result.
 
 ## Registers and data buses
 
@@ -129,6 +140,7 @@ The single bit fields function as follows when *set*:
 `NM`: memory at address T loaded from N.
 
 The `Tmux` field controls a multiplexer that chooses the next value for T.
+
     0 -> t
     1 -> n
     2 -> t + n
@@ -138,11 +150,11 @@ The `Tmux` field controls a multiplexer that chooses the next value for T.
     6 -> complement t
     7 -> signExtend $ pack $ n == t
     8 -> signExtend $ pack $ unpack @(Signed 16) n < unpack t
-    9 -> n `shiftR` fromIntegral t
+    9 -> n `shiftR` (fromIntegral t `mod` 16)
     10 -> n - t
     11 -> r
     12 -> memoryAt (t `shiftR` 1)
-    13 -> n `shiftL` fromIntegral t
+    13 -> n `shiftL` (fromIntegral t `mod` 16)
     14 -> pack (rdepth, depth)
     15 -> signExtend $ pack $ n < t
 
@@ -153,8 +165,8 @@ Notes on those options:
 - Loading from memory (option 12) triggers a state machine that processes the
   load on the next cycle, so the instruction takes two cycles when this option
   is selected.
-- `depth` (option 14) yields the current data stack pointer when the instruction
-  began executing.
+- `depth` (option 14) yields the current data and return stack pointers when
+  the instruction began executing.
 
 The `Radj` and `Dadj` fields hold twos-complement integers that are added to the
 return and data stack pointers, respectively. The addition is performed *after*
@@ -174,45 +186,114 @@ or as a Forth stack comment: `( x n t -- t n )`.
 
 ## Instruction set notes and tricks
 
+### Common instructions
+
 Here are some ALU-instruction encodings of common Forth words. Many of these are
 due to Bowman's J1 paper. Omitted fields are zero.
 
-    dup     ALU            TN               Dadj=+1
-    over    ALU    Tmux=1  TN               Dadj=+1
-    swap    ALU    Tmux=1  TN
-    nip     ALU                             Dadj=-1
-    drop    ALU    Tmux=1                   Dadj=-1
+    dup     $6081 ALU            TN               Dadj=+1
+    over    $6181 ALU    Tmux=1  TN               Dadj=+1
+    swap    $6180 ALU    Tmux=1  TN
+    nip     $6003 ALU                             Dadj=-1
+    drop    $6103 ALU    Tmux=1                   Dadj=-1
 
-    2nip    ALU                             Dadj=-2
+    2nip    $6002 ALU                             Dadj=-2
 
-    >r      ALU    Tmux=1     TR            Dadj=-1 Radj=+1
-    r>      ALU    Tmux=11 TN               Dadj=+1 Radj=-1
-    r@      ALU    Tmux=11 TN               Dadj=+1
-    exit    ALU RP                                  Radj=-1
+    >r      $6147 ALU    Tmux=1     TR            Dadj=-1 Radj=+1
+    r>      $6b8d ALU    Tmux=11 TN               Dadj=+1 Radj=-1
+    r@      $6b81 ALU    Tmux=11 TN               Dadj=+1
+    exit    $700c ALU RP                                  Radj=-1
 
-    rdrop   ALU                                     Radj=-1
+    rdrop   $600c ALU                                     Radj=-1
 
-    +       ALU    Tmux=2                   Dadj=-1
-    and     ALU    Tmux=3                   Dadj=-1
-    or      ALU    Tmux=4                   Dadj=-1
-    xor     ALU    Tmux=5                   Dadj=-1
-    invert  ALU    Tmux=6
-    =       ALU    Tmux=7                   Dadj=-1
-    <       ALU    Tmux=8                   Dadj=-1
-    rshift  ALU    Tmux=9                   Dadj=-1
-    -       ALU    Tmux=10                  Dadj=-1
-    lshift  ALU    Tmux=13                  Dadj=-1
-    u<      ALU    Tmux=15                  Dadj=-1
+    +       $6203 ALU    Tmux=2                   Dadj=-1
+    and     $6303 ALU    Tmux=3                   Dadj=-1
+    or      $6403 ALU    Tmux=4                   Dadj=-1
+    xor     $6503 ALU    Tmux=5                   Dadj=-1
+    invert  $6600 ALU    Tmux=6
+    =       $6703 ALU    Tmux=7                   Dadj=-1
+    <       $6803 ALU    Tmux=8                   Dadj=-1
+    rshift  $6903 ALU    Tmux=9                   Dadj=-1
+    -       $6a03 ALU    Tmux=10                  Dadj=-1
+    lshift  $6d03 ALU    Tmux=13                  Dadj=-1
+    u<      $6f03 ALU    Tmux=15                  Dadj=-1
 
-    @       ALU    Tmux=12
+    @       $6c00 ALU    Tmux=12
+
+### Stores
 
 Forth's store-to-memory operator `!` requires two instructions on CFM (as with
-J1). This is because it needs to perform the write and drop *two* stack cells.
-An operator `(store)` that preserves the address can be defined as
+J1). This is because it needs to reference two stack cells: N to get the value
+to store, and the cell *under* N as the new value of T. There are two `!`-like
+instructions that have proven useful:
 
-    ALU NM Dadj=-1
+    !a  ( x addr -- addr )  $6023
+    !d  ( x addr -- x )     $6123
 
-Follow this with `drop` to complete the Forth-style store.
+Follow either with `drop` to complete a Forth-style store.
 
-`exit` can be folded into previous ALU operations that don't otherwise use the
-return stack, by setting `RP` and `Radj=-1`.
+### Instruction fusion
+
+This instruction set provides a lot of opportunities for optimization. In many
+cases, multiple Forth-level operations can be encoded into a single instruction.
+The assembler and BsForth both perform all the fusion cases below automatically.
+
+There are other fusion opportunities that aren't currently implemented, because
+they're pretty rare in practice.
+
+#### Return fusion
+
+A function return can be fused into many ALU instructions. Specifically, any
+instruction that does not set the TR or Radj bits. This means returning from a
+function is often free.
+
+Practically, this means that code will be slightly smaller and faster if the
+final instruction in a routine does not affect the return stack. For instance, a
+function that ends by discarding a value from each stack:
+
+    ... drop rdrop ;
+
+will save one word and one cycle by doing the return stack manipulation *first*:
+
+    ... rdrop drop ;
+
+#### Tail-call optimization
+
+A function return can be fused into a call instruction, by converting it to a
+jump.
+
+#### Unary non-destructive operation fusion
+
+A unary operation such as `@` or `invert` can be made to leave its operand
+available, i.e. to be *non-destructive*, by preceding it with `dup`.
+
+This sequence can be fused, by adjusting Dadj. In general, the sequence
+
+    dup @
+
+takes one word/cycle.
+
+#### Commutative non-destructive operation fusion
+
+A *commutative* binary operation such as `+` or `=` can be made to leave one
+operand on the stack by preceding it with `over`. This sequence can be fused.
+
+Furthmore, it can be made to leave both operands on the stack by prepending
+another `over`. This can also be fused.
+
+Thus, the sequence
+
+    over over +
+
+takes one word/cycle. In particular, `over over xor` is the cheapest way of
+comparing two values non-destructively for inequality for use with conditional
+branches.
+
+Note that the assembler is not currently smart enough to recognize that this is
+equivalent to:
+
+    : 2dup over over ;
+
+    2dup +
+
+That is, the `over over` sequence must be written inline to be recognized.
