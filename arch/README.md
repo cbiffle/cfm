@@ -1,3 +1,3 @@
 # CFM Architecture Support
 
-This contains common code for tools and RTL.
+This is the basic definition of the architecture, used by both tools and RTL.
