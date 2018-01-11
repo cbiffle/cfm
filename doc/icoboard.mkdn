@@ -73,3 +73,32 @@ it survives power cycles, I haven't automated it in the Makefile at the moment.
 Run:
 
     $ icoprog -f < build/ico-prog.bin
+
+
+Easily upload a new Forth image
+-------------------------------
+
+Burning a Forth image to SPI flash isn't ideal for iterative development. I'm
+currently carrying a set of words around that allow XMODEM image download.
+Here's a snapshot if you're curious.
+
+    ( Reloader for rebooting from high mem image                   )
+    here  $3B00 DP ! ]
+    $3B00 begin 2 - dup $4000 + @ swap !a dup 0 = until >r ; DP !
+    : reload $3B00 >r ;
+
+    ( XMODEM himem loader )
+    : xhi  $15 tx
+      begin rx!
+        4 over = if drop $06 tx exit then
+        1 <> if 1 throw then
+        rx! rx! over 255 swap - <> if 2 throw then
+        1- dup . 7 lshift $4000 + 128 bounds 0 >r begin
+          over over xor
+        while rx! 2dup swap c! r> + >r 1+ repeat 2drop
+        rx! r> $FF and <> if '?' emit $15 tx else $06 tx then again
+    ;
+
+As you can probably infer from the horrible horizontal formatting of that code,
+I've stashed those words into two blocks on an SD card so I can easily call them
+up if required.
