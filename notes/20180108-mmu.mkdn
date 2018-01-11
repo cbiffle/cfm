@@ -23,3 +23,10 @@ warning about a reset-related construct Clash is producing (which is admittedly
 really weird), and then the system doesn't come up.
 
 So I've done something wrong and will look into it later.
+
+---
+
+The Yosys warning was a red herring. The system is simply failing to perform at
+40MHz when there are enough large register-array memories. Based on some
+analysis I strongly suspect a bug in `icetime`. I've lowered the clock frequency
+of the demo and things are now stable.
