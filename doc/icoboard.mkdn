@@ -1,0 +1,75 @@
+The Icoboard Demo
+=================
+
+> Note: this reflects the state of the demo on 2018-01-10. If you want to check
+> out code that behaves the way this document describes, I suggest checking out
+> the commit where this doc was last modified.
+
+The Icoboard demo boots to a Forth environment, with support for VGA output,
+PS/2 keyboard, serial port, and SD card modules.
+
+Connections
+-----------
+
+The demo is designed around the following PMOD attachments.
+
+- [XESS StickIt!-VGA](http://www.xess.com/shop/product/stickit-vga/)
+- [XESS StickIt!-PS/2](http://www.xess.com/shop/product/stickit-ps2/)
+- [Digilent Pmod SD](http://store.digilentinc.com/pmod-sd-full-sized-sd-card-slot/)
+
+In addition, an optional serial port can be used with any Pmod UART module with
+the Pmod Interface Type 4 pinout, such as Digilent's USBUART module.
+
+Connections are as follows:
+
+- VGA STK1 connector to Icoboard Pmod 3 (STK2 connector not used).
+- PS/2 on Icoboard Pmod 4.
+- SD on Icoboard Pmod 2.
+- Serial on Icoboard Pmod 1 TOP ROW. This helps it clear Digilent's ridiculously
+  oversized SD PCB on port 2.
+
+The pin mapping is set by `rtl/syn/icoboard.pcf` together with
+`rtl/syn/ico-top.v`. If you want to rearrange things, that's where to start.
+
+
+Build and Flash
+---------------
+
+To build, you will need recent (as of late 2017) versions of
+
+- [Stack](https://docs.haskellstack.org/en/stable/README/)
+- [Yosys](http://www.clifford.at/yosys/)
+- [Icestorm](http://www.clifford.at/icestorm/)
+- [Arachne](https://github.com/cseed/arachne-pnr)
+- [Icotools](https://github.com/cliffordwolf/icotools)
+
+All further commands should be run from the `cfm` checkout.
+
+First, invoke Stack to set up an isolated environment with the right version of
+GHC and dependencies:
+
+    $ stack setup
+    $ stack build
+
+(The makefile does that, but it hides the output -- if something fails it's much
+easier to see with the commands above.)
+
+Now, run synthesis:
+
+    $ make bits-ico
+
+Connect your Icoboard (I have only tested it using the USB base board).
+
+Write the Forth boot image into SPI flash:
+
+    $ make program-ico-boot
+
+Now send the circuit and bootloader bitstream to the FPGA:
+
+    $ make program-ico
+
+The system should boot into Forth. If you want to flash the bitstream, so that
+it survives power cycles, I haven't automated it in the Makefile at the moment.
+Run:
+
+    $ icoprog -f < build/ico-prog.bin
