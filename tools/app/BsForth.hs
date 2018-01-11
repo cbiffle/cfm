@@ -188,6 +188,7 @@ initializeVars = do
                        , (RootWordlist, 0)
                        , (DP,      initialHERE)
                        , (FREEZEP, initialHERE)
+                       , (VocLink, 0)
                        ]
   mapM_ (uncurry setv) [ (HANDLER, 0)
                        , (STATE, 0)

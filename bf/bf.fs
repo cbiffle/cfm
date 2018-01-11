@@ -924,20 +924,40 @@ $20 constant bl
 \ -----------------------------------------------------------------------------
 \ Programming tools.
 
-\ Variant on ANS MARKER that takes a flag on stack indicating whether to
-\ preserve itself.
-\ : remarker  ( ? "name" -- )
-\   if
-\     create CURRENT @ @ , here cell+ ,
-\   else
-\     here CURRENT @ @ create , ,
-\   then
-\   does> dup @ CURRENT @ !  cell+ @ DP ! ;
-
-\ 'marker foo' creates a word 'foo' that, when executed, restores the
-\ dictionary and search order to the state they had before 'foo' was defined,
-\ forgetting 'foo' in the process.
-\ : marker  ( "name" -- )  false remarker ;
+\ Creates a word that marks a point in the dictionary. When executed, the word
+\ will restore the dictionary, search order, and vocabularies to the state they
+\ had immediately after the word was defined (i.e. the word will become the
+\ last defined word again). This is a variant on ANS MARKER, which destroys
+\ itself and is slightly harder to implement.
+: remarker  ( "name" -- )
+  create
+    \ Store as much as possible in the fixed-size region,
+    \ to keep me sane while debugging.
+    CURRENT @ ,         \ Identify CURRENT wordlist.
+    CONTEXT @ ,         \ Identify CONTEXT wordlist.
+    VOC-LINK @ dup ,    \ Identify most recent vocab.
+    begin               \ For all defined vocabs,
+      ?dup
+    while
+      dup cell+ @ ,     \ Record the current head.
+      @
+    repeat
+    here cell+ ,        \ Dictionary pointer to restore.
+  does>
+    dup @ CURRENT !     \ Restore CURRENT
+    cell+
+    dup @ CONTEXT !     \ Restore CONTEXT
+    cell+
+    dup @ dup VOC-LINK !  \ Restore VOC-LINK keeping a copy
+    swap cell+ swap
+    begin                 \ For each known vocab,
+      ?dup
+    while ( dict-addr link-addr )
+      over @ over cell+ !     \ restore the head.
+      swap cell+ swap @ \ advance both marker address and
+                        \ position in the vocab list.
+    repeat
+    @ DP ! ;            \ restore DP, finally consuming our addr
 
 : words
   CURRENT @
@@ -1699,7 +1719,7 @@ create TIB 80 allot
 ( install isr as the interrupt vector )
 ' isr  u2/  2 !
 
-\ true remarker empty
+remarker empty
 
 .( Compilation complete. HERE is... )
 here host.

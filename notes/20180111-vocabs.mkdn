@@ -1,0 +1,101 @@
+Taking a crack at finishing MARKER support.
+
+My last round of vocab changes were incomplete: VOC-LINK was not initially
+zeroed, so the vocabulary chain wound up point off to $DEAD. Fixed that now.
+
+Here's a testing word that prints the current heads of all known vocabularies.
+
+    : vocs
+      VOC-LINK @
+      begin
+        ?dup
+      while
+        dup .  dup cell+ @ .  cr
+        @
+      repeat ;
+
+Seems to work.
+
+I think my definition of REMARKER from my last round was *nearly* correct, but
+got some of the address computations wrong. Here's another attempt:
+
+    : remarker
+      create
+        \ Store as much as possible in the fixed-size region,
+        \ to keep me sane while debugging.
+        CURRENT @ ,         \ Identify CURRENT wordlist.
+        CONTEXT @ ,         \ Identify CONTEXT wordlist.
+        VOC-LINK @ dup ,    \ Identify most recent vocab.
+        begin               \ For all defined vocabs,
+          ?dup
+        while
+          dup cell+ @ ,     \ Record the current head.
+          @
+        repeat
+        here cell+ ,        \ Dictionary pointer to restore.
+      does>
+        dup @ CURRENT !     \ Restore CURRENT
+        cell+
+        dup @ CONTEXT !     \ Restore CONTEXT
+        cell+
+        dup @ dup VOC-LINK !  \ Restore VOC-LINK keeping a copy
+        swap cell+ swap
+        begin                 \ For each known vocab,
+          ?dup
+        while ( dict-addr link-addr )
+          over @ over cell+ !     \ restore the head.
+          swap cell+ swap @ \ advance both marker address and
+                            \ position in the vocab list.
+        repeat
+        @ DP ! ;            \ restore DP, finally consuming our addr
+
+To really test this, I need to do more than add definition(s): I should add
+vocab(s) and change CURRENT/CONTEXT.
+
+Starting conditions:
+
+    CURRENT @ . 2630 ok
+    CONTEXT @ . 2630 ok
+    here . 7528 ok
+    vocs 2628 7406 
+    ok
+
+Recording state:
+
+    remarker TEST ok
+    here . 7550 ok
+
+Adding goo to the dictionary:
+
+    vocabulary mutterings ok
+    vocs 7568 7550 
+    2628 7550 
+    ok
+    : new-in-forth ; ok
+    vocs 7568 7550 
+    2628 7572 
+    ok
+    mutterings definitions ok
+    : new-in-mutterings ; ok
+    vocs 7568 7592 
+    2628 7572 
+    ok
+    ' new-in-forth new-in-forth?
+    -13 !
+
+Note that the new-in-forth word is not visible from the mutterings context,
+because it was added after the vocabularies forked. Good.
+
+Also note that the definitions in the two vocabularies are intertwined in the
+dictionary. Just the sort of thing that makes marker hard. :-)
+
+Go!
+
+    TEST ok
+    CURRENT @ . 2630 ok
+    CONTEXT @ . 2630 ok
+    here . 7550 ok
+    vocs 2628 7528 
+    ok
+    ' mutterings  mutterings?
+    -13 !

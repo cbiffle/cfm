@@ -1,0 +1,161 @@
+Adding vocabularies / wordlists / whatevs.
+
+
+So I'm going to do a FIG-Forth-style CURRENT/CONTEXT system first. For
+reference, that means:
+
+- CURRENT is the wordlist to which new definitions get added.
+- CONTEXT is a second wordlist whose definitions can get used.
+- The search order is CONTEXT, then CURRENT.
+- Executing DEFINITIONS copies CONTEXT into CURRENT.
+- Executing a vocabulary word sets CONTEXT.
+
+So far so good.
+
+Wordlists are lists of words, in case that wasn't apparent. Wordlists are passed
+around as the address of the cell containing the head pointer. There is one root
+wordlist in the sysvars area (currently at address 6); when bootstrap begins,
+both CURRENT and CONTEXT are this wordlist.
+
+Now to more rigorously define CURRENT and CONTEXT. These are user variables
+containing wordlists. So to get the CURRENT wordlist,
+
+    CURRENT @
+
+To get the LFA of the most recent definition in the CURRENT wordlist,
+
+    CURRENT @ @
+
+and so forth.
+
+
+So far so easy. Things become significantly more complicated when one considers
+MARKER. I would like to continue supporting MARKER.
+
+The trouble is that wordlists are mutated as definitions are added. To undo some
+definitions, they must be mutated *back*.
+
+The current definition of REMARKER already handles this, implicitly, under the
+assumption that there is only one wordlist. When a MARKER is created, two cells
+are recorded (in this order):
+
+- The contents of the (single) wordlist head, that is, the LFA of the most
+  recent definition at the time the MARKER was created, and
+- The contents of the dictionary pointer.
+
+Together, these enable the MARKER (when executed) to forget definitions made
+after it *and* reclaim dictionary RAM.
+
+
+In a world with multiple wordlists, reclaiming dictionary RAM is no harder, but
+forgetting definitions is a different matter. We must extend the representation
+of MARKER to include a backup copy of all wordlists *in existence* at the time
+the MARKER is created.
+
+How can we find all wordlists in existence? After all, any cell in memory could
+be a wordlist.
+
+The answer lies in the definition of VOCABULARY.
+
+VOCABULARY is the defining word that creates FIG-style vocabularies. It records
+some stuff into the dictionary. One part of that stuff is a wordlist head, obvs.
+But it can record more things.
+
+Like the address of the previous vocabulary.
+
+Yup, Forth is linked lists all the way down.
+
+We need a new dictionary-level variable (which I'll initially put in a sysvar,
+but should become a user var at some point) to identify the most recently
+created vocabulary. Then, each vocabulary will capture its value and update it.
+This variable is called VocLink in the bootstrapper, and I'll probably call it
+VOC-LINK in the target because that's what FIG did.
+
+(Note: I'm pretty sure this has the same semantics as FIG's VOC-LINK, but FIG is
+not exactly well documented.)
+
+
+MARKER, then, needs to record
+
+- The dictionary pointer, as before.
+- The contents of VOC-LINK, so it can be restored.
+- The wordlist heads of every vocabulary reachable through VOC-LINK at the time
+  the marker was defined.
+
+Yup, MARKERs are now variable-sized.
+
+The assumption here is that the vocabulary chain reachable at the time the
+MARKER was defined is not going to get mutated or corrupted. That way, when the
+MARKER executes, it can follow the chain to find the vocabularies that need
+updating. Thus we don't need to store their addresses, and we don't even need to
+terminate the list of saved wordlist heads, because the chain will eventually
+terminate.
+
+
+There's one other thing MARKER needs to do, and that's to ensure that we don't
+wind up with an obsolete wordlist pointer sitting around somewhere. It can't
+reasonably find any reference anywhere in RAM, so there's always a possibility
+that it will produce a corrupted system environment. But there are two easily
+findable places where wordlist pointers live: CONTEXT and CURRENT. Their
+contents must be backed up at MARKER definition and restored at execution.
+
+
+
+In FIG-Forth, vocabularies are linked to the vocabulary in which they're
+defined. What isn't clear to me is whether that's a snapshot, or if the link is
+"live" such that new definitions are included. I would prefer it to be live, but
+this complicates searching.
+
+A snapshot version of chaining is as simple as loading the head of the CURRENT
+wordlist when the vocab is created, and storing it as the head of the new
+wordlist. In effect, such a vocab forks current.
+
+From squinting at the operation of FIG-Forth, I believe they snapshot. That'd
+certainly be easy.
+
+
+So the structure of a vocabulary word's parameter field could be as simple as
+two cells:
+- Link to previous vocab's link field.
+- Wordlist head.
+
+    : vocabulary
+      create here  VOC-LINK @ ,  VOC-LINK !
+             CURRENT @ @ ,
+      does> cell+ CONTEXT ! ;
+
+Snapshotting vocabularies instead of live-chaining means we can define FORTH as
+a normal word:
+
+    vocabulary forth
+    forth definitions
+      \ we've just forked the root wordlist
+
+
+Lemme take a crack at MARKER. Or, well, REMARKER, because that's easier.
+
+    : remarker
+      create
+        \ Store as much as possible in the fixed-size region,
+        \ to keep me sane while debugging.
+        CURRENT @ ,
+        CONTEXT @ ,
+        VOC-LINK @ dup ,
+        begin
+          ?dup
+        while
+          dup cell+ ,
+          @
+        repeat
+        here cell+ ,
+      does>
+        dup @ CURRENT !
+        cell+ dup @ CONTEXT !
+        cell+ dup @ dup VOC-LINK !
+        begin
+          ?dup
+        while
+          over @ over !
+          swap cell+ swap @
+        repeat
+        @ DP ! ;
