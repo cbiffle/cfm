@@ -158,7 +158,7 @@ create TIB 80 allot
 
 : cold
   \ Initialize user area
-  $1780 U0 !
+  $1B80 U0 !
   0 handler !
   10 base !
   forth definitions

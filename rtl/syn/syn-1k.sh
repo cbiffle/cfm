@@ -23,8 +23,14 @@ yosys -p "read_verilog ${VERILOG}/*.v ${SYN}/icestick-top.v" \
       -p "synth_ice40 -top top -abc2 -blif ${OUT}/syn1k.blif" \
       -q
 
+SEED=1
+echo "Running synthesis with seed ${SEED}"
 arachne-pnr -d 1k -p "${SYN}/icestick.pcf" "${OUT}/syn1k.blif" \
-            -o "${OUT}/syn1k.asc" -s 2
-
-icepack "${OUT}/syn1k.asc" "${OUT}/syn1k.bin"
-icetime -md hx1k -c 40 "${OUT}/syn1k.asc"
+            -o "${OUT}/syn1k.asc" -s ${SEED}
+until icetime -md hx1k -c 40 "${OUT}/syn1k.asc"
+do
+  SEED=$((SEED + 1))
+  echo "Retrying with seed ${SEED}"
+  arachne-pnr -d 1k -p "${SYN}/icestick.pcf" "${OUT}/syn1k.blif" \
+              -o "${OUT}/syn1k.asc" -s ${SEED}
+done

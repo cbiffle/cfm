@@ -65,7 +65,7 @@ build/ico-prog.asc: build/ico.asc build/boot.hex
 	  > $@
 
 build/icestick-prog.asc: build/icestick.asc build/bf-ice.hex
-	icebram -v rtl/syn/random-3k.hex build/bf-ice.hex \
+	icebram -v rtl/syn/random-3k5.hex build/bf-ice.hex \
 	  < $< \
 	  > $@
 
