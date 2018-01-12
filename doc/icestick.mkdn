@@ -1,0 +1,58 @@
+The Icestick Demo
+=================
+
+> Note: this reflects the state of the demo on 2018-01-11. If you want to check
+> out code that behaves the way this document describes, I suggest checking out
+> the commit where this doc was last modified.
+
+The [Icestick](http://www.latticesemi.com/icestick) is a low-cost evaluation
+board for the ICE40 HX1K FPGA. (At the time of this writing it's about US$11.)
+
+The CFM Icestick demo boots to a minimal Forth environment with a serial
+console.  The full compiler and assembler are available, but mass storage
+support is not, due to RAM constraints -- a smidge over 2 kiB is left for your
+use after loading bsforth.
+
+
+Build and Flash
+---------------
+
+To build, you will need recent (as of late 2017) versions of
+
+- [Stack](https://docs.haskellstack.org/en/stable/README/)
+- [Yosys](http://www.clifford.at/yosys/)
+- [Icestorm](http://www.clifford.at/icestorm/)
+- [Arachne](https://github.com/cseed/arachne-pnr)
+- [Icotools](https://github.com/cliffordwolf/icotools)
+
+All further commands should be run from the `cfm` checkout.
+
+First, invoke Stack to set up an isolated environment with the right version of
+GHC and dependencies:
+
+    $ stack setup
+    $ stack build
+
+(The makefile does that, but it hides the output -- if something fails it's much
+easier to see with the commands above.)
+
+Plug in your Icestick and run
+
+    $ make program-icestick
+
+This should run synthesis, bootstrap the Forth environment, and flash the
+bitstream onto the Icestick.
+
+BsForth's console is on the Icestick's USB-to-UART interface (which typically
+enumerates as `/dev/ttyUSB1` on Linux). The settings are:
+
+- 115200 bps
+- Hardware (RTS/CTS) flow control on
+
+System reset is connected to DTR, so your terminal must assert DTR for the
+system to start. (In Minicom, set the DTR drop time under Modem and Dialing, and
+you can use the Hangup command to reset the demo system.)
+
+The system returns its internal reset system on DCD.
+
+To verify that it's working, run `words` or `0 ledtog`.

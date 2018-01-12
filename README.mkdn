@@ -20,3 +20,4 @@ More reading:
 - [Docs on the instruction set and programmer's model](doc/core.mkdn)
 - [The interrupt model](doc/interrupts.mkdn)
 - [The Icoboard demo](doc/icoboard.mkdn)
+- [The Icestick demo](doc/icestick.mkdn)
