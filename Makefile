@@ -17,10 +17,18 @@ program-icestick: build/icestick-prog.bin
 program-ico: build/ico-prog.bin
 	icoprog -p < $<
 
-program-ico-boot: build/test.hbin
+program-ico-boot: build/bf-ico.hbin
 	icoprog -f -O 4 < $<
 
-build/test.hex: bf/bf.fs
+build/bf-ice.fs: bf/bf.fs bf/ice.fs
+	mkdir -p build
+	cat $^ > $@
+
+build/bf-ico.fs: bf/bf.fs bf/ico.fs
+	mkdir -p build
+	cat $^ > $@
+
+build/bf-%.hex: build/bf-%.fs
 	mkdir -p build
 	stack --silent setup && \
 	  stack --silent build && \
@@ -53,6 +61,11 @@ build/icestick.asc:
 
 build/ico-prog.asc: build/ico.asc build/boot.hex
 	icebram -v rtl/syn/random-256.hex build/boot.hex \
+	  < $< \
+	  > $@
+
+build/icestick-prog.asc: build/icestick.asc build/bf-ice.hex
+	icebram -v rtl/syn/random-3k.hex build/bf-ice.hex \
 	  < $< \
 	  > $@
 

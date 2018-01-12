@@ -1,0 +1,26 @@
+It would be really nice to have a useful Icestick demo!
+
+Target scope:
+- Boot into BsForth
+- Serial console over USB connection
+- FPGA BRAM only
+
+Optional:
+- Support for SD Pmod plugged into the sole Pmod connector.
+
+Would be really nice but too much work for my spare time right now:
+- Flash translation layer to allow use of the SPI flash as block storage.
+
+
+From here, I imagine the specific things I'd need to do are:
+
+1. Split bf.fs into multiple files, separating the Icoboard specifics.
+
+2. Rewrite icestick-top.v and extend icestick.pcf.
+
+3. Clean up the makefile.
+
+
+The core bsforth kernel, which includes *nearly* everything I'd need, is
+currently 1932 words. The largest memory I can fit into an HX1K, while leaving
+room for both stacks, is 3.5 kiW. So this seems plausible if cramped.

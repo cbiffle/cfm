@@ -11,14 +11,15 @@ import CFM.Types
 import RTL.IOBus
 import RTL.IRQ
 import RTL.GPIO
-import RTL.Timer
 import RTL.Core
+import RTL.UART
 
 system :: (HasClockReset dom gated synchronous)
        => FilePath
        -> Signal dom Cell
-       -> Signal dom Cell
-system raminit ins = outs
+       -> Signal dom Bit  -- UART RX
+       -> (Signal dom Cell, Signal dom Bit)
+system raminit ins urx = (outs, utx)
   where
     (ioreq, fetch) = coreWithRAM ram ioresp
 
@@ -30,19 +31,24 @@ system raminit ins = outs
     -- I/O devices
     (ioresp0, outs) = outport $ partialDecode ioreq0
     (ioresp1, irq0) = inport ins ioreq1
-    (ioresp2, irq1 :> irq2 :> Nil) = timer $ partialDecode @2 ioreq2
+    (ioresp2, _, _, urxne, utx) = uart urx $ partialDecode ioreq2
     (ramRewrite, ioresp3) = multiIrqController irqs fetch $ partialDecode ioreq3
-    irqs = irq0 :> irq1 :> irq2 :> repeat (pure False)
+    irqs = irq0 :> urxne :> repeat (pure False)
 
 {-# ANN topEntity (defTop { t_name = "icestick_soc"
                           , t_inputs = [ PortName "clk_core"
                                        , PortName "reset"
                                        , PortName "inport"
+                                       , PortName "uart_rx"
                                        ]
-                          , t_output = PortName "out1"
+                          , t_output = PortField ""
+                                       [ PortName "out1"
+                                       , PortName "uart_tx"
+                                       ]
                           }) #-}
 topEntity :: Clock System 'Source
           -> Reset System 'Asynchronous
           -> Signal System Cell
-          -> Signal System Cell
+          -> Signal System Bit
+          -> (Signal System Cell, Signal System Bit)
 topEntity c r = withClockReset c r $ system "random-3k.readmemb"
