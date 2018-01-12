@@ -891,6 +891,11 @@ $20 constant bl
   ;] compile,
   s, ;  immediate
 
+: ."
+  postpone S"
+  postpone type
+  ; immediate
+
 : postpone_
   parse-name dup if
     sfind if  ( xt flags )

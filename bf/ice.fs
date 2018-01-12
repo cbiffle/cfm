@@ -169,9 +169,8 @@ create TIB 80 allot
   ['] tx 'emit !
   ['] rx! 'key !
   ei
-  35 emit
-  CURRENT @ @ cell+ count type
-  35 emit cr
+  ." bsforth; last definition: "
+  CURRENT @ @ cell+ count type cr
   quit ;
 
 ( install cold as the reset vector )

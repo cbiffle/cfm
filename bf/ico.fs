@@ -727,9 +727,8 @@ create TIB 80 allot
     ['] kbdkey 'key !
   then
   ei
-  35 emit
-  CURRENT @ @ cell+ count type
-  35 emit cr
+  ." bsforth; last definition: "
+  CURRENT @ @ cell+ count type cr
   quit ;
 
 ( install cold as the reset vector )
