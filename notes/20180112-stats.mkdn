@@ -1,0 +1,68 @@
+Higher-order traversal and processing of a wordlist:
+
+    : wlfold  ( i*x wl x0 xt -- j*x x' )
+      \ Hide traversal state.
+      >r >r     ( i*x wl )          ( R: xt x0 )
+      begin
+        @ ?dup  ( i*x lfa lfa | i*x 0 )
+      while     ( i*x lfa )         ( R: xt x )
+        r>      ( i*x lfa x )       ( R: xt )
+        over    ( i*x lfa x lfa )   ( R: xt )
+        r@      ( i*x lfa x lfa xt )( R: xt )
+        swap >r ( i*x lfa x xt )    ( R: xt lfa )
+        execute ( j*x x' )          ( R: xt lfa )
+        r> swap >r
+                ( j*x lfa )         ( R: xt x' )
+      repeat
+      r> rdrop ;
+
+WORDS reimplemented thusly:
+
+    : words'
+      CONTEXT @
+      0
+      [: ( lfa x )
+        swap  ( x lfa )
+        cell+   ( x nfa )
+        count type space  ( x )
+        1+ ;] wlfold
+      cr
+      . ;
+
+Listing all words and their apparent sizes in the dictionary:
+
+    : sizes
+      CONTEXT @
+      here
+      [:
+        over cell+ count type space
+        over - . cr
+      ;] wlfold drop ;
+
+Approximate use count:
+
+    : #uses   ( xt -- count )
+      u2/ >r
+      0 0
+      begin
+        here over xor
+      while ( count address ) ( R: jump )
+        dup @ $BFFF and r@ = if swap 1+ swap then
+        cell+
+      repeat
+      rdrop drop ;
+
+    : uses
+      CONTEXT @
+      0
+      [:
+        drop
+        cell+ count
+        2dup type space
+        + aligned
+        dup @ if '*' emit space then
+        cell+
+        #uses . cr
+        0
+      ;]
+      wlfold drop ;
