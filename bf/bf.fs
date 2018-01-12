@@ -561,27 +561,32 @@ $FFFF constant true  ( also abused as -1 below, since it's cheaper )
   0 [: swap c, ;] sfoldl drop
   align ;
 
-\ Implementation factor of the other defining words: parses a name and creates
-\ a header, without generating any code.
-: (CREATE)
-  ( link field )
-  align here  CURRENT @ @ ,  CURRENT @ !
-  ( name )
+\ Since Forth code is effectively equivalent to machine code on CFM, colon is
+\ the simplest of the words that introduce headers. Other words are defined
+\ in terms of it. This is unusual; CREATE is more often the shared factor.
+: :
+  \ Link field
+  align here  CURRENT @  dup @ ,  !
+  \ Name
   parse-name s,
-  ( flags )
-  0 , ;
-
-: :  (CREATE) ] ;
+  \ Flags
+  0 ,
+  \ And begin compiling
+  ] ;
   \ Note that this definition gets used immediately.
 
 : create
-  (CREATE)
-  postpone (dovar) ;
+  :
+  postpone [        \ Turn compiler back off
+  postpone (dovar)  \ Compile code to push address.
+  ;
 
 : constant
-  (CREATE)
-  postpone (docon)
-  , ;
+  :
+  postpone [        \ Turn compiler back off.
+  postpone (docon)  \ Compile code to push following cell.
+  ,                 \ Compile constant value.
+  ;
 
 : variable create 0 , ;
 
