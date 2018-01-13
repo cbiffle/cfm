@@ -146,8 +146,8 @@ create TIB 80 allot
         . '!' emit
       then
     else
-      STATE @ 0= if  
-        'o' emit 'k' emit
+      STATE @ 0= if
+        ." ok"
       then
     then
     cr
@@ -166,7 +166,8 @@ create TIB 80 allot
   ['] tx 'emit !
   ['] rx! 'key !
   ei
-  ." bsforth; last definition: "
+  ." bsforth | "
+  U0 @ here - . ." bytes free | last word: "
   CURRENT @ @ cell+ count type cr
   quit ;
 
