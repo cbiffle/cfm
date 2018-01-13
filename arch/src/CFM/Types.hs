@@ -10,7 +10,7 @@ import Clash.Prelude hiding (cycle)
 type Width = 16
 -- | A memory cell.
 type Cell = BitVector Width
--- | The address of a cell. Cellss are byte-addressed, so the bottom bit is
+-- | The address of a cell. Cells are byte-addressed, so the bottom bit is
 -- omitted.
 type CellAddr = BitVector (Width - 1)
 -- | The address of a word in either the memory or I/O space.
