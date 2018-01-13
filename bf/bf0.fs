@@ -926,5 +926,39 @@ variable 'emit
 
 : [']  ' postpone literal ; immediate
 
+
+\ -------------------------------------------------------------------
+\ Terminal input buffer and text interpreter
+
+\ TODO the TIB should probably be in the user area.
+
+create TIB 80 allot
+
+: quit
+  0 RSP!
+  0 handler !
+  postpone [
+  begin
+    TIB 'SOURCE !
+    80  'SOURCE cell+ !
+    0 >IN !
+    SOURCE accept  'SOURCE cell+ !
+    space
+    ['] interpret catch
+    ?dup if
+      true over = if
+        \ abort isn't supposed to print
+        drop
+      else 
+        . '!' emit
+      then
+    else
+      STATE @ 0= if
+        ." ok"
+      then
+    then
+    cr
+  again ;
+
 .( Volume 1 compiled, size:)
 here host.

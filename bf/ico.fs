@@ -675,35 +675,7 @@ create vectors  16 cells allot
 ' rx-isr vectors 9 cells + !
 ' kbdisr vectors irq#negedge cells + !
 
-create TIB 80 allot
-
 : rx! rx dup 0< if rx! exit then ;
-
-: quit
-  0 RSP!
-  0 handler !
-  postpone [
-  begin
-    TIB 'SOURCE !
-    80  'SOURCE cell+ !
-    0 >IN !
-    SOURCE accept  'SOURCE cell+ !
-    space
-    ['] interpret catch
-    ?dup if
-      true over = if
-        \ abort isn't supposed to print
-        drop
-      else 
-        . '!' emit
-      then
-    else
-      STATE @ 0= if  
-        ." ok"
-      then
-    then
-    cr
-  again ;
 
 : cold
   \ Initialize user area, leaving some space for online user definitions
