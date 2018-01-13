@@ -174,9 +174,8 @@ create TIB 80 allot
 ( install cold as the reset vector )
 ' cold  u2/  0 !
 ( install isr as the interrupt vector )
-' isr  u2/  2 !
 
-remarker empty
+' isr  u2/  2 !
 
 .( Compilation complete. HERE is... )
 here host.
