@@ -49,7 +49,7 @@ mmu :: forall n v p ev ep d g s.
       -- ^ Number of physical bits produced after translation.
     -> SNat n
       -- ^ Number of untranslated bits. A page is @2^n@ words in size.
-    -> Signal d (Maybe (BitVector 2, Maybe Cell))
+    -> Signal d (Maybe (BitVector 1, Maybe Cell))
       -- ^ Connection to the I/O bus.
     -> ( Signal d Cell
         , Signal d (Maybe (BitVector (v+n), Maybe Cell))
@@ -82,49 +82,32 @@ mmu' :: forall v p ev ep d g s.
         , (ep + p) ~ Width
         , (p + ep) ~ Width
         )
-     => Signal d (Maybe (BitVector 2, Maybe Cell))
+     => Signal d (Maybe (BitVector 1, Maybe Cell))
      -> ( Signal d Cell
         , Signal d (Vec (2^v) (BitVector p))
         )
-mmu' = moorep fT fR fO (pure ())
+mmu' = moorep fT fR sMap0 (pure ())
   where
-    fT :: S v p -> (Maybe (BitVector 2, Maybe Cell), ()) -> S v p
-    fT (S map0 map1 sel mp) (req, _) = S map0' map1' sel' mp'
+    fT :: S v p -> (Maybe (BitVector 1, Maybe Cell), ()) -> S v p
+    fT (S map0 mp) (req, _) = S map0' mp'
       where
-        sel' | Just (0, Just v) <- req = v .&. 1 /= 0
-             | otherwise = sel
-
-        mp' | Just (1, Just v) <- req = truncateB v
-            | Just (a, Just _) <- req, a == 2 || a == 3 = mp + 1
+        mp' | Just (0, Just v) <- req = truncateB v
             | otherwise = mp
 
-        map0' | Just (2, Just v) <- req = replace mp (truncateB v) map0
+        map0' | Just (1, Just v) <- req = replace mp (truncateB v) map0
               | otherwise = map0
 
-        map1' | Just (3, Just v) <- req = replace mp (truncateB v) map1
-              | otherwise = map1
-
-    fR s = zeroExtend (pack (sSel s)) :>
-           zeroExtend (sMapPtr s) :>
+    fR s = zeroExtend (sMapPtr s) :>
            zeroExtend (sMap0 s !! sMapPtr s) :>
-           zeroExtend (sMap1 s !! sMapPtr s) :>
            Nil
-    fO s | sSel s = sMap1 s
-         | otherwise = sMap0 s
 
 data S v p = S
   { sMap0 :: Vec (2^v) (BitVector p)
-  , sMap1 :: Vec (2^v) (BitVector p)
-  , sSel :: Bool
   , sMapPtr :: BitVector v
   }
 
 instance (KnownNat v, KnownNat p) => Default (S v p) where
-  -- | At reset, physical page 0 appears in every position, because it
-  -- simplifies the hardware.
   def = S
     { sMap0 = map fromIntegral indicesI
-    , sMap1 = map fromIntegral indicesI
-    , sSel = False
     , sMapPtr = def
     }
