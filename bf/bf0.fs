@@ -111,6 +111,8 @@ $20 constant bl
 : <> = invert ;
 : u> swap u< ;
 
+: 2!  ( x1 x0 a-addr -- )  !a cell+ ! ;
+
 : depth  depths $FF and ;
 : rdepth  depths 8 rshift 1- ;
 
@@ -946,8 +948,7 @@ create TIB 80 allot
   0 handler !
   postpone [
   begin
-    TIB 'SOURCE !
-    80  'SOURCE cell+ !
+    80 TIB 'SOURCE 2!
     0 >IN !
     SOURCE accept  'SOURCE cell+ !
     space

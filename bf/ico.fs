@@ -426,11 +426,11 @@ variable blk
   blk @ >r   SOURCE >r >r   >IN @ >r
   \ Set up input to read from the block.
   dup blk !
-  block 'SOURCE !  1024 'SOURCE cell+ !  0 >IN !
+  1024 swap block 'SOURCE 2!  0 >IN !
   \ Try to interpret.
   ['] interpret catch
   \ Whether that succeeded or failed, restore the old input spec.
-  r> >IN !  r> r> 'SOURCE cell+ !  'SOURCE !  r> dup blk !  ( except old-blk )
+  r> >IN !  r> r> swap 'SOURCE 2!  r> dup blk !  ( except old-blk )
   \ If we were loading from a block before LOAD, the address is likely
   \ wrong. Update it.
   ?dup if  block 'SOURCE !  then
