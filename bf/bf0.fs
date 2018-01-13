@@ -579,12 +579,19 @@ $20 constant bl
   0 [: swap c, ;] sfoldl drop
   align ;
 
+\ Given the head of a linked list starting at 'addr', creates a new link at
+\ HERE by comma-ing the old head into place and storing HERE as the new
+\ head. Implementation factor.
+: >link  ( addr -- )
+  align here  ( head newlink )
+  swap dup @ ,  ( newlink head )
+  ! ;
+
 \ Since Forth code is effectively equivalent to machine code on CFM, colon is
 \ the simplest of the words that introduce headers. Other words are defined
 \ in terms of it. This is unusual; CREATE is more often the shared factor.
 : :
-  \ Link field
-  align here  CURRENT @  dup @ ,  !
+  CURRENT @ >link
   \ Name
   parse-name s,
   \ Flags
@@ -627,7 +634,7 @@ variable #user  8 #user !
   does> @  U0 @ + ;
 
 : vocabulary
-  create  here  VOC-LINK @ ,  VOC-LINK !
+  create  VOC-LINK >link
           CURRENT @ @ ,
   does> cell+ CONTEXT ! ;
 
