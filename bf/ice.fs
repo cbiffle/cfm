@@ -27,10 +27,6 @@ $8002 constant OUTSET  ( 1s set pins, 0s do nothing)
 $8004 constant OUTCLR  ( 1s clear pins, 0s do nothing)
 $8006 constant OUTTOG  ( 1s toggle pins, 0s do nothing)
 
-: outpin
-  create #bit ,
-  does> @ swap if OUTSET else OUTCLR then ! ;
-
 $A000 constant IN
 
 ( ----------------------------------------------------------- )
@@ -41,7 +37,7 @@ variable uart-rx-buf  uart-#rx 1- cells allot
 variable uart-rx-hd
 variable uart-rx-tl
 
-0 outpin >CTS_N
+: >CTS_N if OUTSET else OUTCLR then 1 swap ! ;
 
 : rxq-empty? uart-rx-hd @ uart-rx-tl @ = ;
 : rxq-full? uart-rx-hd @ uart-rx-tl @ - uart-#rx = ;
@@ -65,7 +61,8 @@ variable uart-rx-tl
 \ is set.
 : rx  ( -- x )
   rxq>
-  rxq-empty? if 0 >CTS_N then  \ allow sender to resume if we've emptied the queue.
+  rxq-empty? 0= >CTS_N
+    \ allow sender to resume if we've emptied the queue.
   ;
 
 ( ----------------------------------------------------------- )
@@ -115,9 +112,9 @@ create vectors  16 cells allot
       over cells  vectors + @ execute
     then
     1 lshift
-    swap 1 - swap
+    swap 1- swap
   repeat
-  drop drop
+  2drop
   \ Patch up interrupt return address.
   r> 2 - >r
   \ Atomically enable interrupts and return.
@@ -158,7 +155,7 @@ create TIB 80 allot
 
 : cold
   \ Initialize user area
-  $1B80 U0 !
+  $1C00  #user @ cells -  U0 !
   0 handler !
   10 base !
   forth definitions

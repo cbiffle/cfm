@@ -75,7 +75,7 @@ variable uart-rx-tl
 \ is set.
 : rx  ( -- x )
   rxq>
-  rxq-empty? if 0 >CTS_N then  \ allow sender to resume if we've emptied the queue.
+  rxq-empty? 0= >CTS_N  \ allow sender to resume if we've emptied the queue.
   ;
 
 ( ----------------------------------------------------------- )
@@ -468,7 +468,7 @@ variable kbd#bit
 : kbdisr
   3 #bit  IN @ and  12 lshift     \ get data value in bit 15
   kbdbuf @  1 rshift or  kbdbuf ! \ insert it into shift register
-  kbd#bit @ 1 - kbd#bit !d        \ decrement bit counter
+  kbd#bit @ 1- kbd#bit !d        \ decrement bit counter
   0= if   \ we're done
     irq#negedge irq-off           \ disable this IRQ
     12 #bit OUTSET !               \ pull clock low
@@ -663,9 +663,9 @@ create vectors  16 cells allot
       over cells  vectors + @ execute
     then
     1 lshift
-    swap 1 - swap
+    swap 1- swap
   repeat
-  drop drop
+  2drop
   \ Patch up interrupt return address.
   r> 2 - >r
   \ Atomically enable interrupts and return.
@@ -706,7 +706,7 @@ create TIB 80 allot
   again ;
 
 : cold
-  \ Initialize user area
+  \ Initialize user area, leaving some space for online user definitions
   $7B80 U0 !
   0 handler !
   10 base !
