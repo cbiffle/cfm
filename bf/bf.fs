@@ -602,7 +602,7 @@ $FFFF constant true  ( also abused as -1 below, since it's cheaper )
   postpone r>
   ; immediate
 
-variable #user  9 #user !
+variable #user  8 #user !
   \ Holds the number of user variables that have been defined.
 : user
   create  #user @ cells ,  1 #user +!
