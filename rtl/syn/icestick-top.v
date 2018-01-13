@@ -7,6 +7,9 @@ module top(
   input dtr_n,
   output dcd_n,
   output cts_n,
+  output irda_txd,
+  input irda_rxd,
+  output irda_sd,
   output [4:0] led);
 
   wire clk_core;
@@ -74,6 +77,8 @@ module top(
 
   assign led = {core_reset_n, out1[4:1]};
   assign cts_n = out1[0];
-  assign in = 16'b0;
+  assign in = {15'b0, irda_rxd};
   assign dcd_n = ~core_reset_n; // indicate reset status back to terminal
+  assign irda_sd = out1[5];
+  assign irda_txd = out1[6];
 endmodule
