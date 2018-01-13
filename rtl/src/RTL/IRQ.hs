@@ -70,11 +70,30 @@ data MIS = MIS
 instance Default MIS where
   def = MIS False (repeat False) (repeat False) 0 False
 
+-- | An interrupt controller supporting up to 16 active-high interrupt inputs.
+--
+-- Interrupt inputs can be individually enabled. A high level on any enabled
+-- input will interrupt the processor. The processor can determine the interrupt
+-- source be reading the IRQST register.
+--
+-- There is also a global interrupt enable bit. It is cleared at reset, and
+-- when the processor is interrupted. It can be set by software to accept
+-- interrupts.
+--
+-- Writes to the IRQST register also serve as enable triggers. Any write sets
+-- the global enable bit. The value written is ignored.
+--
 -- Registers:
--- 0: interrupt statuses on read; enable trigger on write
--- 2: literal enable bit (read/write)
--- 4: interrupt mask set enable
--- 6: interrupt mask clear enable
+-- 0: IRQST. Reads as a mask of active and enabled interrupts. Any write sets
+--    the global enable bit.
+-- 2: IRQEN. Bit 0 is the global enable bit, and can be read and written. Other
+--    bits read as zero and ignore writes.
+-- 4: IRQSE. A 1 written to any bit position enables the corresponding
+--    interrupt. On writes, zero bits are ignored. Reads as the interrupt
+--    enable mask.
+-- 6: IRQCE. A 1 written to any bit position disables the corresponding
+--    interrupt. On writes, zero bits are ignored. Reads as the interrupt
+--    enable mask (the same as IRQSE).
 multiIrqController
   :: (HasClockReset d g s)
   => Vec Width (Signal d Bool)
