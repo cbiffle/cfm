@@ -79,7 +79,7 @@
 $FFFF constant true  ( also abused as -1 below, since it's cheaper )
 0 constant false
 2 constant cell
-
+$20 constant bl
 
 \ -----------------------------------------------------------------------------
 \ More useful Forth words.
@@ -464,6 +464,8 @@ $FFFF constant true  ( also abused as -1 below, since it's cheaper )
 : min  ( n1 n2 -- lesser )
   2dup < if drop else nip then ;  ( TODO could be optimized )
 
+: u<= swap u< 0= ;
+
 : c!  ( c c-addr -- )
   dup >r
   1 and if  \ LSB set
@@ -543,13 +545,29 @@ $FFFF constant true  ( also abused as -1 below, since it's cheaper )
   repeat
   rdrop ;
 
+\ Consume source code characters while they match a predicate, plus the
+\ first character to match (if one does). Return the matched section as a
+\ string. If the end of input is reached, the string will be zero-length.
+: scan  ( pred -- c-addr u )
+  SOURCE  >IN @  /string    \ Get unconsumed tail of input.
+  over >r                   \ Stash the start address.
+  rot skip-while            \ Skip characters matching the predicate.
+  2dup  1 min  +            \ Compute new start of input, eating delim.
+  'SOURCE @ -  >IN !        \ Advance input to there.
+  drop r> tuck -            \ Compute string bounds.
+  ;
+
+\ Skip source code characters while they match a predicate.
+: skip  ( pred -- )
+  SOURCE  >IN @  /string    \ Get unconsumed tail of input.
+  rot skip-while            \ Skip characters matching the predicate.
+  drop                      \ We only care about the start address.
+  'SOURCE @ -  >IN !        \ Advance input to there.
+  ;
+
 : parse-name
-  SOURCE  >IN @  /string    ( c-addr u )
-  [: $21 u< ;] skip-while over >r   ( c-addr' u' ) ( R: c-addr' )
-  [: $20 swap u< ;] skip-while  ( sp-addr sp-u ) ( R: token-addr )
-  1 min over +                          ( sp-addr rest-addr ) ( R: " )
-  'SOURCE @ -  >IN !
-  r> tuck - ;
+  [: bl u<= ;] skip
+  [: bl u> ;] scan ;
 
 
 \ -----------------------------------------------------------------------------
@@ -655,8 +673,6 @@ forth definitions
 \ More useful Forth words.
 
 
-: u<= swap u< 0= ;
-
 : u/mod  ( num denom -- remainder quotient )
   0 0 16
   begin                   ( n d r q i )
@@ -703,7 +719,6 @@ variable 'emit
 : key 'key @ execute ;
 : emit 'emit @ execute ;
 
-$20 constant bl
 : space bl emit ;
 : beep 7 emit ;
 
@@ -873,17 +888,10 @@ $20 constant bl
 
 \ Block comments look for a matching paren.
 : (
-  SOURCE  >IN @  /string
-  [: ')' <> ;] skip-while
-  1 min +  \ consume the trailing paren
-  'SOURCE @ -  >IN ! ;  immediate
+  [: ')' <> ;] scan 2drop ;  immediate
 
 : S"
-  SOURCE  >IN @  /string
-  over >r
-  [: '"' <> ;] skip-while
-  2dup  1 min +  'SOURCE @ -  >IN !
-  drop r> tuck -
+  [: '"' <> ;] scan
 
   [:  ( -- c-addr u )
       \ Uses its return address to locate a string literal. Pushes the
