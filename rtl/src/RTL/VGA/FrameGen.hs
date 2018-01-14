@@ -6,6 +6,7 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DeriveAnyClass #-}
 module RTL.VGA.FrameGen (framegen) where
@@ -39,6 +40,8 @@ data GState = GState
     -- ^ Font Base (TODO: this name needs work)
   , _gsAddr :: (Bit, BitVector 11)
     -- ^ Address for writing to video memory.
+  , _gsWriteValue :: Maybe Cell
+    -- ^ Write value for delayed write-through.
   , _gsReadValue :: Cell
     -- ^ Read value, registered to improve bus timing.
   }
@@ -56,6 +59,7 @@ instance Default GState where
     , _gsEVIF = False
     , _gsFB = def
     , _gsAddr = def
+    , _gsWriteValue = def
     , _gsReadValue = def
     }
 
@@ -71,45 +75,23 @@ framegen :: (HasClockReset d g s)
          -> Signal d TimingSigs
          -> ( Signal d Bool   -- hblank interrupt
             , Signal d (Bool, Bool)   -- start of / end of irqs
-            , Signal d Bool   -- active
             , Signal d (BitVector 14) -- pixel address
             , Signal d (BitVector 4)  -- glyph base
             , Signal d (Maybe ((Bit, BitVector 11), Cell))  -- write through
             , Signal d Bool -- cursor
             , Signal d Cell -- read response
             )
-framegen ioreq hts vts = mealyB framegenT def (ioreq, bundle (hts, vts))
+framegen ioreq hts vts = mooreB framegenT framegenO def
+                         (ioreq, bundle (hts, vts))
 
--- | Mealy function for the framegen circuit.
---
--- This is responsible for applying updates from the I/O bus to the state, and
--- generating the outputs. (Phrasing this as a Moore machine was duplicative.)
 framegenT :: GState
           -> ( Maybe (BitVector 3, Maybe Cell)
              , ( TimingSigs
                , TimingSigs
                )
              )
-          -> ( GState
-             , ( Bool -- HIF
-               , (Bool, Bool) -- VIF, EVIF
-               , Bool -- Active
-               , BitVector 14 -- pixel address
-               , BitVector 4  -- font base
-               , Maybe ((Bit, BitVector 11), Cell)  -- write through
-               , Bool  -- cursor active?
-               , Cell -- read response
-               ))
-framegenT s (iowr, (hts, vts)) =
-  (s', ( s ^. gsHIF
-       , (s ^. gsVIF, s ^. gsEVIF)
-       , act
-       , s ^. gsPixels
-       , s ^. gsFB
-       , write
-       , s ^. gsAddr == (0, slice d13 d3 (s ^. gsPixels))
-       , s ^. gsReadValue
-       ))
+          -> GState
+framegenT s (iowr, (hts, vts)) = s'
   where
     s' = s & gsPixels .~ pixels'
            & gsShadowPixels .~ shadowPixels'
@@ -117,6 +99,7 @@ framegenT s (iowr, (hts, vts)) =
            & gsFB .~ fb'
            & gsAddr .~ addr'
            & gsReadValue .~ readValue
+           & gsWriteValue .~ writeValue
            -- Interrupt flags: set on event, clear on acknowledge
            & gsHIF  %~ ((&& not hack)  . (|| hblank))
            & gsVIF  %~ ((&& not vack)  . (|| vblank))
@@ -125,7 +108,6 @@ framegenT s (iowr, (hts, vts)) =
     -- Timing machine output circuits.
     TimingSigs hblank _ _ hactive = hts
     TimingSigs vblank evblank _ vactive = vts
-    act = hactive && vactive
 
     -- The start-of-field event occurs at the start-of-hblank cycle during the
     -- last line of the vertical blanking interval, and is used to reset state
@@ -173,13 +155,13 @@ framegenT s (iowr, (hts, vts)) =
     -- Video memory write address transition rules.
     addr' | Just (3, Just v) <- iowr = unpack $ truncateB v
             -- Allow host writes at any time.
-          | Just _ <- write = second (+1) $ s ^. gsAddr
+          | Just _ <- s ^. gsWriteValue = second (+1) $ s ^. gsAddr
             -- On any use of VWD (below), advance the address.
           | otherwise = s ^. gsAddr
 
     -- Detecting writes to VWD.
-    write
-      | Just (4, Just v) <- iowr = Just (s ^. gsAddr, v)
+    writeValue
+      | Just (4, Just v) <- iowr = Just v
       | otherwise = Nothing
 
     -- Transition rules for char0, a simple register.
@@ -196,4 +178,20 @@ framegenT s (iowr, (hts, vts)) =
           5 -> zeroExtend $ s ^. gsChar0
           _ -> errorX "undefined video register"
 
-
+framegenO :: GState
+          -> ( Bool -- HIF
+             , (Bool, Bool) -- VIF, EVIF
+             , BitVector 14 -- pixel address
+             , BitVector 4  -- font base
+             , Maybe ((Bit, BitVector 11), Cell)  -- write through
+             , Bool  -- cursor active?
+             , Cell -- read response
+             )
+framegenO s = ( s ^. gsHIF
+              , (s ^. gsVIF, s ^. gsEVIF)
+              , s ^. gsPixels
+              , s ^. gsFB
+              , (s ^. gsAddr ,) <$> s ^. gsWriteValue
+              , s ^. gsAddr == (0, slice d13 d3 (s ^. gsPixels))
+              , s ^. gsReadValue
+              )

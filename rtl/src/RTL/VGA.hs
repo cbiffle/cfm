@@ -52,9 +52,11 @@ chargen ioreq = ( resp
     hsync   = timsigSyncActive <$> hts
     vsync   = timsigSyncActive <$> vts
     
+    active = (timsigVidActive <$> hts) .&&. (timsigVidActive <$> vts)
+    
     ( hblank
       , unbundle -> (vblank, evblank)
-      , active, pixel, glyph, wrth, cursor, lresp) = framegen lreq hts vts
+      , pixel, glyph, wrth, cursor, lresp) = framegen lreq hts vts
 
     (charAddr, pxlAddr) = unbundle $ split <$> pixel
 
