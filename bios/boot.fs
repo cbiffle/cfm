@@ -13,6 +13,7 @@ $6033 alu: io!a          ( a b -- b )
 $6081 alu: dup           ( x -- x x )
 $6103 alu: drop          ( x -- )
 $6123 alu: !d            ( a b -- a )
+$6133 alu: io!d          ( a b -- a )
 $6147 alu: >r            ( a --  R: -- a )
 $6180 alu: swap          ( a b -- b a )
 $6181 alu: over          ( a b -- a b a )
@@ -34,12 +35,16 @@ $6d03 alu: lshift        ( a b -- a<<b )
 $0002 constant OUTSET
 $0004 constant OUTCLR
 $2000 constant IN
+$8020 constant VPAL0
+$8030 constant VPAL8
 
 \ Loaded RAM region
 0 constant RAM_BEGIN
 $4000 constant RAM_END
 
 : io! io!a drop ;
+: 1- 1 - ;
+: 2* 1 lshift ;
 
 : select $800 OUTCLR io! ;
 : deselect $800 OUTSET io! ;
@@ -75,7 +80,19 @@ $4000 constant RAM_END
   deselect
   dup 0 =  swap $FF = or if poll exit then ;
 
+: palette-low
+  dup 2* VPAL0 + io!d
+  dup if 1- palette-low exit then
+  drop ;
+
+: palette-high
+  dup 56 + over 2* VPAL8 + io!
+  dup if 1- palette-high exit then
+  drop ;
+
 : go
+  7 palette-low
+  7 palette-high
   deselect
   poll
 
