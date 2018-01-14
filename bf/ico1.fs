@@ -2,6 +2,16 @@
 
 : ledtog  5 + #bit OUTTOG ! ;
 
+: cycles ( u -- )   \ delays for at least u cycles
+  >r
+  TIMV @
+  begin   ( start )
+    TIMV @ over -   ( start delta )
+    r@ u< 0= if
+      rdrop drop exit
+    then
+  again ;
+
 \ ----------------------------------------------------------------------
 \ Text mode video display
 
@@ -110,18 +120,8 @@ variable vatt   \ attributes for text in top 8 bits
 ( SD Card )
 
 
-: cycles ( u -- )   \ delays for at least u cycles
-  >r
-  TIMV @
-  begin   ( start )
-    TIMV @ over -   ( start delta )
-    r@ u< 0= if
-      rdrop drop exit
-    then
-  again ;
-
 variable sdcyc  50 sdcyc !
-: sddelay sdcyc @ cycles ;
+: sddelay sdcyc @  ?dup if cycles then ;
 
 2 outpin >sdclk
 3 outpin >sdmosi
@@ -193,7 +193,7 @@ variable sdcyc  50 sdcyc !
   begin
     sdacmd41 0=
   until
-  1 sdcyc !   \ high speed
+  0 sdcyc !   \ high speed
   ;
 
 : sdcrc16  ( c-addr u -- crc )
