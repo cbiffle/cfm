@@ -68,16 +68,54 @@ Interrupt controllers are expected to provide a write-sensitive trigger register
 that re-enables interrupts (see above for discussion). This enables the
 following pattern:
 
-    trigger-address 2dup/! drop ;
+    trigger-address !d ;
 
 This sequence stores an arbitrary value (the previous top-of-stack) into the
-trigger register, drops the trigger register address, and returns; the latter
-three instructions fuse into a single atomic operation.
+trigger register, consuming the address but leaving the data, and returns; the
+operations fuse into a single atomic instruction.
 
 These two sequences can be combined into a return-from-interrupt word, which
 (because it messes with the return stack) can only safely be used in tail
 position:
 
-    : reti  r> 2 - >r  trigger-address 2dup/! drop ;
+    : reti  r> 2 - >r  trigger-address !d ;
 
 (The value of `trigger-address` is up to the system implementer.)
+
+
+Haskell API
+-----------
+
+In Haskell, interrupt controllers are implemented as higher-order functions. For
+example, at the time of this writing, the `singleIrqController` has the
+following signature:
+
+```haskell
+singleIrqController
+  :: (HasClockReset d g s)
+  => Signal d Bool    -- ^ Interrupt input, active high, level-sensitive.
+  -> Signal d Bool    -- ^ CPU fetch signal, active high.
+  -> Signal d (Maybe (BitVector 1, Maybe Cell))   -- ^ I/O bus request.
+  -> ( Signal d Cell -> Signal d Cell
+     , Signal d Cell
+     )  -- ^ Memory-to-CPU alteration constructor and I/O response,
+        -- respectively.
+```
+
+Invoking `singleIrqController` in a Clash design creates the central part of the
+IRQ controller -- specifically, a register to maintain the enable status, and a
+state machine to track whether an interrupt is being entered.
+
+The first value it returns has type `Signal d Cell -> Signal d Cell`. This
+function is a constructor for the memory intercession logic, described above.
+When applied, it produces a circuit that passes memory results through on normal
+cycles, and replaces them with a vector call instruction on interrupt entry
+cycles.
+
+Note that internal signals from the IRQ controller are *implicitly* routed to
+the memory intercession circuit (specifically, they are captured within the
+returned function). This is a very useful Clash design pattern that appears
+elsewhere in the CFM sources.
+
+Interestingly, the intercession constructor function can be used *more than
+once* safely, though this isn't obviously useful.
