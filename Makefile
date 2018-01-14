@@ -20,12 +20,12 @@ program-ico: build/ico-prog.bin
 program-ico-boot: build/bf-ico.hbin
 	icoprog -f -O 4 < $<
 
-build/bf-ice.fs: bf/bf0.fs bf/ice0.fs bf/mirq.fs bf/ice1.fs
+build/bf-ice.fs: bf/bf0.fs bf/ice0.fs bf/mirq.fs bf/uart.fs bf/ice1.fs
 	mkdir -p build
 	cat $^ > $@
 
 build/bf-ico.fs: bf/bf0.fs bf/bf1.fs \
-                 bf/ico0.fs bf/mirq.fs bf/ico1.fs
+                 bf/ico0.fs bf/mirq.fs bf/uart.fs bf/ico1.fs
 	mkdir -p build
 	cat $^ > $@
 

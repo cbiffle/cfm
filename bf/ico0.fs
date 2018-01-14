@@ -41,3 +41,10 @@ $A006 constant TIMM1
 14 constant irq#m0
 15 constant irq#negedge
 9 constant irq#rxne
+
+\ Output pin mapping.
+: outpin
+  create #bit ,
+  does> @ swap if OUTSET else OUTCLR then ! ;
+
+1 outpin >CTS_N

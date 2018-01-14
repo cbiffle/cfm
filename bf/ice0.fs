@@ -24,3 +24,6 @@ $C006 constant UARTRX
 \ Interrupt assignments.
 14 constant irq#rxne
 \ 15 constant irq#negedge   (unused)
+
+\ Output pin mapping.
+: >CTS_N if OUTSET else OUTCLR then 1 swap ! ;
