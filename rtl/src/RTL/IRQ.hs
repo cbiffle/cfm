@@ -10,7 +10,7 @@ import Clash.Prelude
 
 import CFM.Types
 import CFM.Inst
-import RTL.IOBus (moorep)
+import RTL.IOBus (moorep, mealyp)
 
 data SIS = SIS
   { sisEn :: Bool
@@ -95,7 +95,7 @@ multiIrqController
         -- respectively.
 multiIrqController irqS fetchS reqS = (memCtor, respS)
   where
-    (respS, entryS) = moorep datapathT datapathR misEnter
+    (respS, entryS) = mealyp datapathT datapathR
                              (bundle (bundle irqS, fetchS))
                              reqS
 
@@ -103,7 +103,7 @@ multiIrqController irqS fetchS reqS = (memCtor, respS)
     -- cycle.
     memCtor = mux entryS (pure $ pack $ NotLit $ Call 1)
 
-    datapathT s (req, (irqs, fetch)) = s'
+    datapathT s (req, (irqs, fetch)) = (s', misEnter s)
       where
         s' = MIS
           { misEn = not entry' && case req of
