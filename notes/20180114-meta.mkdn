@@ -1,0 +1,106 @@
+How to port the bootstrapper / metacompiler to run onboard?
+
+An emulator that doesn't mess with I/O could be quite easy: we could literally
+just execute the code in an alternative MMU map.
+
+To implement MonadTarget, we would need some way for control to return to map 0.
+The `tcall` implementation in `Target.Emu` assembles an entry sequence into
+target memory, forces a jump to it, and waits for the PC to return into it.
+
+A similar method would be to assemble a call sequence followed by a map
+switching return.
+
+Host interrupts would need to keep working during this time, so we'd need to
+figure out how to interrupt and resume the target. This is something I need to
+figure out for the loader anyway.
+
+---
+
+Hm, for a literal interpretation of MonadTarget, we'd also need separate stacks.
+
+Though we might be able to get by punning the host data stack for the target
+data stack, because we do that in the text interpreter (the stack is
+simultaneously serving the interpreter and the code being interpreted).
+
+After all, MonadTarget only directly accesses the target data stack, and assumes
+the target return stack is kept balanced.
+
+---
+
+How do we activate the target?
+
+Prepare MMU map 1 to reference target memory.
+
+Push the desired return address onto the return stack.
+
+Push the entry point onto the return stack.
+
+Execute a fused map-switch-and-return instruction.
+
+---
+
+How do we get back?
+
+With a debug/breakpoint unit, we could monitor the target PC until it returns to
+our desired place. But we don't have one of those yet.
+
+Instead, we could assemble an escape sequence into target memory, and point the
+target's return address there. The escape sequence would perform the inverse of
+our entry sequence: switch the map back and return.
+
+---
+
+How do we deal with interrupts?
+
+Interrupt entry needs to switch the map back to 0 in time to perform the vector
+fetch from the right space. The fact that this happened needs to be recorded,
+probably in the MMU, so that the ISR can return to the right space.
+
+The interrupt return sequence needs to enable interrupts, switch space, and
+return. The latter two steps need to happen atomically for correctness. If
+enabling interrupts is separate, there's a possibility of taking an interrupt
+between enabling and returning, which would burn return stack. In this case we'd
+want to make sure we'd noted the "interrupted space" flag *before* enabling
+interrupts, lest it get stomped upon.
+
+Making all three operations atomic would require having a single trigger
+register that pokes the IRQC and the MMU. This seems like an oddly coupled
+thing, but I'm not above it.
+
+
+Side note: an alternative to all this would be to encode the interrupted space
+in the pointer pushed to the return stack, using an unused bit. e.g. when bit 1
+is set in an address popped into the PC, it implies a space swap. From my
+experience with ARM-Thumb interworking I know that this approach would work, but
+I feel like stack corruption is way more likely in a Forth dev environment and
+this could make things real confusing.
+
+
+So my inclination for the coupling here is:
+
+- IRQ controllers gain a broadcast output that signals when a vector fetch is
+  about to occur. This gives the MMU time to flip spaces.
+
+- IRQ controllers gain a trigger input that enables interrupts.
+
+- The MMU gains a trigger register that pokes the IRQ controller.
+
+- The MMU gains a status bit indicating whether it flipped spaces in response to
+  interrupt entry.
+
+- On MMU-less systems like the Icestick demo, the additional signals on the IRQ
+  controller go unused and are (presumably) eliminated.
+
+
+---
+
+Because our RAMs are synchronous, the IRQ entry broadcast needs to happen on the
+cycle where the fetch read is set up. This is one cycle *before* the IRQ
+controller's current entry flag gets set.
+
+This implies that it needs to be generated combinationally from the CPU's fetch
+output.
+
+The MMU, too, will need to respond combinationally to update the address
+translation in time.
+
