@@ -59,17 +59,6 @@ singleIrqController irqS fetchS reqS = (memCtor, respS)
           Just (_, Just _) -> True
           _                -> False
 
-data MIS = MIS
-  { misEn :: Bool
-  , misStatus :: Vec Width Bool
-  , misIEn :: Vec Width Bool
-  , misAddr :: BitVector 2
-  , misEnter :: Bool
-  } deriving (Show)
-
-instance Default MIS where
-  def = MIS False (repeat False) (repeat False) 0 False
-
 -- | An interrupt controller supporting up to 16 active-high interrupt inputs.
 --
 -- Interrupt inputs can be individually enabled. A high level on any enabled
@@ -130,15 +119,28 @@ multiIrqController irqS fetchS reqS = (memCtor, respS)
               Just (2, Just v) -> zipWith (||) (misIEn s) (unpack v)
               Just (3, Just v) -> zipWith (&&) (misIEn s) (map not (unpack v))
               _                -> misIEn s
-          , misAddr = case req of
-              Just (a, Nothing) -> a
-              _                 -> misAddr s
           , misEnter = entry'
           }
 
         maskedIrqs = zipWith (&&) irqs $ misIEn s
-        entry' = fetch && misEn s && foldl1 (||) maskedIrqs
+        entry' = fetch && misEn s && or maskedIrqs
 
     datapathR s = pack (misStatus s) :>
                   zeroExtend (pack (misEn s)) :>
                   repeat (pack (misIEn s))
+
+data MIS = MIS
+  { misEn :: Bool
+    -- ^ Global interrupt enable flag.
+  , misStatus :: Vec Width Bool
+    -- ^ Captured active IRQs after masking.
+  , misIEn :: Vec Width Bool
+    -- ^ Individual interrupt enable flags.
+  , misEnter :: Bool
+    -- ^ Vector fetch flag. Set during the cycle where we intercede in fetch.
+  } deriving (Show)
+
+instance Default MIS where
+  def = MIS False (repeat False) (repeat False) False
+
+
