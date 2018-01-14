@@ -62,7 +62,7 @@ datapath (MS dptr rptr pc t bs lastSpace) (IS m i n r) =
             NotLit (Jump tgt)               -> zeroExtend tgt
             NotLit (Call tgt)               -> zeroExtend tgt
             NotLit (JumpZ tgt) | t == 0     -> zeroExtend tgt
-            NotLit (ALU True _ _ _ _ _ _ _) -> slice d14 d1 r
+            NotLit (ALU True _ _ _ _ _ _ _) -> truncateB $ slice d15 d1 r
             _                               -> pc1
       -- The ALU mux.
       tmux = case inst of

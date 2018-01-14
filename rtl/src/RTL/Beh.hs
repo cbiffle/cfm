@@ -78,7 +78,7 @@ executeNormally = do
 
       -- Bit 12: R -> PC
       let pc' = if rpc
-                  then slice d14 d1 r
+                  then truncateB $ slice d15 d1 r
                   else pc + 1
 
       msPC .= pc'

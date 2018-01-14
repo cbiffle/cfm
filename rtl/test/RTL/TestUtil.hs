@@ -157,7 +157,7 @@ genspec sf = do
         u = errorX "must not be used in this test"
 
     it "pushes return PC to R as byte address" $ property $ \x (Fetch s) ->
-      go s x ^. _2 . osROp . _3 == Just (low ++# (s ^. msPC + 1) ++# low)
+      go s x ^. _2 . osROp . _3 == Just (zeroExtend $ (s ^. msPC + 1) ++# low)
 
     it "always jumps" $ property $ \x (Fetch s) ->
       go s x ^. _1 . msPC == zeroExtend x
@@ -172,7 +172,7 @@ genspec sf = do
       go s x d r ^. _1 . msPC ==
         case slice d12 d12 x of
           0 -> s ^. msPC + 1
-          _ -> slice d14 d1 r
+          _ -> truncateB $ slice d15 d1 r
 
     it "I[7]: N <- T" $ property $ \(Fetch s) x d r ->
       go s x d r ^. _2 . osDOp . _3 ==
