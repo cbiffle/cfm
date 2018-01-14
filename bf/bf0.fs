@@ -993,7 +993,7 @@ variable ramtop
   oncold @ ?dup if execute then
 
   ." bsforth | "
-  U0 @ here - . ." bytes free | last word: "
+  U0 @ here - u. ." bytes free | last word: "
   CURRENT @ @ cell+ count type cr
   quit ;
 
