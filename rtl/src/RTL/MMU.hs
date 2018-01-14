@@ -31,6 +31,11 @@ import RTL.IOBus
 -- more than once, if you wanted to translate multiple independent addressing
 -- paths using the same translation tables. Each time the constructor is applied
 -- costs one read mux on the translation table.
+--
+-- Register set:
+--
+-- - +0: Map Pointer. Holds a 'v'-bit index of a map register.
+-- - +2: Map 0 Access. Reads/writes the part of map 0 selected by Map Pointer.
 mmu :: forall n v p ev ep d g s.
        ( HasClockReset d g s
        , KnownNat v
