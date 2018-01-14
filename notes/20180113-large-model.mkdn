@@ -1,0 +1,83 @@
+A "Large Model" that lets code run above the 16kiB line.
+
+
+Recap: it's hard to write very much code that runs above 16kiB in the address
+space, because branches and calls can only reach the bottom 16kiB. So any
+control flow above that line has to be indirect. (Data processing/ALU operations
+still work fine.)
+
+
+So, how can we simulate branches and calls using only literals and ALU? (This is
+not urgent but it seemed like a fun thing to think about.)
+
+In considering solutions, I'll write little bsforth words that might appear in
+an assembler targeting this model.
+
+
+An unconditional branch is the easiest: push the target address onto the return
+stack and "return."
+
+    : branch,  ( addr -- )
+      postpone literal
+      postpone >r
+      postpone exit ;
+
+Three instructions, or four if the target is above 32kiB (because materializing
+a literal with bit 15 set takes two instructions).
+
+
+We have to simulate the PC-advancing, stack-pushing behavior of a call by hand,
+but we can use branches as an implementation factor:
+
+    : call,  ( addr -- )
+      here 0 ,
+      here 4 cells + 0< \ if bit15 is set in our neighborhood,
+      dup if postpone invert then
+
+      branch,
+
+      here swap if invert then $8000 or swap ! ;
+
+
+For conditional branches, we need to perform the address computation using only
+the ALU.
+
+    : 0branch,  ( addr -- )
+      0 postpone literal
+      postpone =
+      postpone dup postpone invert
+      here ... cells + postpone literal
+      postpone and
+      postpone swap
+      postpone literal
+      postpone and
+      postpone or
+      postpone >r
+      postpone exit ;
+
+If we can place routines in low memory, we can out-line the routines,
+essentially creating threaded code.
+
+    : <branch>  r> @ >r ;
+    : branch,  postpone <branch>  postpone literal ;
+
+    : <0branch>
+      r> swap
+      if  cell+
+      else  @
+      then >r ;
+
+    : <call>
+      r@ @ r> cell+ >r >r ;
+
+These take inline arguments in the instruction stream, like a threaded Forth
+might. They wind up being twice as large as their direct instruction
+equivalents. Branch takes 4x more cycles, 0branch and call about 8x. 
+
+This would work for stashing some code in high memory, but would not enable use
+cases like a high-memory relocator that can destroy lower memory during
+operation. (Because the routines for its threaded code would be destroyed.)
+
+
+In all, I'm not currently concerned about this limitation. The MMU allows for
+cheap bank-switching or overlay-switching of code if required.

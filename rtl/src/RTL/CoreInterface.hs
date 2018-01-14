@@ -42,7 +42,7 @@ makeLenses ''IS
 data MS = MS
   { _msDPtr :: SP
   , _msRPtr :: SP
-  , _msPC :: BitVector (Width - 2)
+  , _msPC :: CellAddr
   , _msT :: Cell
   , _msBusState :: BusState
   , _msLastSpace :: Space
