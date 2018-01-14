@@ -89,22 +89,23 @@ multiIrqController
   => Vec Width (Signal d Bool)
       -- ^ Interrupt inputs, active high, level-sensitive.
   -> Signal d Bool    -- ^ CPU fetch signal, active high.
+  -> Signal d Bool    -- ^ External interrupt re-enable signal.
   -> Signal d (Maybe (BitVector 2, Maybe Cell))   -- ^ I/O bus request.
   -> ( Signal d Cell -> Signal d Cell
      , Signal d Bool
      , Signal d Cell
      )  -- ^ Memory-to-CPU alteration constructor, start of vector fetch flag,
         -- and I/O response, respectively.
-multiIrqController irqS fetchS reqS = (memCtor, startOfFetchS, respS)
+multiIrqController irqS fetchS enS reqS = (memCtor, startOfFetchS, respS)
   where
     (respS, unbundle -> (entryS, startOfFetchS)) =
-        mealyp datapathT datapathR (bundle (bundle irqS, fetchS)) reqS
+        mealyp datapathT datapathR (bundle (bundle irqS, fetchS, enS)) reqS
 
     -- Normally, pass mem. When entering the ISR, intervene in the next fetch
     -- cycle.
     memCtor = mux entryS (pure $ pack $ NotLit $ Call 1)
 
-    datapathT s (req, (irqs, fetch)) = (s', (misEnter s, entry'))
+    datapathT s (req, (irqs, fetch, xen)) = (s', (misEnter s, entry'))
       where
         s' = MIS
           { misEn = not entry' && case req of
@@ -112,8 +113,8 @@ multiIrqController irqS fetchS reqS = (memCtor, startOfFetchS, respS)
               Just (0, Just _) -> True
               -- The bottom bit of writes @ 1 gets copied into the enable bit.
               Just (1, Just v) -> unpack $ lsb v
-              -- Anything else leaves matters unchanged.
-              _                -> misEn s
+              -- Anything else honors the external enable signal.
+              _                -> misEn s || xen
 
           , misStatus = maskedIrqs
           , misIEn = case req of
