@@ -26,6 +26,7 @@ library
                        RTL.VGA
                        RTL.VGA.Palette
                        RTL.VGA.Timing
+                       RTL.VGA.FrameGen
                        RTL.SRAM
                        RTL.UART
                        RTL.MMU
