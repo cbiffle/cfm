@@ -6,7 +6,7 @@ packages:
 - tools
 - location:
     git: https://github.com/clash-lang/clash-compiler.git
-    commit: 2211ef41203d7666c345f1b607aec18e78080f03
+    commit: 78fd08edec641d1ef6950054fcb0deb399486495
   subdirs:
   - clash-lib
   - clash-ghc
