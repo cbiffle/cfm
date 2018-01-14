@@ -990,5 +990,8 @@ variable ramtop
   CURRENT @ @ cell+ count type cr
   quit ;
 
+\ Converts a bit index into a bit mask.
+: #bit  ( u -- mask )  1 swap lshift ;
+
 .( Volume 1 compiled, size:)
 here host.

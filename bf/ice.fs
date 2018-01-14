@@ -1,7 +1,5 @@
 \ Icestick support code
 
-: #bit  1 swap lshift ;
-
 ( ----------------------------------------------------------- )
 ( Interrupt Controller )
 
