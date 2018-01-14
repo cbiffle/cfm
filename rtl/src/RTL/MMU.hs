@@ -32,10 +32,18 @@ import RTL.IOBus
 -- paths using the same translation tables. Each time the constructor is applied
 -- costs one read mux on the translation table.
 --
+-- The MMU contains two sets of mapping registers, map 0 and map 1. At reset,
+-- map 0 is active. The map can be switched by writing the Control/Status
+-- register with any value. This is intended to be fused into a return
+-- instruction, to effect an atomic jump-and-change-maps operation.
+--
 -- Register set:
 --
--- - +0: Map Pointer. Holds a 'v'-bit index of a map register.
--- - +2: Map 0 Access. Reads/writes the part of map 0 selected by Map Pointer.
+-- - +0: Control/Status. Any write toggles bit 0.
+--   - Bit 0: active map.
+-- - +2: Map Pointer. Holds a 'v'-bit index of a map register.
+-- - +4: Map 0 Access. Reads/writes the part of map 0 selected by Map Pointer.
+-- - +6: Map 1 Access. Reads/writes the part of map 1 selected by Map Pointer.
 mmu :: forall n v p ev ep d g s.
        ( HasClockReset d g s
        , KnownNat v
@@ -54,7 +62,7 @@ mmu :: forall n v p ev ep d g s.
       -- ^ Number of physical bits produced after translation.
     -> SNat n
       -- ^ Number of untranslated bits. A page is @2^n@ words in size.
-    -> Signal d (Maybe (BitVector 1, Maybe Cell))
+    -> Signal d (Maybe (BitVector 2, Maybe Cell))
       -- ^ Connection to the I/O bus.
     -> ( Signal d Cell
         , Signal d (Maybe (BitVector (v+n), Maybe Cell))
@@ -87,32 +95,53 @@ mmu' :: forall v p ev ep d g s.
         , (ep + p) ~ Width
         , (p + ep) ~ Width
         )
-     => Signal d (Maybe (BitVector 1, Maybe Cell))
+     => Signal d (Maybe (BitVector 2, Maybe Cell))
      -> ( Signal d Cell
         , Signal d (Vec (2^v) (BitVector p))
         )
-mmu' = moorep fT fR sMap0 (pure ())
+mmu' = moorep fT fR fO (pure ())
   where
-    fT :: S v p -> (Maybe (BitVector 1, Maybe Cell), ()) -> S v p
-    fT (S map0 mp) (req, _) = S map0' mp'
+    fT :: S v p -> (Maybe (BitVector 2, Maybe Cell), ()) -> S v p
+    fT (S map0 map1 mp m1a sirq) (req, _) = S map0' map1' mp' m1a' sirq'
       where
-        mp' | Just (0, Just v) <- req = truncateB v
+        mp' | Just (1, Just v) <- req = truncateB v
             | otherwise = mp
 
-        map0' | Just (1, Just v) <- req = replace mp (truncateB v) map0
+        map0' | Just (2, Just v) <- req = replace mp (truncateB v) map0
               | otherwise = map0
 
-    fR s = zeroExtend (sMapPtr s) :>
+        map1' | Just (3, Just v) <- req = replace mp (truncateB v) map1
+              | otherwise = map1
+
+        m1a' | Just (0, Just _) <- req = not m1a
+             | otherwise = m1a
+
+        sirq' | Just (0, Just _) <- req = False
+            -- TODO: set on actual interrupt
+              | otherwise = sirq
+
+    fO s | sMap1Active s = sMap1 s
+         | otherwise = sMap0 s
+
+    fR s = zeroExtend (pack (sSwitchedByIRQ s, sMap1Active s)) :>
+           zeroExtend (sMapPtr s) :>
            zeroExtend (sMap0 s !! sMapPtr s) :>
+           zeroExtend (sMap1 s !! sMapPtr s) :>
            Nil
 
 data S v p = S
   { sMap0 :: Vec (2^v) (BitVector p)
+  , sMap1 :: Vec (2^v) (BitVector p)
   , sMapPtr :: BitVector v
+  , sMap1Active :: Bool
+  , sSwitchedByIRQ :: Bool
   }
 
 instance (KnownNat v, KnownNat p) => Default (S v p) where
   def = S
     { sMap0 = map fromIntegral indicesI
+    , sMap1 = map fromIntegral indicesI
     , sMapPtr = def
+    , sMap1Active = False
+    , sSwitchedByIRQ = False
     }
