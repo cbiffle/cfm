@@ -4,7 +4,7 @@
 {-# LANGUAGE TypeOperators #-}
 module CFM.Types where
 
-import Clash.Prelude hiding (cycle)
+import Clash.Prelude
 
 -- | The width of a word in bits, as a type-level natural.
 type Width = 16

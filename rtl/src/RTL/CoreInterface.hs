@@ -14,17 +14,7 @@ import Control.Lens hiding ((:>))
 import Test.QuickCheck
 
 import CFM.Types
-
-data Space = MSpace | ISpace
-             deriving (Eq, Show, Enum, Bounded, Generic, ShowX, NFData)
-
-instance BitPack Space where
-  type BitSize Space = 1
-  pack = fromIntegral . fromEnum
-  unpack = toEnum . fromIntegral
-
-instance Arbitrary Space where
-  arbitrary = arbitraryBoundedEnum
+import CFM.Inst (Space(..))
 
 type BusReq = Maybe (SAddr, Maybe Cell)
 

@@ -45,6 +45,6 @@ $A006 constant TIMM1
 \ Output pin mapping.
 : outpin
   create #bit ,
-  does> @ swap if OUTSET else OUTCLR then ! ;
+  does> @ swap if OUTSET else OUTCLR then io! ;
 
 1 outpin >CTS_N

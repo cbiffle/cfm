@@ -41,6 +41,12 @@
 \ the depth of the return stack in bits 15:8.
 : depths  ( -- x )  [ $6E81 asm, ] ;
 
+\ Pokes x into an I/O port, leaving x.
+: io!d  ( x port -- x )  [ $6133 asm, ] ;
+
+\ Reads from an I/O port.
+: io@  ( port -- x )  [ $6c10 asm, ] ;
+
 \ -----------------------------------------------------------------------------
 \ Support for CONSTANT. CONSTANT is implemented as if written with DOES>, but
 \ we need to start slinging constants before we have DOES> (or CREATE or : for
@@ -86,6 +92,7 @@ $20 constant bl
 
 : tuck  ( a b -- b a b )  swap over ;
 : !  ( x addr -- )  !d drop ;
+: io!  ( x port -- )  io!d drop ;
 : +!  ( x addr -- )  tuck @ + swap ! ;
 : aligned  ( addr -- a-addr )  1 over and + ;
 

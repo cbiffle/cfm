@@ -12,6 +12,8 @@ The CFM core is a 16-bit dual-stack CPU patterned after James Bowman's J1 core.
 - There are two stacks, data and return, for supporting Forth code.
 - Calls are single-cycle, returns can often be folded into a previous
   instruction.
+- I/O devices are placed in a separate address space (Intel-style) to maximize
+  room for RAM.
 
 ## Compared to the J1
 
@@ -32,6 +34,12 @@ As a result, loads (ALU instructions with `Tmux` set to memory) and stores (bit
 
 On the up side, external memory is *also* single-ported, so the CFM can run from
 external SRAM.
+
+### Separate I/O space
+
+Memory and I/O occupy separate address spaces, to get the most out of 16 bits.
+Bit 4, previously unused in the instruction encoding, has been repurposed as an
+"I/O select" bit that changes the meaning of loads and stores.
 
 ### ALU changes
 
@@ -123,7 +131,7 @@ address*, pointing into the lower 8 kiW / 16 kiB of the address space.
 
     15   13                          0
     +------+--+--------+--+--+--+--+----+----+
-    |0 1 1 |RP| Tmux   |TN|TR|NM|  |Radj|Dadj|
+    |0 1 1 |RP| Tmux   |TN|TR|NM|IO|Radj|Dadj|
     +------+--+--------+--+--+--+--+----+----+
 
 The everything-else instruction. This instruction carries unencoded control
@@ -139,6 +147,8 @@ The single bit fields function as follows when *set*:
 
 `NM`: memory at address T loaded from N.
 
+`IO`: loads and stores target I/O, not RAM.
+
 The `Tmux` field controls a multiplexer that chooses the next value for T.
 
     0 -> t
@@ -153,7 +163,7 @@ The `Tmux` field controls a multiplexer that chooses the next value for T.
     9 -> n `shiftR` (fromIntegral t `mod` 16)
     10 -> n - t
     11 -> r
-    12 -> memoryAt (t `shiftR` 1)
+    12 -> loadFrom (t `shiftR` 1)
     13 -> n `shiftL` (fromIntegral t `mod` 16)
     14 -> pack (rdepth, depth)
     15 -> signExtend $ pack $ n < t

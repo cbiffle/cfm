@@ -12,6 +12,7 @@ import Test.Hspec
 import Test.QuickCheck hiding ((.&.))
 
 import CFM.Types
+import CFM.Inst
 import RTL.CoreInterface
 
 newtype Fetch = Fetch MS deriving (Show)
@@ -200,7 +201,7 @@ genspec sf = do
         slice d11 d8 x /= 12 ==> -- ignore simultaneous loads/stores
         slice d5 d5 x == 1 ==> do
           let result = go s x d r ^. _2
-              space = unpack $ msb $ s ^. msT
+              space = unpack $ slice d4 d4 x
           result ^. osMReq `shouldBe` case space of
             ISpace -> Nothing
             MSpace -> Just (slice d14 d1 (s ^. msT), Just d)
@@ -249,13 +250,14 @@ genspec sf = do
         it "triggers read of [T]" $ property $ \(Fetch s) x d r ->
           (slice d5 d5 x == 0) ==> do -- ignore simultaneous loads/stores
             let result = go' 12 s x d r ^. _2
+                space = unpack $ slice d4 d4 x
 
-            result ^. osMReq `shouldBe` case msb (s ^. msT) of
-                1 -> Nothing
-                0 -> Just (slice d14 d1 (s ^. msT), Nothing)
-            result ^. osIReq `shouldBe` case msb (s ^. msT) of
-                1 -> Just (slice d14 d1 (s ^. msT), Nothing)
-                0 -> Nothing
+            result ^. osMReq `shouldBe` case space of
+                ISpace -> Nothing
+                MSpace -> Just (slice d14 d1 (s ^. msT), Nothing)
+            result ^. osIReq `shouldBe` case space of
+                ISpace -> Just (slice d14 d1 (s ^. msT), Nothing)
+                MSpace -> Nothing
         it "enters load state" $ property $ \(Fetch s) x d r ->
           go' 12 s x d r ^. _1 . msBusState == BusData True
         it "does not assert fetch" $ property $ \(Fetch s) x d r ->

@@ -26,4 +26,4 @@ $C006 constant UARTRX
 \ 15 constant irq#negedge   (unused)
 
 \ Output pin mapping.
-: >CTS_N if OUTSET else OUTCLR then 1 swap ! ;
+: >CTS_N if OUTSET else OUTCLR then 1 swap io! ;

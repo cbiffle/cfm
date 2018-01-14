@@ -68,7 +68,7 @@ Interrupt controllers are expected to provide a write-sensitive trigger register
 that re-enables interrupts (see above for discussion). This enables the
 following pattern:
 
-    trigger-address !d ;
+    trigger-address io!d ;
 
 This sequence stores an arbitrary value (the previous top-of-stack) into the
 trigger register, consuming the address but leaving the data, and returns; the
@@ -78,7 +78,7 @@ These two sequences can be combined into a return-from-interrupt word, which
 (because it messes with the return stack) can only safely be used in tail
 position:
 
-    : reti  r> 2 - >r  trigger-address !d ;
+    : reti  r> 2 - >r  trigger-address io!d ;
 
 (The value of `trigger-address` is up to the system implementer.)
 

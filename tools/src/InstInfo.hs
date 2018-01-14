@@ -155,8 +155,8 @@ cevalPair = evalPair cds crs
 
 canAluInsts :: [Inst]
 canAluInsts =
-  let aluInsts = [NotLit $ ALU False T False False False (Res 0) 0 0 ..
-                  NotLit $ ALU True NULtT True True True (Res 0) (-1) (-1)]
+  let aluInsts = [NotLit $ ALU False T False False False MSpace 0 0 ..
+                  NotLit $ ALU True NULtT True True True ISpace (-1) (-1)]
   in [i | i <- aluInsts, canonicalInst i]
 
 instructionsByEffect :: M.Map Effect Inst

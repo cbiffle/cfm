@@ -1,10 +1,10 @@
 \ Icestick support code
 
-: ledtog  1 + #bit OUTTOG ! ;
+: ledtog  1 + #bit OUTTOG io! ;
 
 :noname
   uart-rx-init
-  347 UARTRD ! \ Set baud rate to 115200
+  347 UARTRD io! \ Set baud rate to 115200
 
   ['] tx 'emit !
   ['] rx! 'key !

@@ -45,13 +45,13 @@ variable uart-rx-tl
 
 \ Interrupt handler, registered to receive the UART's RXNE interrupt.
 : rx-isr
-  UARTRX @ >rxq
+  UARTRX io@ >rxq
   1 >CTS_N ;
 ' rx-isr vectors irq#rxne cells + !
 
 : uart-rx-init
   \ Clear any pending queued character.
-  UARTRX @ drop
+  UARTRX io@ drop
   \ Enable the IRQ.
   irq#rxne irq-on
   0 >CTS_N ;
@@ -61,5 +61,5 @@ variable uart-rx-tl
 
 : tx
   \ Wait for transmitter to be free
-  begin UARTST @ 2 and until
-  UARTTX ! ;
+  begin UARTST io@ 2 and until
+  UARTTX io! ;

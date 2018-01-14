@@ -1,19 +1,22 @@
 {-# LANGUAGE BinaryLiterals #-}
 {-# LANGUAGE DataKinds #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE ViewPatterns #-}
+{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DeriveAnyClass #-}
 module CFM.Inst
   ( Inst(..)
   , FlowOrALUInst(..)
   , TMux(..)
-  , Reserved(..)
+  , Space(..)
   , canonicalInst
   ) where
 
 import Clash.Prelude
+import GHC.Generics
+import Control.DeepSeq (NFData)
 import Test.QuickCheck
 
 -- | CFM instructions. This type is designed so that its default SOP bit
@@ -40,7 +43,7 @@ data FlowOrALUInst = Jump (BitVector 13)
                          Bool -- ^ TN: T to N.
                          Bool -- ^ TR: T to R.
                          Bool -- ^ NM: N to memory at @[T]@.
-                         (Reserved Bit)
+                         Space -- ^ IO: select space targeted by loads/stores.
                          (Signed 2) -- ^ Adjustment to return stack pointer.
                          (Signed 2) -- ^ Adjustment to data stack pointer.
                    deriving (Eq, Show)
@@ -65,20 +68,29 @@ data TMux = T         -- ^ 0: Same value as this cycle.
           | NULtT     -- ^ F: Set all bits if N < T (unsigned), clear otherwise.
           deriving (Eq, Enum, Bounded, Show)
 
-newtype Reserved x = Res x deriving (Eq, Show, BitPack, Arbitrary)
+data Space = MSpace | ISpace
+  deriving (Eq, Show, Enum, Bounded, Generic, ShowX, NFData)
 
+instance BitPack Space where
+  type BitSize Space = 1
+  pack = fromIntegral . fromEnum
+  unpack = toEnum . fromIntegral
+
+instance Arbitrary Space where arbitrary = arbitraryBoundedEnum
 -- | Predicate for filtering out instructions with reserved bits set.
 canonicalInst :: Inst -> Bool
--- ALU instructions with reserved bit 4 set are reserved.
-canonicalInst (NotLit (ALU _ _ _ _ _ (Res 1) _ _)) = False
+-- ALU instructions with the IO space override bit set, but which do not
+-- touch memory, are reserved.
+canonicalInst (NotLit (ALU _ tm _ _ False ISpace _ _)) | tm /= MemAtT = False
 -- ALU instructions executing a simultaneous load and store are reserved.
 canonicalInst (NotLit (ALU _ MemAtT _ _ True _ _ _)) = False
 -- Everything else is fine.
 canonicalInst _ = True
 
--------------------------------------------------------------------------------------
+-------------------------------------------------------------------------------
 -- BitPack instances. These are carefully designed to exactly match Clash's
--- default representation, to avoid overhead when using 'Inst' in synthesizable code.
+-- default representation, to avoid overhead when using 'Inst' in synthesizable
+-- code.
 
 instance BitPack Inst where
   type BitSize Inst = 16
@@ -96,15 +108,15 @@ instance BitPack FlowOrALUInst where
   pack (Jump v) = 0b00 ++# v
   pack (JumpZ v) = 0b01 ++# v
   pack (Call v) = 0b10 ++# v
-  pack (ALU rpc t' tn tr nm xx rd dd) = 0b11 ++#
-                                        pack (rpc, t', tn, tr, nm, xx, rd, dd)
+  pack (ALU rpc t' tn tr nm io rd dd) = 0b11 ++#
+                                        pack (rpc, t', tn, tr, nm, io, rd, dd)
 
   unpack (split -> (top2, rest)) = case top2 of
     0b00 -> Jump rest
     0b01 -> JumpZ rest
     0b10 -> Call rest
-    _    -> let (rpc, t', tn, tr, nm, xx, rd, dd) = unpack rest
-            in ALU rpc t' tn tr nm xx rd dd
+    _    -> let (rpc, t', tn, tr, nm, io, rd, dd) = unpack rest
+            in ALU rpc t' tn tr nm io rd dd
 
 instance BitPack TMux where
   type BitSize TMux = 4

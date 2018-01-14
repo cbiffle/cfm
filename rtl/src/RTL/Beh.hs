@@ -70,7 +70,7 @@ executeNormally = do
         <&> osROp . _2 .~ 1
         <&> osROp . _3 .~ Just (low ++# pc' ++# low)
 
-    NotLit (ALU rpc t' tn tr nm _ rd dd) -> do
+    NotLit (ALU rpc t' tn tr nm space rd dd) -> do
       n <- view isDData
       r <- view isRData
       t <- use msT
@@ -93,8 +93,7 @@ executeNormally = do
                   then Just t
                   else Nothing
       -- Bit 5: N -> [T]
-      let space = unpack (msb t)
-
+      -- Bit 4: address space
       let busState
             | t' == MemAtT = BusData True
             | nm           = BusData False

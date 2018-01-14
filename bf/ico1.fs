@@ -1,12 +1,12 @@
 \ Icoboard support code
 
-: ledtog  5 + #bit OUTTOG ! ;
+: ledtog  5 + #bit OUTTOG io! ;
 
 : cycles ( u -- )   \ delays for at least u cycles
   >r
-  TIMV @
+  TIMV io@
   begin   ( start )
-    TIMV @ over -   ( start delta )
+    TIMV io@ over -   ( start delta )
     r@ u< 0= if
       rdrop drop exit
     then
@@ -17,16 +17,16 @@
 
 \ Overwrites a section of video memory with a given value.
 : vfill  ( v-addr u x -- )
-  VWA @ >r    \ save cursor position
+  VWA io@ >r    \ save cursor position
   >r          \ stash cell to write
-  swap VWA !  \ set up write address
+  swap VWA io!  \ set up write address
   begin
     dup
   while ( count ) ( R: vwa x )
-    1- r@ VWD !
+    1- r@ VWD io!
   repeat
   rdrop drop
-  r> VWA !  \ restore old cursor
+  r> VWA io!  \ restore old cursor
   ;
 
 variable vcols  \ columns in the text display
@@ -50,22 +50,22 @@ variable vatt   \ attributes for text in top 8 bits
   0  \ start of memory
   vsize  \ size of a screen
   vclr     \ clear a screen-sized area of text RAM
-  0 VC0 !   \ make it the active screen
-  vsize vcols @ - VWA !   \ cursor to lower left
+  0 VC0 io!   \ make it the active screen
+  vsize vcols @ - VWA io!   \ cursor to lower left
   ;
 
 \ Scrolls the display up, revealing a blank line at the bottom. Leaves the
 \ cursor address unchanged (i.e. it moves up on the display).
 : vscroll
-  vcols @ VC0 +!
-  VC0 @  vsize vcols @ - + $7FF and  vcols @  vclr
+  VC0 io@  vcols @ +  VC0 io!
+  VC0 io@  vsize vcols @ - + $7FF and  vcols @  vclr
   ;
 
 \ "Types" a character without control character interpretation. Advances the
 \ cursor. Scrolls the display as needed.
 : vputc ( c -- )
-  vatt @ or VWD !   \ store the character with attributes
-  VWA @  VC0 @ -  $7FF and    \ get distance from start of display
+  vatt @ or VWD io!   \ store the character with attributes
+  VWA io@  VC0 io@ -  $7FF and    \ get distance from start of display
   vsize = if   \ if we've run off the end
     vscroll  \ reveal another line
   then ;
@@ -76,13 +76,13 @@ variable vatt   \ attributes for text in top 8 bits
   7 over = if drop exit then   \ ignore BEL
 
   8 over = if drop  \ backspace
-    VC0 @ VWA @ xor if  VWA @ 1- $7FF and VWA ! then
+    VC0 io@ VWA io@ xor if  VWA io@ 1- $7FF and VWA io! then
     exit
   then
 
   10 over = if drop \ line feed
     vscroll
-    VWA @  vcols @ + $7FF and  VWA !
+    VWA io@  vcols @ + $7FF and  VWA io!
     exit
   then
 
@@ -93,11 +93,11 @@ variable vatt   \ attributes for text in top 8 bits
   13 over = if drop \ carriage return
     \ TODO broken broken ?
     \ Compute current offset into the display
-    VWA @  VC0 @  -  $7FF and
+    VWA io@  VC0 io@  -  $7FF and
     \ Round down by division and multiplication
     vcols @ u/  vcols @ u*
     \ Project back into the display and assign
-    VC0 @ + $7FF and VWA !
+    VC0 io@ + $7FF and VWA io!
     exit
   then
 
@@ -105,12 +105,12 @@ variable vatt   \ attributes for text in top 8 bits
 
 
 : vid
-  103 VTH !
-  207 VTH 4 + !
-  639 VTH 6 + !
-  100 VTV !
-  121 VTV 4 + !
-  399 VTV 6 + !
+  103 VTH io!
+  207 VTH 4 + io!
+  639 VTH 6 + io!
+  100 VTV io!
+  121 VTV 4 + io!
+  399 VTV 6 + io!
   80 vcols !
   25 vrows !
   0 15 vcolor!
@@ -134,7 +134,7 @@ variable sdcyc  50 sdcyc !
   sddelay  1 >sdclk
   sddelay
 
-  IN @ 2 and 1 rshift  or
+  IN io@ 2 and 1 rshift  or
   
   0 >sdclk ;
 
@@ -350,27 +350,27 @@ variable kbdbuf
 variable kbd#bit
 
 : kbdisr
-  3 #bit  IN @ and  12 lshift     \ get data value in bit 15
+  3 #bit  IN io@ and  12 lshift     \ get data value in bit 15
   kbdbuf @  1 rshift or  kbdbuf ! \ insert it into shift register
   kbd#bit @ 1- kbd#bit !d        \ decrement bit counter
   0= if   \ we're done
     irq#negedge irq-off           \ disable this IRQ
-    12 #bit OUTSET !               \ pull clock low
+    12 #bit OUTSET io!               \ pull clock low
   else
-    IN !d                         \ acknowledge IRQ
+    IN io!d                         \ acknowledge IRQ
   then ;
 
 : kbd@
   11 kbd#bit !                    \ expecting 11 bits
-  12 #bit OUTCLR !                 \ release clock line
-  IN !d                           \ clear pending negedge IRQ
+  12 #bit OUTCLR io!                 \ release clock line
+  IN io!d                           \ clear pending negedge IRQ
   irq#negedge irq-on              \ enable IRQ
   begin kbd#bit @ 0= until        \ wait for all bits
   kbdbuf @ 6 rshift $FF and       \ extract bits
   ;
 
 : kbdinit
-  12 #bit OUTSET !                 \ pull clock low
+  12 #bit OUTSET io!                 \ pull clock low
   ;
 
 : kbdscan
@@ -537,12 +537,12 @@ variable kbdmod
 
 :noname
   uart-rx-init
-  312 UARTRD ! \ Set baud rate to 115200
+  312 UARTRD io! \ Set baud rate to 115200
 
   \ Take a best-effort crack at initializing the disk
   ['] sdinit catch drop
 
-  IN @  4 #bit and if   \ If S2 is held, boot with serial console
+  IN io@  4 #bit and if   \ If S2 is held, boot with serial console
     ['] tx 'emit !
     ['] rx! 'key !
   else  \ otherwise, normal config

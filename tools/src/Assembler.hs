@@ -248,7 +248,7 @@ compile (InlineLit x)
   | 0 <= x && x < 32768 = cComma $ Lit $ fromIntegral x
   | 32768 <= x && x < 65536 = do
     cComma $ Lit $ complement $ fromIntegral x
-    cComma $ NotLit $ ALU False NotT False False False (Res 0) 0 0  -- invert
+    cComma $ NotLit $ ALU False NotT False False False MSpace 0 0  -- invert
   | otherwise = error "internal error: literal out of range"
 
 compile (RawInst i) = cComma i
@@ -264,9 +264,9 @@ jmp0 a | a < 8192 = cComma $ NotLit $ JumpZ $ fromIntegral a
 
 macroBang :: Asm ()
 macroBang = compileOnly $ do
-  cComma $ NotLit $ ALU False T False False True (Res 0) 0 0 -- non-destructive store
-  cComma $ NotLit $ ALU False N False False False (Res 0) 0 (-1)  -- drop
-  cComma $ NotLit $ ALU False N False False False (Res 0) 0 (-1)  -- drop
+  cComma $ NotLit $ ALU False T False False True MSpace 0 0 -- non-destructive store
+  cComma $ NotLit $ ALU False N False False False MSpace 0 (-1)  -- drop
+  cComma $ NotLit $ ALU False N False False False MSpace 0 (-1)  -- drop
 
 compileOnly :: Asm () -> Asm ()
 compileOnly x = do

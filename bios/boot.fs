@@ -9,6 +9,7 @@
 
 \ Assembler primitives
 $6023 alu: !a            ( a b -- b )
+$6033 alu: io!a          ( a b -- b )
 $6081 alu: dup           ( x -- x x )
 $6103 alu: drop          ( x -- )
 $6123 alu: !d            ( a b -- a )
@@ -23,6 +24,7 @@ $6781 alu: 2dup_=        ( a b -- a b a=b )
 $6903 alu: rshift        ( a b -- a>>b )
 $6a03 alu: -             ( a b -- a-b)
 $6c00 alu: @             ( x -- [x] )
+$6c10 alu: io@           ( x -- [x] )
 $6d03 alu: lshift        ( a b -- a<<b )
 
 
@@ -37,23 +39,23 @@ $9000 constant IN
 0 constant RAM_BEGIN
 $4000 constant RAM_END
 
-: select $800 OUTCLR ! ;
-: deselect $800 OUTSET ! ;
+: io! io!a drop ;
+
+: select $800 OUTCLR io! ;
+: deselect $800 OUTSET io! ;
 
 : spibits   ( data n -- data' )
   swap
-  $400 over 15 rshift if OUTSET else OUTCLR then !
+  $400 over 15 rshift if OUTSET else OUTCLR then io!
   1 lshift
-  $200 OUTSET !    \ sclk high
-  IN @ 5 rshift 1 and or
-  $200 OUTCLR !    \ sclk low
+  $200 OUTSET io!    \ sclk high
+  IN io@ 5 rshift 1 and or
+  $200 OUTCLR io!    \ sclk low
   swap
   1 - dup if spibits exit then
   drop ;
-  \ 25 cells
 
 : >spi> 16 spibits ;
-  \ 2 cells
 
 : >spi >spi> drop ;
 
@@ -62,7 +64,6 @@ $4000 constant RAM_END
   2dup_= if drop drop exit then
   0 >spi>  dup 8 lshift  swap 8 rshift or
   swap !a 2 + (read) ;
-  \ 10 cells
 
 \ Polls the SPI flash until it responds with a sane ID byte. This is critical
 \ for booting after loading the FPGA SRAM with icoprog, because icoprog is slow

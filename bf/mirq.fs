@@ -8,12 +8,12 @@
 \ Atomically enables interrupts and returns. This is intended to be tail
 \ called from the end of an ISR to effect a return-from-interrupt, but
 \ can be used in other places.
-: ei  IRQST !d ;
+: ei  IRQST io!d ;
 
 \ Disable an interrupt by index.
-: irq-off  ( u -- )  #bit IRQCE ! ;
+: irq-off  ( u -- )  #bit IRQCE io! ;
 \ Enable an interrupt by index.
-: irq-on   ( u -- )  #bit IRQSE ! ;
+: irq-on   ( u -- )  #bit IRQSE io! ;
 
 \ Per-source vector table
 create vectors  16 cells allot
@@ -23,7 +23,7 @@ create vectors  16 cells allot
 : isr
   \ Vectored interrupt dispatcher.
   \ Which interrupts are active?
-  15 IRQST @
+  15 IRQST io@
   begin   ( vector# irqst )
     dup \ while any remain
   while

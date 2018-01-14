@@ -36,7 +36,6 @@ datapath (MS dptr rptr pc t bs lastSpace) (IS m i n r) =
       signedLessThan | msb t /= msb n = msb n
                      | otherwise = lessThan
 
-      space = unpack $ msb t
       loadResult = case lastSpace of
             MSpace -> m
             ISpace -> i
@@ -94,20 +93,20 @@ datapath (MS dptr rptr pc t bs lastSpace) (IS m i n r) =
 
       mreq = case inst of
             _ | not instValid                 -> Just (pc', Nothing)
-            NotLit (ALU _ MemAtT _ _ _ _ _ _) ->
+            NotLit (ALU _ MemAtT _ _ _ space _ _) ->
               if space == MSpace
                 then Just (slice d14 d1 t, Nothing)
                 else Nothing
-            NotLit (ALU _ _ _ _ True _ _ _)   ->
+            NotLit (ALU _ _ _ _ True space _ _)   ->
               if space == MSpace
                 then Just (slice d14 d1 t, Just n)
                 else Nothing
             _ -> Just (pc', Nothing)
 
       ireq = Nothing `duringLoadStoreElse` case inst of
-            NotLit (ALU _ MemAtT _ _ _ _ _ _) | space == ISpace ->
+            NotLit (ALU _ MemAtT _ _ _ ISpace _ _) ->
                 Just (slice d14 d1 t, Nothing)
-            NotLit (ALU _ _ _ _ True _ _ _)   | space == ISpace->
+            NotLit (ALU _ _ _ _ True ISpace _ _) ->
                 Just (slice d14 d1 t, Just n)
             _ -> Nothing
 
@@ -115,7 +114,9 @@ datapath (MS dptr rptr pc t bs lastSpace) (IS m i n r) =
           , _msRPtr = rptr'
           , _msPC = pc'
           , _msBusState = bs'
-          , _msLastSpace = space
+          , _msLastSpace = case inst of
+              NotLit (ALU _ _ _ _ _ space _ _) -> space
+              _ -> errorX "LastSpace undefined for control flow"
           , _msT = case bs of
               BusData True -> loadResult
               BusData False -> t
