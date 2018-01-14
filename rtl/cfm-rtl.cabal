@@ -24,6 +24,7 @@ library
                        RTL.IcoTop
                        RTL.TargetTop
                        RTL.VGA
+                       RTL.VGA.Palette
                        RTL.SRAM
                        RTL.UART
                        RTL.MMU

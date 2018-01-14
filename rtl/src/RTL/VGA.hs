@@ -13,6 +13,7 @@ import Data.Maybe (fromMaybe)
 import Control.Lens hiding ((:>))
 import Control.Arrow (second)
 import CFM.Types
+import RTL.VGA.Palette
 
 -------------------------------------------------------------------------------
 -- Representation of timing.
@@ -304,26 +305,7 @@ framegen = unbundle . mealy framegenT def
 
 
 -------------------------------------------------------------------------------
--- Palette.
-
-paletteO :: (KnownNat n)
-         => Vec (2^n) (BitVector c) -> BitVector n -> BitVector c
-paletteO = (!!)
-
-paletteT :: (KnownNat n)
-         => Maybe (BitVector n, Maybe (BitVector c))
-         -> Vec (2^n) (BitVector c)
-         -> Vec (2^n) (BitVector c)
-paletteT (Just (a, Just v)) = replace a v
-paletteT _ = id
-
--------------------------------------------------------------------------------
 -- Character generation.
-
-defaultPalette :: Vec 16 (BitVector 6)
-defaultPalette =
-  0 :> 1 :> 2 :> 3 :> 4 :> 5 :> 20 :> 7 :>
-  56 :> 57 :> 58 :> 59 :> 60 :> 61 :> 62 :> 63 :> Nil
 
 chargen
   :: (HasClockReset d g s)
@@ -350,9 +332,6 @@ chargen ioreq = ( resp
     iosplit _ = (Nothing, Nothing)
 
     (fgreq, preq) = unbundle $ iosplit <$> ioreq
-
-    palette = register defaultPalette $
-      paletteT <$> (fmap (second (fmap truncateB)) <$> preq) <*> palette
 
     -- The outputs of framegen provide the first cycle.
     ( unbundle -> (hsync, hblank)
@@ -398,8 +377,7 @@ chargen ioreq = ( resp
     backI'' = register def backI'
     cursor'' = register False cursor'
 
-    fore'' = paletteO <$> palette <*> foreI''
-    back'' = paletteO <$> palette <*> backI''
+    (fore'' :> back'' :> _, _) = palette (foreI'' :> backI'' :> Nil) preq
 
     cursbits'' = mux cursor'' (pure 3) (pure 0)
     gcslice'' = (.|.) <$> gslice'' <*> cursbits''
