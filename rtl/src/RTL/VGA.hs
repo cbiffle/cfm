@@ -6,122 +6,29 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DeriveAnyClass #-}
 module RTL.VGA where
 
 import Clash.Prelude
+import GHC.Generics
 import Data.Maybe (fromMaybe)
 import Control.Lens hiding ((:>))
 import Control.Arrow (second)
+import Control.DeepSeq
+import Test.QuickCheck hiding ((.&.))
+import Test.QuickCheck.Arbitrary.Generic (genericArbitrary)
 import CFM.Types
+import RTL.IOBus (ioDecoder, responseMux)
 import RTL.VGA.Palette
-
--------------------------------------------------------------------------------
--- Representation of timing.
-
--- | Phases of a horizontal or vertical timing generator.
-data Phase = FrontPorch -- ^ Start of blanking interval.
-           | SyncPulse  -- ^ Sync pulse.
-           | BackPorch  -- ^ End of blanking interval.
-           | VisibleArea  -- ^ Actual pixels.
-           deriving (Show, Eq, Ord, Enum, Bounded)
-
--- | Phases advance cyclicly. Note that since they're a 2-bit quantity, we
--- ought to be able to do this without a carry chain. Not tested.
-nextPhase :: Phase -> Phase
-nextPhase = toEnum . (.&. 3) . (+ 1) . fromEnum
-
--- | We maintain the number of sub-cycles to spend in each state (minus 1) in a
--- simple vector, indexed by the 'Phase'. The values themselves are sized by
--- 'n' (in bits).
-type Timing n = Vec 4 (BitVector n)
-
--- | Transition function for updating the timing structure itself. This allows
--- 'Timing' to be exposed as a set of writable registers.
-timingT :: Maybe (BitVector 2, Maybe (BitVector n)) -> Timing n -> Timing n
-timingT (Just (a, Just x)) = replace a x
-timingT _ = id
-
--- | Here's an example of timing values for a common 800x600 mode.
-vesa800x600x56 :: (Timing 10, Timing 10)
-vesa800x600x56 = ( 23 :> 71 :> 127 :> 799 :> Nil
-                 , 0 :> 1 :> 21 :> 599 :> Nil
-                 )
-
-
---------------------------------------------------------------------------------
--- Timing machines and sync generation.
-
--- | Timing machine state, either horizontal or vertical. This machine is
--- advanced only when a gate signal allows (e.g. for vertical sync, only at
--- horizontal blanking). The timing control registers are separate and can be
--- written at any time.
-data TState n = TState
-  { _tsPhase :: Phase
-    -- ^ Current phase of the state machine.
-  , _tsCycLeft :: BitVector n
-    -- ^ Cycles remaining within current phase.
-  }
-
-makeLenses ''TState
-
-instance Default (TState n) where def = TState VisibleArea def
-
--- | Transition function for updating the state of a timing machine.
---
--- The argument order is flipped from our usual Moore machines because of how
--- it gets used below.
-tstateT :: (KnownNat n)
-        => (Bool, Timing n) -- ^ Gate and configuration.
-        -> TState n
-        -> TState n
-tstateT (False, _) s = s  -- maintain state when gated
-tstateT (_, tm) s = s & tsPhase .~ phase'
-                      & tsCycLeft .~ cyc'
-  where
-    zero = s ^. tsCycLeft == 0
-    phase = s ^. tsPhase
-    next = nextPhase phase
-    -- Advance the phase and reload the counter when the counter expires.
-    (phase', cyc') | zero      = (next,  tm !! next)
-                   | otherwise = (phase, pred (s ^. tsCycLeft))
-
--- | Timing machine output function.
---
--- This produces two "event" outputs and two "level" outputs.
---
--- The event outputs are 'True' for exactly one cycle at a specific event:
---
--- - Start-of-blank is 'True' during the final cycle of the visible area.
--- - End-of-blank is 'True' during the final cycle of the blanking interval.
---
--- The level outputs are 'True' while a condition holds:
---
--- - Sync is 'True' while the sync pulse should be generated.
--- - Active is 'True' while we're in the visible area of timing.
-tstateO :: (KnownNat n)
-        => TState n
-        -> ( Bool       -- start of blank
-           , Bool       -- end of blank
-           , Bool       -- sync level
-           , Bool       -- active
-           )
-tstateO s = (blank, eblank, sync, active)
-  where
-    blank = s ^. tsCycLeft == 0 && s ^. tsPhase == VisibleArea
-    eblank = s ^. tsCycLeft == 0 && s ^. tsPhase == BackPorch
-    sync = s ^. tsPhase == SyncPulse
-    active = s ^. tsPhase == VisibleArea
+import RTL.VGA.Timing
 
 
 -------------------------------------------------------------------------------
 -- CRTC frame control and pixel addressing
 
 data GState = GState
-  { _gsH :: (TState 10, Timing 10)
-    -- ^ Horizontal timing configuration and state.
-  , _gsV :: (TState 10, Timing 10)
-    -- ^ Vertical timing configuration and state.
-  , _gsPixels :: BitVector 14
+  { _gsPixels :: BitVector 14
     -- ^ Pixel addressing counter.
   , _gsShadowPixels :: BitVector 14
     -- ^ Shadow of gsPixels used to effect character retracing.
@@ -141,14 +48,13 @@ data GState = GState
   , _gsReadValue :: Cell
     -- ^ Read value, registered to improve bus timing.
   }
+  deriving (Show, Generic, NFData)
 
 makeLenses ''GState
 
 instance Default GState where
   def = GState
-    { _gsH = (def, fst vesa800x600x56)
-    , _gsV = (def, snd vesa800x600x56)
-    , _gsPixels = def
+    { _gsPixels = def
     , _gsShadowPixels = def
     , _gsChar0 = def
     , _gsHIF = False
@@ -159,15 +65,22 @@ instance Default GState where
     , _gsReadValue = def
     }
 
+instance Arbitrary GState where
+  arbitrary = genericArbitrary
+
 -- | Mealy function for the framegen circuit.
 --
 -- This is responsible for applying updates from the I/O bus to the state, and
 -- generating the outputs. (Phrasing this as a Moore machine was duplicative.)
 framegenT :: GState
-          -> Maybe (BitVector 4, Maybe Cell)
+          -> ( Maybe (BitVector 3, Maybe Cell)
+             , ( TimingSigs
+               , TimingSigs
+               )
+             )
           -> ( GState
-             , ( (Bool, Bool) -- hsync, HIF
-               , (Bool, Bool, Bool) -- vsync, VIF, EVIF
+             , ( Bool -- HIF
+               , (Bool, Bool) -- VIF, EVIF
                , Bool -- Active
                , BitVector 14 -- pixel address
                , BitVector 4  -- font base
@@ -175,15 +88,16 @@ framegenT :: GState
                , Bool  -- cursor active?
                , Cell -- read response
                ))
-framegenT s iowr = (s', ( (hsync, s ^. gsHIF)
-                        , (vsync, s ^. gsVIF, s ^. gsEVIF)
-                        , act
-                        , s ^. gsPixels
-                        , s ^. gsFB
-                        , write
-                        , s ^. gsAddr == (0, slice d13 d3 (s ^. gsPixels))
-                        , s ^. gsReadValue
-                        ))
+framegenT s (iowr, (hts, vts)) =
+  (s', ( s ^. gsHIF
+       , (s ^. gsVIF, s ^. gsEVIF)
+       , act
+       , s ^. gsPixels
+       , s ^. gsFB
+       , write
+       , s ^. gsAddr == (0, slice d13 d3 (s ^. gsPixels))
+       , s ^. gsReadValue
+       ))
   where
     s' = s & gsPixels .~ pixels'
            & gsShadowPixels .~ shadowPixels'
@@ -191,31 +105,15 @@ framegenT s iowr = (s', ( (hsync, s ^. gsHIF)
            & gsFB .~ fb'
            & gsAddr .~ addr'
            & gsReadValue .~ readValue
-           -- Timing machine updates
-           & gsH . _1 %~ tstateT (True, s ^. gsH . _2)
-           & gsV . _1 %~ tstateT (hblank, s ^. gsV . _2)
-           -- Timing register updates
-           & gsH . _2 %~ timingT hwr
-           & gsV . _2 %~ timingT vwr
            -- Interrupt flags: set on event, clear on acknowledge
            & gsHIF  %~ ((&& not hack)  . (|| hblank))
            & gsVIF  %~ ((&& not vack)  . (|| vblank))
            & gsEVIF %~ ((&& not evack) . (|| evblank))
 
     -- Timing machine output circuits.
-    (hblank, _,       hsync, hactive) = tstateO (s ^. gsH . _1)
-    (vblank, evblank, vsync, vactive) = tstateO (s ^. gsV . _1)
+    TimingSigs hblank _ _ hactive = hts
+    TimingSigs vblank evblank _ vactive = vts
     act = hactive && vactive
-
-    -- We expose three separate sets of registers to the bus: the horizontal and
-    -- vertical timing, and our own control registers. Split requests here.
-    -- TODO: this is a recurring pattern that could be better extracted.
-    (hwr, vwr, rwr) = iowr & \w -> case w of
-      Just (split -> (t, a), x)
-        | t == 0    -> (Just (a, truncateB <$> x), Nothing, Nothing)
-        | t == 1    -> (Nothing, Just (a, truncateB <$> x), Nothing)
-        | otherwise -> (Nothing, Nothing, Just (t ++# a, x))
-      _ -> (Nothing, Nothing, Nothing)
 
     -- The start-of-field event occurs at the start-of-hblank cycle during the
     -- last line of the vertical blanking interval, and is used to reset state
@@ -226,7 +124,7 @@ framegenT s iowr = (s', ( (hsync, s ^. gsHIF)
 
     -- Transition rules for the pixel addressing counter.
     -- TODO all these equations need optimizin'.
-    pixels' | Just (0x8, Just v) <- rwr = truncateB (v `shiftL` 3)
+    pixels' | Just (0, Just v) <- iowr = truncateB (v `shiftL` 3)
               -- Allow host writes at any time.
             | startOfField = (s ^. gsChar0) ++# 0
               -- Reset to char0 at start-of-field.
@@ -246,11 +144,11 @@ framegenT s iowr = (s', ( (hsync, s ^. gsHIF)
 
     -- Interrupt acknowledge signals, detected when the host writes 1 to bits in
     -- register 0x12.
-    (evack, hack, vack) | Just (0x9, Just v) <- rwr = unpack (slice d2 d0 v)
+    (evack, hack, vack) | Just (1, Just v) <- iowr = unpack (slice d2 d0 v)
                         | otherwise = (False, False, False)
 
     -- Font base transition rules.
-    fb' | Just (0xA, Just v) <- rwr = truncateB v
+    fb' | Just (2, Just v) <- iowr = truncateB v
           -- Allow host writes at any time.
         | startOfField = 0
           -- Reset to zero at start-of-field. This ensures correct display when
@@ -261,7 +159,7 @@ framegenT s iowr = (s', ( (hsync, s ^. gsHIF)
         | otherwise = s ^. gsFB
 
     -- Video memory write address transition rules.
-    addr' | Just (0xB, Just v) <- rwr = unpack $ truncateB v
+    addr' | Just (3, Just v) <- iowr = unpack $ truncateB v
             -- Allow host writes at any time.
           | Just _ <- write = second (+1) $ s ^. gsAddr
             -- On any use of VWD (below), advance the address.
@@ -269,31 +167,29 @@ framegenT s iowr = (s', ( (hsync, s ^. gsHIF)
 
     -- Detecting writes to VWD.
     write
-      | Just (0xC, Just v) <- rwr = Just (s ^. gsAddr, v)
+      | Just (4, Just v) <- iowr = Just (s ^. gsAddr, v)
       | otherwise = Nothing
 
     -- Transition rules for char0, a simple register.
-    char0' | Just (0xD, Just v) <- rwr = truncateB v
+    char0' | Just (5, Just v) <- iowr = truncateB v
            | otherwise = s ^. gsChar0
 
     -- Bus response multiplexer.
     readValue = case fromMaybe 0 (fst <$> iowr) of
-          x | x .&. 0xC == 0 ->
-                zeroExtend $ (s ^. gsH . _2) !! (x .&. 3)
-          x | x .&. 0xC == 4 ->
-                zeroExtend $ (s ^. gsV . _2) !! (x .&. 3)
-          8 -> zeroExtend $ s ^. gsPixels
-          9 -> zeroExtend $ pack (s ^. gsEVIF, s ^. gsHIF, s ^. gsVIF)
-          0xA -> zeroExtend $ s ^. gsFB
-          0xB -> zeroExtend $ pack $ s ^. gsAddr
-          0xC -> errorX "write-only register"
-          0xD -> zeroExtend $ s ^. gsChar0
+          0 -> zeroExtend $ s ^. gsPixels
+          1 -> zeroExtend $ pack (s ^. gsEVIF, s ^. gsHIF, s ^. gsVIF)
+          2 -> zeroExtend $ s ^. gsFB
+          3 -> zeroExtend $ pack $ s ^. gsAddr
+          4 -> errorX "write-only register"
+          5 -> zeroExtend $ s ^. gsChar0
           _ -> errorX "undefined video register"
 
 framegen :: (HasClockReset d g s)
-         => Signal d (Maybe (BitVector 4, Maybe Cell))
-         -> ( Signal d (Bool, Bool)   -- hsync, hblank interrupt
-            , Signal d (Bool, Bool, Bool)   -- vsync, start of / end of irqs
+         => Signal d (Maybe (BitVector 3, Maybe Cell))
+         -> Signal d TimingSigs
+         -> Signal d TimingSigs
+         -> ( Signal d Bool   -- hblank interrupt
+            , Signal d (Bool, Bool)   -- start of / end of irqs
             , Signal d Bool   -- active
             , Signal d (BitVector 14) -- pixel address
             , Signal d (BitVector 4)  -- glyph base
@@ -301,7 +197,7 @@ framegen :: (HasClockReset d g s)
             , Signal d Bool -- cursor
             , Signal d Cell -- read response
             )
-framegen = unbundle . mealy framegenT def
+framegen ioreq hts vts = mealyB framegenT def (ioreq, bundle (hts, vts))
 
 
 -------------------------------------------------------------------------------
@@ -327,16 +223,25 @@ chargen ioreq = ( resp
                 , out''
                 )
   where
-    iosplit (Just (split @_ @1 -> (0, a), v)) = (Just (a, v), Nothing)
-    iosplit (Just (split @_ @1 -> (_, a), v)) = (Nothing, Just (a, v))
-    iosplit _ = (Nothing, Nothing)
+    (ioreq1 :> preq :> Nil, ioch0) = ioDecoder ioreq
+    (ioreq2 :> lreq :> Nil, ioch1) = ioDecoder ioreq1
+    (htreq :> vtreq :> Nil, ioch2) = ioDecoder ioreq2
 
-    (fgreq, preq) = unbundle $ iosplit <$> ioreq
+    resp2 = responseMux (htresp :> vtresp :> Nil) ioch2
+    resp1 = responseMux (resp2 :> lresp :> Nil) ioch1
+    resp = responseMux (resp1 :> presp :> Nil) ioch0
 
     -- The outputs of framegen provide the first cycle.
-    ( unbundle -> (hsync, hblank)
-      , unbundle -> (vsync, vblank, evblank)
-      , active, pixel, glyph, wrth, cursor, resp) = framegen fgreq
+    (htresp, hts) = timing (fst vesa800x600x56) (pure True) htreq
+    (vtresp, vts) = timing (snd vesa800x600x56)
+                           (timsigStartOfBlank <$> hts)
+                           vtreq
+    hsync   = timsigSyncActive <$> hts
+    vsync   = timsigSyncActive <$> vts
+    
+    ( hblank
+      , unbundle -> (vblank, evblank)
+      , active, pixel, glyph, wrth, cursor, lresp) = framegen lreq hts vts
 
     (charAddr, pxlAddr) = unbundle $ split <$> pixel
 
@@ -377,7 +282,7 @@ chargen ioreq = ( resp
     backI'' = register def backI'
     cursor'' = register False cursor'
 
-    (fore'' :> back'' :> _, _) = palette (foreI'' :> backI'' :> Nil) preq
+    (fore'' :> back'' :> _, presp) = palette (foreI'' :> backI'' :> Nil) preq
 
     cursbits'' = mux cursor'' (pure 3) (pure 0)
     gcslice'' = (.|.) <$> gslice'' <*> cursbits''

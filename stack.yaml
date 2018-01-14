@@ -23,6 +23,7 @@ extra-deps:
 - ghc-typelits-natnormalise-0.5.3
 - uu-parsinglib-2.9.1.1
 - uu-interleaved-0.2.0.0
+- generic-arbitrary-0.1.0
 
 flags: {}
 
