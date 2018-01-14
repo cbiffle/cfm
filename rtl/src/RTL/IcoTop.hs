@@ -83,7 +83,7 @@ system raminit ins sram2h urx =
     -- MMU, giving the memory address mapping constructor.
     mmuMap :: Signal dom (Maybe (CellAddr, Maybe Cell))
            -> Signal dom (Maybe (PhysAddr, Maybe Cell))
-    (ioresp6, mmuMap) = mmu d3 d7 d12 irqEntry $ partialDecode ioreq6
+    (ioresp6, _, mmuMap) = mmu d3 d7 d12 irqEntry $ partialDecode ioreq6
 
 
 {-# ANN topEntity (defTop { t_name = "ico_soc"

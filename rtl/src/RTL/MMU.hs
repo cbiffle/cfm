@@ -5,6 +5,7 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE ViewPatterns #-}
 
 -- | Memory Management Unit for accessing more than 32kiB of RAM.
 module RTL.MMU where
@@ -40,7 +41,8 @@ import RTL.IOBus
 -- Interrupt entry causes an automatic switch back to map 0 at the start of
 -- vector fetch, so that the vector is always fetched from map 0. When this
 -- occurs, bit 1 in the Control/Status register will be set. This bit is cleared
--- by switching maps.
+-- by switching maps; when this occurs, a signal is sent to the IRQ controller
+-- to re-enable interrupts.
 --
 -- Register set:
 --
@@ -73,12 +75,14 @@ mmu :: forall n v p ev ep d g s.
     -> Signal d (Maybe (BitVector 2, Maybe Cell))
       -- ^ Connection to the I/O bus.
     -> ( Signal d Cell
+        , Signal d Bool
         , Signal d (Maybe (BitVector (v+n), Maybe Cell))
           -> Signal d (Maybe (BitVector (p+n), Maybe Cell))
-        ) -- ^ I/O response and mapping constructor, respectively.
-mmu _ _ _ irq ioreq = (ioresp, liftA2 mmapper cmap)
+        ) -- ^ I/O response, IRQ re-enable broadcast, and mapping constructor,
+          -- respectively.
+mmu _ _ _ irq ioreq = (ioresp, irqen, liftA2 mmapper cmap)
   where
-    (ioresp, cmap) = mmu' @v @p @ev @ep irq ioreq
+    (ioresp, unbundle -> (cmap, irqen)) = mmu' @v @p @ev @ep irq ioreq
 
     mapper :: Vec (2^v) (BitVector p)
            -> BitVector (v+n)
@@ -106,14 +110,14 @@ mmu' :: forall v p ev ep d g s.
      => Signal d Bool
      -> Signal d (Maybe (BitVector 2, Maybe Cell))
      -> ( Signal d Cell
-        , Signal d (Vec (2^v) (BitVector p))
+        , Signal d (Vec (2^v) (BitVector p), Bool)
         )
 mmu' = mealyp fT fR
   where
     fT :: S v p
        -> (Maybe (BitVector 2, Maybe Cell), Bool)
-       -> (S v p, Vec (2^v) (BitVector p))
-    fT (S map0 map1 mp m1a sirq) (req, irq) = (s', activeMap)
+       -> (S v p, (Vec (2^v) (BitVector p), Bool))
+    fT (S map0 map1 mp m1a sirq) (req, irq) = (s', (activeMap, irqen))
       where
         s' = S map0' map1' mp' m1a' sirq'
 
@@ -132,6 +136,9 @@ mmu' = mealyp fT fR
         sirq' | irq = m1a
               | Just (0, Just _) <- req = False
               | otherwise = sirq
+
+        irqen | Just (0, Just _) <- req = sirq
+              | otherwise = False
 
         activeMap | not m1a || irq = map0
                   | otherwise = map1
