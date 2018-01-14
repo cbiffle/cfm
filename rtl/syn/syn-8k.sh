@@ -13,6 +13,7 @@ rm -rf "${OUT}"
 "${ROOT}/clash" -i"${ROOT}/src" \
                 -i"${ROOT}/../arch/src" \
                 -outputdir "${OUT}" \
+                -fclash-inline-limit=50 \
                 --verilog \
                 "${ROOT}/src/RTL/IcoTop.hs"
 
