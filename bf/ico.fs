@@ -648,8 +648,6 @@ variable kbdmod
 ( ----------------------------------------------------------- )
 ( Demo wiring below )
 
-: delay 0 begin 1+ dup 0= until drop ;
-
 create vectors  16 cells allot
 
 : isr
@@ -677,13 +675,7 @@ create vectors  16 cells allot
 
 : rx! rx dup 0< if rx! exit then ;
 
-: cold
-  \ Initialize user area, leaving some space for online user definitions
-  $7B80 U0 !
-  0 handler !
-  10 base !
-  forth definitions
-
+:noname
   uart-rx-init
   312 UARTRD ! \ Set baud rate to 115200
 
@@ -698,11 +690,10 @@ create vectors  16 cells allot
     ['] vemit 'emit !
     ['] kbdkey 'key !
   then
-  ei
-  ." bsforth | "
-  U0 @ here - . ." bytes free | last word: "
-  CURRENT @ @ cell+ count type cr
-  quit ;
+  ei ;
+oncold !
+
+blkbuf ramtop !
 
 ( install cold as the reset vector )
 ' cold  u2/  0 !

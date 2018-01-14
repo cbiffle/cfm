@@ -125,23 +125,16 @@ create vectors  16 cells allot
 
 : rx! rx dup 0< if rx! exit then ;
 
-: cold
-  \ Initialize user area
-  $1C00  #user @ cells -  U0 !
-  0 handler !
-  10 base !
-  forth definitions
-
+:noname
   uart-rx-init
   347 UARTRD ! \ Set baud rate to 115200
 
   ['] tx 'emit !
   ['] rx! 'key !
-  ei
-  ." bsforth | "
-  U0 @ here - . ." bytes free | last word: "
-  CURRENT @ @ cell+ count type cr
-  quit ;
+  ei ;
+oncold !
+
+$1C00 ramtop !
 
 ( install cold as the reset vector )
 ' cold  u2/  0 !

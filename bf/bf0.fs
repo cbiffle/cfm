@@ -968,5 +968,27 @@ create TIB 80 allot
     cr
   again ;
 
+\ -------------------------------------------------------------------
+\ Cold start skeleton
+
+variable oncold
+variable ramtop
+
+: cold
+  \ Set up user area at end of RAM.
+  ramtop @  #user @ cells -  U0 !
+  \ Initialize user variables known to the system
+  0 handler !
+  10 base !
+  forth definitions
+
+  \ Run system cold hook, if provided.
+  oncold @ ?dup if execute then
+
+  ." bsforth | "
+  U0 @ here - . ." bytes free | last word: "
+  CURRENT @ @ cell+ count type cr
+  quit ;
+
 .( Volume 1 compiled, size:)
 here host.
