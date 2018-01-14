@@ -27,7 +27,7 @@ instance Arbitrary Load where
                            <*> arbitrary <*> pure (BusData True) <*> arbitrary)
 
 isWrite :: BusReq -> Bool
-isWrite (_, _, Just _) = True
+isWrite (Just (_, Just _)) = True
 isWrite _ = False
 
 genspec :: (MS -> IS -> (MS, OS)) -> Spec
@@ -36,7 +36,7 @@ genspec sf = do
     let u = errorX "inputs undefined at reset"
         inputs = IS u u u u
     it "fetches first instruction from memory, no write" $ property $
-      sf def inputs ^. _2 . osBusReq `shouldBe` (MSpace, 0, Nothing)
+      sf def inputs ^. _2 . osMReq `shouldBe` Just (0, Nothing)
     it "starts out stack at 0" $ property $
       sf def inputs ^. _2 . osDOp == (0, 0, Nothing)
     it "starts out return stack at 0" $ property $
@@ -49,7 +49,7 @@ genspec sf = do
     it "doesn't write Return" $ property $ test isNothing (_2 . osROp . _3)
     it "doesn't write Data" $ property $ test isNothing (_2 . osDOp . _3)
     it "fetches current" $ property $ \(Load s) ->
-      go s u u ^. _2 . osBusReq `shouldBe` (MSpace, s ^. msPC, Nothing)
+      go s u u ^. _2 . osMReq `shouldBe` Just (s ^. msPC, Nothing)
     it "asserts fetch" $ property $ \(Load s) ->
       go s u u ^. _2 . osFetch `shouldBe` True
     it "addresses D" $ property $ \(Load s) ->
@@ -189,13 +189,24 @@ genspec sf = do
           0 -> Nothing
           1 -> Just (s ^. msT)
 
-    {- TODO
-    it "I[5]: [T] <- N" $ property $ \(Fetch s) x d r ->
-      case slice d5 d5 x of
-        0 -> not $ isWrite $ go s x d r ^. _2 . osBusReq
-        1 -> case msb (s ^. msT) of
-              0 -> 
-    -}
+    context "I[5]: [T] <- N" $ do
+      it "does not write memory when clear" $ property $ \(Fetch s) x d r ->
+        slice d5 d5 x == 0 ==>
+          isWrite (go s x d r ^. _2 . osMReq) `shouldBe` False
+      it "does not write I/O when clear" $ property $ \(Fetch s) x d r ->
+        slice d5 d5 x == 0 ==>
+          isWrite (go s x d r ^. _2 . osIReq) `shouldBe` False
+      it "writes I/O or memory when set" $ property $ \(Fetch s) x d r ->
+        slice d11 d8 x /= 12 ==> -- ignore simultaneous loads/stores
+        slice d5 d5 x == 1 ==> do
+          let result = go s x d r ^. _2
+              space = unpack $ msb $ s ^. msT
+          result ^. osMReq `shouldBe` case space of
+            ISpace -> Nothing
+            MSpace -> Just (slice d14 d1 (s ^. msT), Just d)
+          result ^. osIReq `shouldBe` case space of
+            MSpace -> Nothing
+            ISpace -> Just (slice d14 d1 (s ^. msT), Just d)
 
     context "I[3:2]: RPtr adjust" $ do
       it "updates RPtr" $ property $ \(Fetch s) x d r ->
@@ -236,11 +247,15 @@ genspec sf = do
 
       context "[T]" $ do
         it "triggers read of [T]" $ property $ \(Fetch s) x d r ->
-          (slice d5 d5 x == 0) ==> -- ignore simultaneous loads/stores
-            go' 12 s x d r ^. _2 . osBusReq `shouldBe`
-              case msb (s ^. msT) of
-                1 -> (ISpace, slice d14 d1 (s ^. msT), Nothing)
-                0 -> (MSpace, slice d14 d1 (s ^. msT), Nothing)
+          (slice d5 d5 x == 0) ==> do -- ignore simultaneous loads/stores
+            let result = go' 12 s x d r ^. _2
+
+            result ^. osMReq `shouldBe` case msb (s ^. msT) of
+                1 -> Nothing
+                0 -> Just (slice d14 d1 (s ^. msT), Nothing)
+            result ^. osIReq `shouldBe` case msb (s ^. msT) of
+                1 -> Just (slice d14 d1 (s ^. msT), Nothing)
+                0 -> Nothing
         it "enters load state" $ property $ \(Fetch s) x d r ->
           go' 12 s x d r ^. _1 . msBusState == BusData True
         it "does not assert fetch" $ property $ \(Fetch s) x d r ->
@@ -252,7 +267,7 @@ genspec sf = do
 
   where
   instDoesNotWriteM mkinst = it "does not write memory" $ property $
-    \(Fetch s) x -> not $ isWrite $ sf s (IS (mkinst x) u u u) ^. _2 . osBusReq
+    \(Fetch s) x -> not $ isWrite $ sf s (IS (mkinst x) u u u) ^. _2 . osMReq
       where u = errorX "must be unused"
 
   instDoesNotWriteR mkinst = it "does not write return" $ property $
@@ -282,7 +297,7 @@ genspec sf = do
     it "right address" $ property $
       \(Fetch s) x ->
         let (s', o) = sf s (IS (mkinst x) u u u)
-        in o ^. osBusReq `shouldBe` (MSpace, s' ^. msPC, Nothing)
+        in o ^. osMReq `shouldBe` Just (s' ^. msPC, Nothing)
     it "asserts fetch" $ property $
       \(Fetch s) x ->
         let (s', o) = sf s (IS (mkinst x) u u u)
