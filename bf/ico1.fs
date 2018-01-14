@@ -256,7 +256,7 @@ variable sdcyc  50 sdcyc !
 \ Block support
 
 \ We place a single 1kiB block buffer at the top of SRAM.
-$8000 1024 - constant blkbuf
+0 1024 - constant blkbuf
 
 \ If bit 0 of blkstat is set, the buffer is allocated to a disk block. If bit 1
 \ of blkstat is also set, the buffer is dirty.

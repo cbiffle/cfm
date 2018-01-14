@@ -4,6 +4,7 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE TypeOperators #-}
 module RTL.CoreInterface where
 
 import Clash.Prelude hiding (cycle)
@@ -16,7 +17,7 @@ import Test.QuickCheck
 import CFM.Types
 import CFM.Inst (Space(..))
 
-type BusReq = Maybe (SAddr, Maybe Cell)
+type BusReq = Maybe (CellAddr, Maybe Cell)
 
 data BusState = BusFetch
                 -- ^ The bus was used to fetch; response is an instruction.
@@ -41,7 +42,7 @@ makeLenses ''IS
 data MS = MS
   { _msDPtr :: SP
   , _msRPtr :: SP
-  , _msPC :: SAddr
+  , _msPC :: BitVector (Width - 2)
   , _msT :: Cell
   , _msBusState :: BusState
   , _msLastSpace :: Space

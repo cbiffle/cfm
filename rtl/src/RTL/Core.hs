@@ -51,10 +51,10 @@ stack name op = readNew (blockRamPow2 (repeat $ errorX name))
 -- an I/O bridge, exposing the I/O bus.
 coreWithRAM
   :: (HasClockReset dom gated synchronous)
-  => (Signal dom (Maybe (SAddr, Maybe Cell)) -> Signal dom Cell)
+  => (Signal dom (Maybe (CellAddr, Maybe Cell)) -> Signal dom Cell)
     -- ^ RAM constructor
   -> Signal dom Cell    -- ^ I/O read response, valid when addressed.
-  -> ( Signal dom (Maybe (SAddr, Maybe Cell))
+  -> ( Signal dom (Maybe (CellAddr, Maybe Cell))
      , Signal dom Bool
      ) -- ^ I/O bus outputs and fetch signal, respectively.
 coreWithRAM ram ioresp = (ioreq, fetch)
@@ -63,8 +63,10 @@ coreWithRAM ram ioresp = (ioreq, fetch)
     mresp = ram mreq
 
 singlePorted
-  :: (Signal dom SAddr -> Signal dom (Maybe (SAddr, Cell)) -> Signal dom Cell)
-  -> Signal dom (Maybe (SAddr, Maybe Cell))
+  :: (Signal dom CellAddr
+       -> Signal dom (Maybe (CellAddr, Cell))
+       -> Signal dom Cell)
+  -> Signal dom (Maybe (CellAddr, Maybe Cell))
   -> Signal dom Cell
 singlePorted ram mreq = ram rd wr
   where

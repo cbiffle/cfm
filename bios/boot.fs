@@ -31,9 +31,9 @@ $6d03 alu: lshift        ( a b -- a<<b )
 2 org \ leave room for the reset vector
 
 \ Port definitions
-$8002 constant OUTSET
-$8004 constant OUTCLR
-$9000 constant IN
+$0002 constant OUTSET
+$0004 constant OUTCLR
+$2000 constant IN
 
 \ Loaded RAM region
 0 constant RAM_BEGIN

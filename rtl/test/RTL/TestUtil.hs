@@ -7,11 +7,10 @@ module RTL.TestUtil where
 import Clash.Prelude
 
 import Data.Maybe (isNothing)
-import Control.Lens
+import Control.Lens hiding (op)
 import Test.Hspec
 import Test.QuickCheck hiding ((.&.))
 
-import CFM.Types
 import CFM.Inst
 import RTL.CoreInterface
 
@@ -50,7 +49,7 @@ genspec sf = do
     it "doesn't write Return" $ property $ test isNothing (_2 . osROp . _3)
     it "doesn't write Data" $ property $ test isNothing (_2 . osDOp . _3)
     it "fetches current" $ property $ \(Load s) ->
-      go s u u ^. _2 . osMReq `shouldBe` Just (s ^. msPC, Nothing)
+      go s u u ^. _2 . osMReq `shouldBe` Just (zeroExtend (s ^. msPC), Nothing)
     it "asserts fetch" $ property $ \(Load s) ->
       go s u u ^. _2 . osFetch `shouldBe` True
     it "addresses D" $ property $ \(Load s) ->
@@ -133,7 +132,6 @@ genspec sf = do
 
     let go s x d = sf s (IS (mkjmp x) u d u)
         u = errorX "must not be used in this test"
-        stdelta f l = \x (Fetch s) d -> (go s x d ^. _1 . l) == f (s ^. l)
 
     it "loads T from N" $ property $ \x (Fetch s) d ->
       go s x d ^. _1 . msT == d
@@ -157,8 +155,6 @@ genspec sf = do
 
     let go s x = sf s (IS (mkcall x) u u u)
         u = errorX "must not be used in this test"
-        test p l = \x (Fetch s) -> p $ go s x ^. l
-        stdelta f l = \x (Fetch s) -> (go s x ^. _1 . l) == f (s ^. l)
 
     it "pushes return PC to R as byte address" $ property $ \x (Fetch s) ->
       go s x ^. _2 . osROp . _3 == Just (low ++# (s ^. msPC + 1) ++# low)
@@ -176,19 +172,19 @@ genspec sf = do
       go s x d r ^. _1 . msPC ==
         case slice d12 d12 x of
           0 -> s ^. msPC + 1
-          1 -> slice d14 d1 r
+          _ -> slice d14 d1 r
 
     it "I[7]: N <- T" $ property $ \(Fetch s) x d r ->
       go s x d r ^. _2 . osDOp . _3 ==
         case slice d7 d7 x of
           0 -> Nothing
-          1 -> Just (s ^. msT)
+          _ -> Just (s ^. msT)
 
     it "I[6]: R <- T" $ property $ \(Fetch s) x d r ->
       go s x d r ^. _2 . osROp . _3 ==
         case slice d6 d6 x of
           0 -> Nothing
-          1 -> Just (s ^. msT)
+          _ -> Just (s ^. msT)
 
     context "I[5]: [T] <- N" $ do
       it "does not write memory when clear" $ property $ \(Fetch s) x d r ->
@@ -204,10 +200,10 @@ genspec sf = do
               space = unpack $ slice d4 d4 x
           result ^. osMReq `shouldBe` case space of
             ISpace -> Nothing
-            MSpace -> Just (slice d14 d1 (s ^. msT), Just d)
+            MSpace -> Just (slice d15 d1 (s ^. msT), Just d)
           result ^. osIReq `shouldBe` case space of
             MSpace -> Nothing
-            ISpace -> Just (slice d14 d1 (s ^. msT), Just d)
+            ISpace -> Just (slice d15 d1 (s ^. msT), Just d)
 
     context "I[3:2]: RPtr adjust" $ do
       it "updates RPtr" $ property $ \(Fetch s) x d r ->
@@ -254,9 +250,9 @@ genspec sf = do
 
             result ^. osMReq `shouldBe` case space of
                 ISpace -> Nothing
-                MSpace -> Just (slice d14 d1 (s ^. msT), Nothing)
+                MSpace -> Just (slice d15 d1 (s ^. msT), Nothing)
             result ^. osIReq `shouldBe` case space of
-                ISpace -> Just (slice d14 d1 (s ^. msT), Nothing)
+                ISpace -> Just (slice d15 d1 (s ^. msT), Nothing)
                 MSpace -> Nothing
         it "enters load state" $ property $ \(Fetch s) x d r ->
           go' 12 s x d r ^. _1 . msBusState == BusData True
@@ -299,10 +295,10 @@ genspec sf = do
     it "right address" $ property $
       \(Fetch s) x ->
         let (s', o) = sf s (IS (mkinst x) u u u)
-        in o ^. osMReq `shouldBe` Just (s' ^. msPC, Nothing)
+        in o ^. osMReq `shouldBe` Just (zeroExtend (s' ^. msPC), Nothing)
     it "asserts fetch" $ property $
       \(Fetch s) x ->
-        let (s', o) = sf s (IS (mkinst x) u u u)
+        let (_, o) = sf s (IS (mkinst x) u u u)
         in o ^. osFetch `shouldBe` True
     where u = errorX "must be unused"
  

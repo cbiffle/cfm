@@ -48,7 +48,7 @@ datapath (MS dptr rptr pc t bs lastSpace) (IS m i n r) =
             NotLit (JumpZ _)              -> (-1, Nothing)
             _                             -> (0, Nothing)
       (rptr', rdlt, rop) = stack rptr $ case inst of
-            NotLit (Call _)               -> (1, Just (low ++# pc1 ++# low))
+            NotLit (Call _)               -> (1, Just (zeroExtend $ pc1 ++# low))
             NotLit (ALU _ _ _ tr _ _ d _) -> (d, if tr then Just t else Nothing)
             _                             -> (0, Nothing)
       -- Register updates other than the ALU
@@ -92,22 +92,22 @@ datapath (MS dptr rptr pc t bs lastSpace) (IS m i n r) =
             NULtT    -> signExtend lessThan
 
       mreq = case inst of
-            _ | not instValid                 -> Just (pc', Nothing)
+            _ | not instValid -> Just (zeroExtend pc', Nothing)
             NotLit (ALU _ MemAtT _ _ _ space _ _) ->
               if space == MSpace
-                then Just (slice d14 d1 t, Nothing)
+                then Just (slice d15 d1 t, Nothing)
                 else Nothing
             NotLit (ALU _ _ _ _ True space _ _)   ->
               if space == MSpace
-                then Just (slice d14 d1 t, Just n)
+                then Just (slice d15 d1 t, Just n)
                 else Nothing
-            _ -> Just (pc', Nothing)
+            _ -> Just (zeroExtend pc', Nothing)
 
       ireq = Nothing `duringLoadStoreElse` case inst of
             NotLit (ALU _ MemAtT _ _ _ ISpace _ _) ->
-                Just (slice d14 d1 t, Nothing)
+                Just (slice d15 d1 t, Nothing)
             NotLit (ALU _ _ _ _ True ISpace _ _) ->
-                Just (slice d14 d1 t, Just n)
+                Just (slice d15 d1 t, Just n)
             _ -> Nothing
 
   in ( MS { _msDPtr = dptr'

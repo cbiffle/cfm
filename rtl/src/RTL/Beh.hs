@@ -68,7 +68,7 @@ executeNormally = do
       msRPtr += 1  -- push return stack
       fetch
         <&> osROp . _2 .~ 1
-        <&> osROp . _3 .~ Just (low ++# pc' ++# low)
+        <&> osROp . _3 .~ Just (zeroExtend $ pc' ++# low)
 
     NotLit (ALU rpc t' tn tr nm space rd dd) -> do
       n <- view isDData
@@ -100,15 +100,15 @@ executeNormally = do
             | otherwise    = BusFetch
 
       let mreq
-            | t' == MemAtT = if space == MSpace then Just (slice d14 d1 t, Nothing)
+            | t' == MemAtT = if space == MSpace then Just (slice d15 d1 t, Nothing)
                                                 else Nothing
-            | nm = if space == MSpace then Just (slice d14 d1 t, Just n)
+            | nm = if space == MSpace then Just (slice d15 d1 t, Just n)
                                       else Nothing
-            | otherwise = Just (pc', Nothing)
+            | otherwise = Just (zeroExtend pc', Nothing)
 
       let ireq
-            | t' == MemAtT && space == ISpace = Just (slice d14 d1 t, Nothing)
-            | nm && space == ISpace           = Just (slice d14 d1 t, Just n)
+            | t' == MemAtT && space == ISpace = Just (slice d15 d1 t, Nothing)
+            | nm && space == ISpace           = Just (slice d15 d1 t, Just n)
             | otherwise = Nothing
 
       msBusState .= busState
@@ -156,7 +156,7 @@ fetch :: (MonadState MS m) => m OS
 fetch = do
   pc <- use msPC
   outputs
-    <&> osMReq .~ Just (pc, Nothing)
+    <&> osMReq .~ Just (zeroExtend pc, Nothing)
     <&> osFetch .~ True
 
 outputs :: (MonadState MS m) => m OS

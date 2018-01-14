@@ -1,41 +1,41 @@
 \ Icoboard common definitions
 
 \ Multi-interrupt controller
-$B000 constant IRQST  ( status / enable trigger )
-\ $B002 constant IRQEN  ( enable )
-$B004 constant IRQSE  ( set enable )
-$B006 constant IRQCE  ( clear enable )
+$6000 constant IRQST  ( status / enable trigger )
+\ $6002 constant IRQEN  ( enable )
+$6004 constant IRQSE  ( set enable )
+$6006 constant IRQCE  ( clear enable )
 
 \ Out port.
-\ $8000 constant outport      ( literal value)
-$8002 constant OUTSET  ( 1s set pins, 0s do nothing)
-$8004 constant OUTCLR  ( 1s clear pins, 0s do nothing)
-$8006 constant OUTTOG  ( 1s toggle pins, 0s do nothing)
+\ $0000 constant outport      ( literal value)
+$0002 constant OUTSET  ( 1s set pins, 0s do nothing)
+$0004 constant OUTCLR  ( 1s clear pins, 0s do nothing)
+$0006 constant OUTTOG  ( 1s toggle pins, 0s do nothing)
 
 \ In port.
-$9000 constant IN
+$2000 constant IN
 
 \ Text mode video display
-$C000 constant VTH  \ video - timing - horizontal
-$C008 constant VTV  \ video - timing - vertical
-$C010 constant VPX  \ video - pixel count
-$C012 constant VIA  \ video - interrupt acknowledge
-$C014 constant VFB  \ video - font base
-$C016 constant VWA  \ video - write address
-$C018 constant VWD  \ video - write data
-$C01A constant VC0  \ video - character 0
+$8000 constant VTH  \ video - timing - horizontal
+$8008 constant VTV  \ video - timing - vertical
+$8010 constant VPX  \ video - pixel count
+$8012 constant VIA  \ video - interrupt acknowledge
+$8014 constant VFB  \ video - font base
+$8016 constant VWA  \ video - write address
+$8018 constant VWD  \ video - write data
+$801A constant VC0  \ video - character 0
 
 \ UART.
-$D000 constant UARTST
-$D002 constant UARTRD
-$D004 constant UARTTX
-$D006 constant UARTRX
+$A000 constant UARTST
+$A002 constant UARTRD
+$A004 constant UARTTX
+$A006 constant UARTRX
 
 \ Timer-counter.
-$A000 constant TIMV
-$A002 constant TIMF
-$A004 constant TIMM0
-$A006 constant TIMM1
+$4000 constant TIMV
+$4002 constant TIMF
+$4004 constant TIMM0
+$4006 constant TIMM1
 
 13 constant irq#m1
 14 constant irq#m0
