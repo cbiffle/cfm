@@ -68,8 +68,8 @@ system raminit ins sram2h urx =
 
     -- IRQ controller, giving the vector fetch logic constructor.
     applyVector :: Signal dom Cell -> Signal dom Cell
-    (applyVector, ioresp3) = multiIrqController irqs fetch $
-                             partialDecode ioreq3
+    (applyVector, _, ioresp3) = multiIrqController irqs fetch $
+                                partialDecode ioreq3
     irqs = irq0 :> irq1 :> irq2 :> hirq :> virq :> evirq :> urxne :>
            repeat (pure False)
 

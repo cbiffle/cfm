@@ -2,6 +2,7 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE ViewPatterns #-}
 
 -- | Interrupt support.
 module RTL.IRQ where
@@ -90,20 +91,20 @@ multiIrqController
   -> Signal d Bool    -- ^ CPU fetch signal, active high.
   -> Signal d (Maybe (BitVector 2, Maybe Cell))   -- ^ I/O bus request.
   -> ( Signal d Cell -> Signal d Cell
+     , Signal d Bool
      , Signal d Cell
-     )  -- ^ Memory-to-CPU alteration constructor and I/O response,
-        -- respectively.
-multiIrqController irqS fetchS reqS = (memCtor, respS)
+     )  -- ^ Memory-to-CPU alteration constructor, start of vector fetch flag,
+        -- and I/O response, respectively.
+multiIrqController irqS fetchS reqS = (memCtor, startOfFetchS, respS)
   where
-    (respS, entryS) = mealyp datapathT datapathR
-                             (bundle (bundle irqS, fetchS))
-                             reqS
+    (respS, unbundle -> (entryS, startOfFetchS)) =
+        mealyp datapathT datapathR (bundle (bundle irqS, fetchS)) reqS
 
     -- Normally, pass mem. When entering the ISR, intervene in the next fetch
     -- cycle.
     memCtor = mux entryS (pure $ pack $ NotLit $ Call 1)
 
-    datapathT s (req, (irqs, fetch)) = (s', misEnter s)
+    datapathT s (req, (irqs, fetch)) = (s', (misEnter s, entry'))
       where
         s' = MIS
           { misEn = not entry' && case req of

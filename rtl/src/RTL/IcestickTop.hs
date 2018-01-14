@@ -32,7 +32,7 @@ system raminit ins urx = (outs, utx)
     (ioresp0, outs) = outport $ partialDecode ioreq0
     (ioresp1, irq0) = inport ins ioreq1
     (ioresp2, _, _, urxne, utx) = uart urx $ partialDecode ioreq2
-    (ramRewrite, ioresp3) = multiIrqController irqs fetch $ partialDecode ioreq3
+    (ramRewrite, _, ioresp3) = multiIrqController irqs fetch $ partialDecode ioreq3
     irqs = irq0 :> urxne :> repeat (pure False)
 
 {-# ANN topEntity (defTop { t_name = "icestick_soc"
