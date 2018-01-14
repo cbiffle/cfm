@@ -2,18 +2,18 @@ CFM: the Cliffle Forth Machine
 ==============================
 
 This is a Forth-inspired processor targeting the Lattice ICE40 FPGA series,
-currently primarily targeting the Icoboard.
+primarily targeting the Icoboard.
 
-As a result of the FPGA choice, we have some interesting limitations.
+The CFM core is designed for high performance (40+ MHz) on the ICE40 HX grade
+parts. It is written in Haskell and synthesized using [Clash]. Because the
+Haskell expression of the circuit is directly executable, we also have a
+cycle-accurate emulator "for free."
 
-1. Block RAM is 256 x 16 bits and pseudo-dual-ported (1R1W with independent
-   addresses).
-2. No hard DSP blocks of any sort, but efficient carry chain hardware.
-3. Not a lot of room.
-
-To make things more interesting, I'm trying to maintain support for the small 1k
-variant of the FPGA, and I'm working in a pre-release hardware description
-language. Hooray, constraints!
+The distribution includes BsForth, a non-ANS Forth implementation that can
+provide a bare-bones interactive development environment with optimizing
+compiler in less than 5 kiB. It's interesting in the way that it bootstraps
+(using the cycle-accurate emulator) and for its machine instruction fusion
+algorithm.
 
 More reading:
 
@@ -21,3 +21,5 @@ More reading:
 - [The interrupt model](doc/interrupts.mkdn)
 - [The Icoboard demo](doc/icoboard.mkdn)
 - [The Icestick demo](doc/icestick.mkdn)
+
+[Clash]: www.clash-lang.org
