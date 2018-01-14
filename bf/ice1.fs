@@ -1,33 +1,6 @@
 \ Icestick support code
 
 ( ----------------------------------------------------------- )
-( Interrupt Controller )
-
-$E000 constant IRQST  ( status / enable trigger )
-\ $E002 constant IRQEN  ( enable )
-$E004 constant IRQSE  ( set enable )
-$E006 constant IRQCE  ( clear enable )
-
-( Atomically enables interrupts and returns. This is intended to be tail )
-( called from the end of an ISR. )
-: ei  IRQST !d ;
-
-: irq-off  ( u -- )  #bit IRQCE ! ;
-: irq-on   ( u -- )  #bit IRQSE ! ;
-
-15 constant irq#negedge
-
-( ----------------------------------------------------------- )
-( I/O ports )
-
-\ $8000 constant outport      ( literal value)
-$8002 constant OUTSET  ( 1s set pins, 0s do nothing)
-$8004 constant OUTCLR  ( 1s clear pins, 0s do nothing)
-$8006 constant OUTTOG  ( 1s toggle pins, 0s do nothing)
-
-$A000 constant IN
-
-( ----------------------------------------------------------- )
 ( UART receive queue and flow control )
 
 8 constant uart-#rx
@@ -66,13 +39,6 @@ variable uart-rx-tl
 ( ----------------------------------------------------------- )
 ( Hard UART )
 
-$C000 constant UARTST
-$C002 constant UARTRD
-$C004 constant UARTTX
-$C006 constant UARTRX
-
-14 constant irq#rxne
-
 : tx
   \ Wait for transmitter to be free
   begin UARTST @ 2 and until
@@ -97,27 +63,6 @@ $C006 constant UARTRX
 ( ----------------------------------------------------------- )
 ( Demo wiring below )
 
-create vectors  16 cells allot
-
-: isr
-  \ Vectored interrupt dispatcher.
-  \ Which interrupts are active?
-  15 IRQST @
-  begin   ( vector# irqst )
-    dup \ while any remain
-  while
-    $8000 over and if
-      over cells  vectors + @ execute
-    then
-    1 lshift
-    swap 1- swap
-  repeat
-  2drop
-  \ Patch up interrupt return address.
-  r> 2 - >r
-  \ Atomically enable interrupts and return.
-  ei ;
-
 \ Vector table
 ' rx-isr vectors irq#rxne cells + !
 
@@ -136,9 +81,6 @@ $1C00 ramtop !
 
 ( install cold as the reset vector )
 ' cold  u2/  0 !
-( install isr as the interrupt vector )
-
-' isr  u2/  2 !
 
 .( Compilation complete. HERE is... )
 here host.

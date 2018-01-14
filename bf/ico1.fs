@@ -1,45 +1,11 @@
 \ Icoboard support code
 
 ( ----------------------------------------------------------- )
-( Interrupt Controller )
-
-$B000 constant IRQST  ( status / enable trigger )
-\ $D802 constant IRQEN  ( enable )
-$B004 constant IRQSE  ( set enable )
-$B006 constant IRQCE  ( clear enable )
-
-( Atomically enables interrupts and returns. This is intended to be tail )
-( called from the end of an ISR. )
-: ei  IRQST !d ;
-
-: irq-off  ( u -- )  #bit IRQCE ! ;
-: irq-on   ( u -- )  #bit IRQSE ! ;
-
-13 constant irq#m1
-14 constant irq#m0
-15 constant irq#negedge
-
-( ----------------------------------------------------------- )
 ( I/O ports )
-
-\ $8000 constant outport      ( literal value)
-$8002 constant OUTSET  ( 1s set pins, 0s do nothing)
-$8004 constant OUTCLR  ( 1s clear pins, 0s do nothing)
-$8006 constant OUTTOG  ( 1s toggle pins, 0s do nothing)
 
 : outpin
   create #bit ,
   does> @ swap if OUTSET else OUTCLR then ! ;
-
-$9000 constant IN
-
-( ----------------------------------------------------------- )
-( Timer )
-
-$A000 constant TIMV
-$A002 constant TIMF
-$A004 constant TIMM0
-$A006 constant TIMM1
 
 ( ----------------------------------------------------------- )
 ( UART receive queue and flow control )
@@ -79,13 +45,6 @@ variable uart-rx-tl
 ( ----------------------------------------------------------- )
 ( Hard UART )
 
-$D000 constant UARTST
-$D002 constant UARTRD
-$D004 constant UARTTX
-$D006 constant UARTRX
-
-9 constant irq#rxne
-
 : tx
   \ Wait for transmitter to be free
   begin UARTST @ 2 and until
@@ -109,15 +68,6 @@ $D006 constant UARTRX
 
 \ ----------------------------------------------------------------------
 \ Text mode video display
-
-$C000 constant VTH  \ video - timing - horizontal
-$C008 constant VTV  \ video - timing - vertical
-$C010 constant VPX  \ video - pixel count
-$C012 constant VIA  \ video - interrupt acknowledge
-$C014 constant VFB  \ video - font base
-$C016 constant VWA  \ video - write address
-$C018 constant VWD  \ video - write data
-$C01A constant VC0  \ video - character 0
 
 \ Overwrites a section of video memory with a given value.
 : vfill  ( v-addr u x -- )
@@ -646,27 +596,6 @@ variable kbdmod
 ( ----------------------------------------------------------- )
 ( Demo wiring below )
 
-create vectors  16 cells allot
-
-: isr
-  \ Vectored interrupt dispatcher.
-  \ Which interrupts are active?
-  15 IRQST @
-  begin   ( vector# irqst )
-    dup \ while any remain
-  while
-    $8000 over and if
-      over cells  vectors + @ execute
-    then
-    1 lshift
-    swap 1- swap
-  repeat
-  2drop
-  \ Patch up interrupt return address.
-  r> 2 - >r
-  \ Atomically enable interrupts and return.
-  ei ;
-
 \ Vector table
 ' rx-isr vectors 9 cells + !
 ' kbdisr vectors irq#negedge cells + !
@@ -695,8 +624,6 @@ blkbuf ramtop !
 
 ( install cold as the reset vector )
 ' cold  u2/  0 !
-( install isr as the interrupt vector )
-' isr  u2/  2 !
 
 remarker empty
 
