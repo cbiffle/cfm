@@ -489,7 +489,7 @@ $20 constant bl
 : c,  here c!  1 allot ;
 
 : :noname
-  align here ] ;
+  align freeze ] ;
 
 \ -----------------------------------------------------------------------------
 \ Quotations (inline anonymous definitions).
