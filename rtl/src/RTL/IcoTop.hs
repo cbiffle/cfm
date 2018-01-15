@@ -3,9 +3,12 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE ViewPatterns #-}
 module RTL.IcoTop where
 
 import Clash.Prelude hiding (readIO, read)
+import Control.Arrow (first)
 import CFM.Types
 import RTL.IOBus
 import RTL.IRQ
@@ -81,9 +84,17 @@ system raminit ins sram2h urx =
     (ioresp5, _, _, urxne, utx) = U.uart urx $ partialDecode ioreq5
 
     -- MMU, giving the memory address mapping constructor.
-    mmuMap :: Signal dom (Maybe (CellAddr, Maybe Cell))
-           -> Signal dom (Maybe (PhysAddr, Maybe Cell))
-    (ioresp6, mmuirq, mmuMap) = mmu d3 d7 d12 irqEntry $ partialDecode ioreq6
+    (ioresp6, unbundle -> (mmutrans, mmuirq)) = mmu' @3 @7 irqEntry $ partialDecode ioreq6
+    mapper :: Vec (2^3) (BitVector 7)
+           -> BitVector 15
+           -> BitVector 19
+    mapper m a = let (top, bot) = split @_ @3 a
+                 in m !! top ++# bot
+    mmapper :: Vec (2^3) (BitVector 7)
+            -> Maybe (BitVector 15, x)
+            -> Maybe (BitVector 19, x)
+    mmapper m a = first (mapper m) <$> a
+    mmuMap = liftA2 mmapper mmutrans
 
 
 {-# ANN topEntity (defTop { t_name = "ico_soc"
