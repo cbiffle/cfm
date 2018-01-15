@@ -34,11 +34,9 @@ instance Strobe SwitchingMapBack where strobeValue = SwitchingMapBack
 -- address, but this doesn't have to be the case.
 --
 -- Instantiating 'mmu' defines the I/O interface and registers to hold the
--- page translation table. It returns a function, which acts as a constructor
--- for instantiating address mapping hardware. This constructor could be used
--- more than once, if you wanted to translate multiple independent addressing
--- paths using the same translation tables. Each time the constructor is applied
--- costs one read mux on the translation table.
+-- page translation table. Its outputs include the contents of the current
+-- mapping table, which can be fed to 'mmuMapper' to rewrite outgoing
+-- addresses.
 --
 -- The MMU contains two sets of mapping registers, map 0 and map 1. At reset,
 -- map 0 is active. The map can be switched by writing the Control/Status
@@ -59,68 +57,27 @@ instance Strobe SwitchingMapBack where strobeValue = SwitchingMapBack
 -- - +2: Map Pointer. Holds a 'v'-bit index of a map register.
 -- - +4: Map 0 Access. Reads/writes the part of map 0 selected by Map Pointer.
 -- - +6: Map 1 Access. Reads/writes the part of map 1 selected by Map Pointer.
-mmu :: forall n v p ev ep d g s.
+mmu :: forall v p ev ep d g s.
        ( HasClockReset d g s
        , KnownNat v
        , KnownNat p
-       , KnownNat n
        , KnownNat ev
        , KnownNat ep
+       , (ev + v) ~ Width
        , (v + ev) ~ Width
-       , (ev + v) ~ Width  -- seriously, NatNormalise does not obviate this
-       , (p + ep) ~ Width
        , (ep + p) ~ Width
+       , (p + ep) ~ Width
        )
-    => SNat v
-      -- ^ Number of translated virtual address bits.
-    -> SNat p
-      -- ^ Number of physical bits produced after translation.
-    -> SNat n
-      -- ^ Number of untranslated bits. A page is @2^n@ words in size.
-    -> Signal d (Maybe VectorFetchAddress)
-      -- ^ Interrupt signal from controller.
+    => Signal d (Maybe VectorFetchAddress)
     -> Signal d (Maybe (BitVector 2, Maybe Cell))
-      -- ^ Connection to the I/O bus.
     -> ( Signal d Cell
-        , Signal d (Maybe SwitchingMapBack)
-        , Signal d (Maybe (BitVector (v+n), Maybe Cell))
-          -> Signal d (Maybe (BitVector (p+n), Maybe Cell))
-        ) -- ^ I/O response, IRQ re-enable broadcast, and mapping constructor,
-          -- respectively.
-mmu _ _ _ irq ioreq = (ioresp, irqen, liftA2 mmapper cmap)
+       , Signal d (Maybe SwitchingMapBack)
+       , Signal d (Vec (2^v) (BitVector p))
+       )
+mmu fetching reqS = (resp, switchBack, cmap)
   where
-    (ioresp, unbundle -> (cmap, irqen)) = mmu' @v @p @ev @ep irq ioreq
+    (resp, unbundle -> (cmap, switchBack)) = mealyp fT fR fetching reqS
 
-    mapper :: Vec (2^v) (BitVector p)
-           -> BitVector (v+n)
-           -> BitVector (p+n)
-    mapper m a = let (top, bot) = split @_ @v @n a
-                 in m !! top ++# bot
-    mmapper :: Vec (2^v) (BitVector p)
-            -> Maybe (BitVector (v+n), x)
-            -> Maybe (BitVector (p+n), x)
-    mmapper m a = first (mapper m) <$> a
-
--- | Implementation factor of 'mmu' that gives access to the raw translation
--- table, instead of providing a mapping constructor.
-mmu' :: forall v p ev ep d g s.
-        ( HasClockReset d g s
-        , KnownNat v
-        , KnownNat p
-        , KnownNat ev
-        , KnownNat ep
-        , (ev + v) ~ Width
-        , (v + ev) ~ Width
-        , (ep + p) ~ Width
-        , (p + ep) ~ Width
-        )
-     => Signal d (Maybe VectorFetchAddress)
-     -> Signal d (Maybe (BitVector 2, Maybe Cell))
-     -> ( Signal d Cell
-        , Signal d (Vec (2^v) (BitVector p), Maybe SwitchingMapBack)
-        )
-mmu' = mealyp fT fR
-  where
     fT :: S v p
        -> (Maybe (BitVector 2, Maybe Cell), Maybe VectorFetchAddress)
        -> (S v p, (Vec (2^v) (BitVector p), Maybe SwitchingMapBack))
@@ -173,3 +130,19 @@ instance (KnownNat v, KnownNat p) => Default (S v p) where
     , sMap1Active = False
     , sSwitchedByIRQ = False
     }
+
+mmuMapper :: forall v p n d x.  (KnownNat n, KnownNat v)
+          => Signal d (Vec (2^v) (BitVector p))
+            -- ^ Current mapping table
+          -> Signal d (Maybe (BitVector (v+n), x))
+            -- ^ Request from CPU in virtual space
+          -> Signal d (Maybe (BitVector (p+n), x))
+            -- ^ Translated request in physical space.
+mmuMapper = liftA2 mmapper
+  where
+    mapper :: Vec (2^v) (BitVector p)
+           -> BitVector (v+n)
+           -> BitVector (p+n)
+    mapper m a = let (top, bot) = split @_ @v @n a
+                 in m !! top ++# bot
+    mmapper m a = first (mapper m) <$> a

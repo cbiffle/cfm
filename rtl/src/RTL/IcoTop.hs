@@ -53,7 +53,7 @@ system raminit ins sram2h urx =
     ram = vectorMux vecfetchD $ bootROM d256 raminit mreq fetch sram2h
 
     -- The external SRAM interface, which *is* affected by the MMU.
-    (sramA, sramW, h2sram) = extsram $ mmuMap mreq
+    (sramA, sramW, h2sram) = extsram $ mmuMapper mmuMap mreq
 
     -- I/O devices
 
@@ -80,9 +80,7 @@ system raminit ins sram2h urx =
     (ioresp5, _, _, urxne, utx) = U.uart urx $ partialDecode ioreq5
 
     -- MMU, giving the memory address mapping constructor.
-    mmuMap :: Signal dom (Maybe (CellAddr, Maybe Cell))
-           -> Signal dom (Maybe (PhysAddr, Maybe Cell))
-    (ioresp6, _, mmuMap) = mmu d3 d7 d12 vecfetchA $ partialDecode ioreq6
+    (ioresp6, _, mmuMap) = mmu @3 @7 vecfetchA $ partialDecode ioreq6
 
 
 {-# ANN topEntity (defTop { t_name = "ico_soc"
