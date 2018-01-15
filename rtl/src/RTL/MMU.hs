@@ -4,8 +4,6 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeApplications #-}
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE ViewPatterns #-}
 
 -- | Memory Management Unit for accessing more than 32kiB of RAM.
 module RTL.MMU where
@@ -40,13 +38,13 @@ import RTL.Strobes
 --
 -- Interrupt entry causes an automatic switch back to map 0 at the start of
 -- vector fetch, so that the vector is always fetched from map 0. When this
--- occurs, bit 1 in the Control/Status register will be set. This bit is cleared
--- by switching maps; when this occurs, a signal is sent to the IRQ controller
--- to re-enable interrupts.
+-- occurs, bit 1 in the Control/Status register will be set. If this bit is
+-- still set when interrupts are re-enabled (the 'EnablingInterrupts' strobe),
+-- the map will switch back.
 --
 -- Register set:
 --
--- - +0: Control/Status. Any write toggles bit 0 and clears bit 1.
+-- - +0: Control/Status. Any write toggles bit 0.
 --   - Bit 0: active map.
 --   - Bit 1: switched due to IRQ flag.
 -- - +2: Map Pointer. Holds a 'v'-bit index of a map register.
@@ -66,19 +64,19 @@ mmu :: forall v p ev ep d g s.
        , (p + ep) ~ Width
        )
     => Signal d (Maybe VectorFetchAddress)
+    -> Signal d (Maybe EnablingInterrupts)
     -> Signal d (Maybe (BitVector 3, Maybe Cell))
     -> ( Signal d Cell
-       , Signal d (Maybe SwitchingMapBack)
        , Signal d (Vec (2^v) (BitVector p))
        )
-mmu fetching reqS = (resp, switchBack, cmap)
+mmu vecfetchS enirqS = mealyp fT fR $ bundle (vecfetchS, enirqS)
   where
-    (resp, unbundle -> (cmap, switchBack)) = mealyp fT fR fetching reqS
-
     fT :: S v p
-       -> (Maybe (BitVector 3, Maybe Cell), Maybe VectorFetchAddress)
-       -> (S v p, (Vec (2^v) (BitVector p), Maybe SwitchingMapBack))
-    fT (S map0 map1 mp m1a sirq) (req, irq) = (s', (activeMap, unswitching))
+       -> ( Maybe (BitVector 3, Maybe Cell)
+          , (Maybe VectorFetchAddress, Maybe EnablingInterrupts)
+          )
+       -> (S v p, Vec (2^v) (BitVector p))
+    fT (S map0 map1 mp m1a sirq) (req, (vecfetch, enirq)) = (s', activeMap)
       where
         s' = S map0' map1' mp' m1a' sirq'
 
@@ -91,21 +89,19 @@ mmu fetching reqS = (resp, switchBack, cmap)
         map1' | Just (3, Just v) <- req = replace mp (truncateB v) map1
               | otherwise = map1
 
-        m1a' | fromStrobe irq = False
+        m1a' | fromStrobe vecfetch = False
+             | fromStrobe enirq && sirq = True
              | Just (0, Just _) <- req = not m1a
              | Just (4, Just x) <- req = unpack $ lsb x
              | otherwise = m1a
 
-        sirq' | fromStrobe irq = m1a
-              | Just (0, Just _) <- req = False
+        sirq' | fromStrobe vecfetch = m1a
+              | fromStrobe enirq && sirq = False
               | Just (5, Just x) <- req = unpack $ lsb x
               | otherwise = sirq
 
-        activeMap | not m1a || fromStrobe irq = map0
+        activeMap | not m1a || fromStrobe vecfetch = map0
                   | otherwise = map1
-
-        unswitching | Just (0, Just _) <- req = toStrobe sirq
-                    | otherwise = toStrobe False
 
     fR s = zeroExtend (pack (sSwitchedByIRQ s, sMap1Active s)) :>
            zeroExtend (sMapPtr s) :>

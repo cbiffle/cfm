@@ -12,7 +12,7 @@ import Clash.Prelude
 import CFM.Types
 import CFM.Inst
 import RTL.Common.Strobe
-import RTL.IOBus (moorep)
+import RTL.IOBus (moorep, mealyp)
 import RTL.Strobes
 
 -- | RAM mux that replaces data with a call to a vector location.
@@ -79,9 +79,7 @@ instance Default SIS where def = SIS False False
 --
 -- There is also a global interrupt enable bit. It is cleared at reset, and
 -- when the processor is interrupted. It can be set by software to accept
--- interrupts. It is also set in response to the 'SwitchingMapBack' strobe from
--- the MMU, which indicates the completion of an interrupt that was handled in
--- a different map.
+-- interrupts.
 --
 -- Writes to the IRQST register also serve as enable triggers. Any write sets
 -- the global enable bit. The value written is ignored.
@@ -102,29 +100,23 @@ multiIrqController
   => Vec Width (Signal d Bool)
       -- ^ Interrupt inputs, active high, level-sensitive.
   -> Signal d Bool    -- ^ CPU fetch signal, active high.
-  -> Signal d (Maybe SwitchingMapBack)  -- ^ MMU IRQ re-enable signal.
   -> Signal d (Maybe (BitVector 2, Maybe Cell))   -- ^ I/O bus request.
   -> ( Signal d (Maybe VectorFetchAddress)
      , Signal d (Maybe VectorFetchData)
+     , Signal d (Maybe EnablingInterrupts)
      , Signal d Cell
      )  -- ^ Vector fetch event strobes and I/O response, respectively.
-multiIrqController irqS fetchS switchS reqS = (vfaS, vfdS, respS)
+multiIrqController irqS fetchS reqS = (vfaS, vfdS, eiS, respS)
   where
-    (respS, unbundle -> (entryS, sEnS, unbundle -> sIEnS)) =
-        moorep datapathT datapathR datapathO
-               (bundle (bundle irqS, fetchS, switchS))
+    (respS, unbundle -> ( fmap toStrobe -> vfdS
+                        , fmap toStrobe -> vfaS
+                        , fmap toStrobe -> eiS
+                        )) =
+        mealyp datapathT datapathR
+               (bundle (bundle irqS, fetchS))
                reqS
-    vfdS = toStrobe <$> entryS
 
-    -- TODO: this logic duplicates some of the datapath logic below.
-    -- The duplication could be eliminated with a Mealy formulation.
-    -- I'm only avoiding that because I've been having so many issues
-    -- with Clash, and I feel like Moore constructions give it an easier
-    -- time.
-    maskedS = zipWith (.&&.) sIEnS irqS
-    vfaS = toStrobe <$> (sEnS .&&. fetchS .&&. foldl1 (.||.) maskedS)
-
-    datapathT s (req, (irqs, fetch, switch)) = s'
+    datapathT s (req, (irqs, fetch)) = (s', (misEnter s, entry', ei))
       where
         s' = MIS
           { misEn = not entry' && case req of
@@ -132,8 +124,8 @@ multiIrqController irqS fetchS switchS reqS = (vfaS, vfdS, respS)
               Just (0, Just _) -> True
               -- The bottom bit of writes @ 1 gets copied into the enable bit.
               Just (1, Just v) -> unpack $ lsb v
-              -- Anything else leaves matters unchanged unless the MMU asks.
-              _                -> misEn s || fromStrobe switch
+              -- Anything else leaves matters unchanged.
+              _                -> misEn s
 
           , misStatus = maskedIrqs
           , misIEn = case req of
@@ -143,6 +135,8 @@ multiIrqController irqS fetchS switchS reqS = (vfaS, vfdS, respS)
           , misEnter = entry'
           }
 
+        ei | Just (0, Just _) <- req = True
+           | otherwise = False
         maskedIrqs = zipWith (&&) irqs $ misIEn s
         entry' = fetch && misEn s && or maskedIrqs
 
@@ -150,7 +144,6 @@ multiIrqController irqS fetchS switchS reqS = (vfaS, vfdS, respS)
                   zeroExtend (pack (misEn s)) :>
                   repeat (pack (misIEn s))
 
-    datapathO s = (misEnter s, misEn s, misIEn s)
 
 data MIS = MIS
   { misEn :: Bool

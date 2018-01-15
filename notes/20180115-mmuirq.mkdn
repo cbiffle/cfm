@@ -141,3 +141,39 @@ Options:
   the MMU would respond by switching.
 
 I think I like that, let's give it a shot.
+
+---
+
+Alright, adapting my test sequence to this new world.
+
+On serial console:
+
+    \ Poke our vspam routine into physical page 6.
+    FREEZEP @ here
+    $C000 DP ! 
+    $0000 , $0000 ,
+    $8000 , $FFE7 , $6600 , $6133 ,
+    $8001 , $6203 , $0003 ,
+    DP ! FREEZEP !
+
+    \ Remap map 1's virtual page 0 to physical page 6.
+    0 $C002 io!
+    6 $C006 io!
+
+    \ Define our echo handler:
+    : rxecho UARTRX io@ UARTTX io! ;
+
+    : go
+      ['] rxecho  vectors irq#rxne cells +  !
+      4 >r $C000 io!d ;
+
+    ' vemit 'emit !
+    ' kbdkey 'key !
+
+Patching ei should no longer be necessary.
+
+From physical keyboard:
+
+    go
+
+Works!

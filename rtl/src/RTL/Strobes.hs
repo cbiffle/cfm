@@ -20,8 +20,8 @@ data VectorFetchAddress = VectorFetchAddress
 
 instance Strobe VectorFetchAddress where strobeValue = VectorFetchAddress
 
--- | Event type for the MMU completing an interrupt acknowledge cycle that
--- involved a memory map switch.
-data SwitchingMapBack = SwitchingMapBack
+-- | Event type for the interrupt controller re-enabling interrupts due to
+-- trigger.
+data EnablingInterrupts = EnablingInterrupts
   deriving (Eq, Show, Enum, Bounded)
-instance Strobe SwitchingMapBack where strobeValue = SwitchingMapBack
+instance Strobe EnablingInterrupts where strobeValue = EnablingInterrupts
