@@ -86,6 +86,8 @@ position:
 Haskell API
 -----------
 
+(This is slightly out of date, but the concepts are still valid.)
+
 In Haskell, interrupt controllers are implemented as higher-order functions. For
 example, at the time of this writing, the `singleIrqController` has the
 following signature:

@@ -26,13 +26,13 @@ system raminit ins urx = (outs, utx)
     (ioreq0 :> ioreq1 :> ioreq2 :> ioreq3 :> Nil, ioch) = ioDecoder @2 ioreq
     ioresp = responseMux (ioresp0 :> ioresp1 :> ioresp2 :> ioresp3 :> Nil) ioch
 
-    ram = ramRewrite . singlePorted (blockRamFile (SNat @3584) raminit)
+    ram = vectorMux vecfetchD . singlePorted (blockRamFile (SNat @3584) raminit)
 
     -- I/O devices
     (ioresp0, outs) = outport $ partialDecode ioreq0
     (ioresp1, irq0) = inport ins ioreq1
     (ioresp2, _, _, urxne, utx) = uart urx $ partialDecode ioreq2
-    (ramRewrite, ioresp3) = multiIrqController irqs fetch $ partialDecode ioreq3
+    (vecfetchD, ioresp3) = multiIrqController irqs fetch $ partialDecode ioreq3
     irqs = irq0 :> urxne :> repeat (pure False)
 
 {-# ANN topEntity (defTop { t_name = "icestick_soc"

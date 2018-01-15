@@ -50,7 +50,7 @@ system raminit ins sram2h urx =
 
     -- The RAM return path to the core is affected by the Boot ROM mux and the
     -- IRQ vector insertion logic.
-    ram = applyVector $ bootROM d256 raminit mreq fetch sram2h
+    ram = vectorMux vecfetchD $ bootROM d256 raminit mreq fetch sram2h
 
     -- The external SRAM interface, which *is* affected by the MMU.
     (sramA, sramW, h2sram) = extsram $ mmuMap mreq
@@ -67,9 +67,8 @@ system raminit ins sram2h urx =
     (ioresp2, irq1 :> irq2 :> Nil) = timer $ partialDecode @2 ioreq2
 
     -- IRQ controller, giving the vector fetch logic constructor.
-    applyVector :: Signal dom Cell -> Signal dom Cell
-    (applyVector, ioresp3) = multiIrqController irqs fetch $
-                             partialDecode ioreq3
+    (vecfetchD, ioresp3) = multiIrqController irqs fetch $
+                           partialDecode ioreq3
     irqs = irq0 :> irq1 :> irq2 :> hirq :> virq :> evirq :> urxne :>
            repeat (pure False)
 

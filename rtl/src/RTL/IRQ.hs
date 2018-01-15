@@ -8,16 +8,21 @@ module RTL.IRQ where
 
 import Clash.Prelude
 
+import Data.Maybe (isJust)
 import CFM.Types
 import CFM.Inst
 import RTL.IOBus (moorep)
 
-data SIS = SIS
-  { sisEn :: Bool
-  , sisEnter :: Bool
-  } deriving (Show)
 
-instance Default SIS where def = SIS False False
+-- | Event type for the data phase of a vector fetch. This is used as @Maybe
+-- VectorFetchData@ as a type isomorphic to 'Bool' but harder to mix up.
+data VectorFetchData = VectorFetchData
+  deriving (Eq, Show, Enum, Bounded)
+
+-- | RAM mux that replaces data with a call to a vector location.
+vectorMux :: Signal d (Maybe VectorFetchData)
+          -> Signal d Cell -> Signal d Cell
+vectorMux vf = mux (isJust <$> vf) (pure $ pack $ NotLit $ Call 1)
 
 -- | A simple interrupt controller supporting a single, active-high interrupt
 -- input.
@@ -31,21 +36,17 @@ singleIrqController
   => Signal d Bool    -- ^ Interrupt input, active high, level-sensitive.
   -> Signal d Bool    -- ^ CPU fetch signal, active high.
   -> Signal d (Maybe (BitVector 1, Maybe Cell))   -- ^ I/O bus request.
-  -> ( Signal d Cell -> Signal d Cell
+  -> ( Signal d (Maybe VectorFetchData)
      , Signal d Cell
-     )  -- ^ Memory-to-CPU alteration constructor and I/O response,
-        -- respectively.
-singleIrqController irqS fetchS reqS = (memCtor, respS)
+     )  -- ^ Vector data fetch event and I/O response, respectively.
+singleIrqController irqS fetchS reqS = (vfdS, respS)
   where
     (respS, entryS) = moorep datapathT
                              (repeat . zeroExtend . pack . sisEn)
                              sisEnter
                              (bundle (irqS, fetchS))
                              reqS
-
-    -- Normally, pass mem. When entering the ISR, intervene in the next fetch
-    -- cycle.
-    memCtor = mux entryS (pure $ pack $ NotLit $ Call 1)
+    vfdS = (\f -> if f then Just VectorFetchData else Nothing) <$> entryS
 
     datapathT (SIS en _) (req, (irq, fetch)) = SIS en' entry'
       where
@@ -58,6 +59,16 @@ singleIrqController irqS fetchS reqS = (memCtor, respS)
         written = case req of
           Just (_, Just _) -> True
           _                -> False
+
+data SIS = SIS
+  { sisEn :: Bool
+    -- ^ Interrupt enable flag.
+  , sisEnter :: Bool
+    -- ^ Interrupt entry event strobe. Goes high on the cycle when a fetch
+    -- is being replaced by a vector.
+  } deriving (Show)
+
+instance Default SIS where def = SIS False False
 
 -- | An interrupt controller supporting up to 16 active-high interrupt inputs.
 --
@@ -89,19 +100,15 @@ multiIrqController
       -- ^ Interrupt inputs, active high, level-sensitive.
   -> Signal d Bool    -- ^ CPU fetch signal, active high.
   -> Signal d (Maybe (BitVector 2, Maybe Cell))   -- ^ I/O bus request.
-  -> ( Signal d Cell -> Signal d Cell
+  -> ( Signal d (Maybe VectorFetchData)
      , Signal d Cell
-     )  -- ^ Memory-to-CPU alteration constructor and I/O response,
-        -- respectively.
-multiIrqController irqS fetchS reqS = (memCtor, respS)
+     )  -- ^ Vector fetch event strobe and I/O response, respectively.
+multiIrqController irqS fetchS reqS = (vfdS, respS)
   where
     (respS, entryS) = moorep datapathT datapathR misEnter
                              (bundle (bundle irqS, fetchS))
                              reqS
-
-    -- Normally, pass mem. When entering the ISR, intervene in the next fetch
-    -- cycle.
-    memCtor = mux entryS (pure $ pack $ NotLit $ Call 1)
+    vfdS = (\f -> if f then Just VectorFetchData else Nothing) <$> entryS
 
     datapathT s (req, (irqs, fetch)) = s'
       where
