@@ -1,0 +1,143 @@
+Okay, I have a draft implementation of a cooperating MMU and IRQ, which should
+let me run programs in map 1 but take interrupts in map 0.
+
+How do I, like, test it?
+
+The current system is only using two interrupts by default: UART RXNE and IN0
+negedge. The latter is only used during PS/2 frame receive, which in turn only
+happens when bsforth requests it.
+
+Iiiiii cooooooould replace the RXNE handler with an echo handler in map0. That
+would disable the use of the serial port but demonstrate that ISRs are working.
+
+I could then poke a small program into high memory, configure map1 to run it,
+and let it cook. It would need to be something obvious that doesn't use the
+serial port, like a routine that spams the CRT continuously, or something that
+blinks the LEDs.
+
+    : vspam
+      0
+      begin
+        VWD io!d
+        1+
+      again ;
+
+Yeah, that's pretty obvious. Inlining some definitions to make it easier to
+hand-assemble:
+
+    : vspam
+      0
+      begin
+        [ VWD ] literal io!d
+        1 +
+      again ;
+
+Annotated machine code listing after running it through bsforth:
+
+    1DCE 8000      literal 0
+    1DD0 FFE7      literal complement of VWD
+         6600      invert
+         6133      io!d
+         8001      literal 1
+         6203      +
+         0EE8      jump to word $EE8 = byte 1DD0
+
+So to assemble that at address 4 (leaving room for trap code at the vectors):
+
+    0004 8000      literal 0
+    0006 FFE7      literal complement of VWD
+         6600      invert
+         6133      io!d
+         8001      literal 1
+         6203      +
+         0003      jump to word $3 = byte $6
+
+In the current MMU, pages are 8192 bytes, and there are 8 of them. Page 6 spans
+the virtual address range $C000 - $DFFF, and by default maps to the same
+physical addresses. Let's reappropriate it as page 0 of our map 1 program.
+
+    FREEZEP @ here
+    $C000 DP ! 
+    $0000 , $0000 ,
+    $8000 , $FFE7 , $6600 , $6133 ,
+    $8001 , $6203 , $0003 ,
+    DP ! FREEZEP !
+
+Then we alter map 1's page 6:
+
+    0 $C002 io!
+    $C006 io@ .     \ should say 0
+    6 $C006 io!
+
+And we run the routine, with no ability to get back (this time):
+
+    : switch 4 >r $C000 io!d ;
+    switch
+
+And the display goes to garbage! But in the way I expected! So yay!
+
+---
+
+Okay. Doing that again but with a map 0 resident handler. Had to reset the board
+to recover from that, so everything repeats. I'm going to feed most of the code
+in through the serial console to eliminate paste errors, but I have to stop
+doing that before installing the resident UART handler. So here's the pastable
+part:
+
+    \ Poke our vspam routine into physical page 6.
+    FREEZEP @ here
+    $C000 DP ! 
+    $0000 , $0000 ,
+    $8000 , $FFE7 , $6600 , $6133 ,
+    $8001 , $6203 , $0003 ,
+    DP ! FREEZEP !
+
+    \ Remap map 1's virtual page 0 to physical page 6.
+    0 $C002 io!
+    6 $C006 io!
+
+    \ Define our echo handler:
+    : rxecho UARTRX io@ UARTTX io! ;
+
+We need to alter the sequence the system uses to re-enable interrupts on the way
+out of an ISR. I'll alter it in a non-general way for now.
+
+    : ei2 $C000 io!d ;
+
+Switch back to physical console and install it:
+
+    ' rxecho  vectors irq#rxne cells +  !
+
+And now, patch the sequence and mode switch:
+
+    : go  ['] ei2 u2/ ['] ei !  \ patch enable interrupt sequence
+          4 >r ei ;  \ happens to switch maps now
+    go
+
+Works!
+
+This means that
+- The vector in map 0, which I hand-coded to jump-to-zero, is not being invoked.
+- The fairly complex ISR dispatch routine from bsforth *is*.
+- Returning from the ISR dispatcher is continuing to spam the display. I see no
+  discontinuity at interrupt.
+
+---
+
+Having done this, the current interface has some ergonomic issues. There should
+be an operation with the following semantics:
+
+- If we are servicing an ISR that interrupted code on the same map, atomically
+  re-enable interrupts and return.
+- If we are servicing an ISR that interrupted the *other* map, do that but also
+  switch maps.
+
+This definition would prevent me from needing to patch EI above.
+
+Options:
+
+- Add a broadcast from the IRQC when interrupts are coming back on. Have the MMU
+  observe this, instead of vice versa. If the MMU's switched flag is still set,
+  the MMU would respond by switching.
+
+I think I like that, let's give it a shot.
