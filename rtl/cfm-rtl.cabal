@@ -31,6 +31,7 @@ library
                        RTL.UART
                        RTL.MMU
                        RTL.BootROM
+                       RTL.Strobes
                        RTL.Common.Bits
                        RTL.Common.Strobe
   build-depends:       base >= 4.7 && < 5

@@ -13,20 +13,7 @@ import CFM.Types
 import CFM.Inst
 import RTL.Common.Strobe
 import RTL.IOBus (moorep)
-
--- | Event type for the data phase of a vector fetch. This is used as @Maybe
--- VectorFetchData@ as a type isomorphic to 'Bool' but harder to mix up.
-data VectorFetchData = VectorFetchData
-  deriving (Eq, Show, Enum, Bounded)
-
-instance Strobe VectorFetchData where strobeValue = VectorFetchData
-
--- | Event type for the address phase of a vector fetch. This is used as @Maybe
--- VectorFetchAddress@ as a type isomorphic to 'Bool' but harder to mix up.
-data VectorFetchAddress = VectorFetchAddress
-  deriving (Eq, Show, Enum, Bounded)
-
-instance Strobe VectorFetchAddress where strobeValue = VectorFetchAddress
+import RTL.Strobes
 
 -- | RAM mux that replaces data with a call to a vector location.
 vectorMux :: Signal d (Maybe VectorFetchData)
@@ -92,7 +79,9 @@ instance Default SIS where def = SIS False False
 --
 -- There is also a global interrupt enable bit. It is cleared at reset, and
 -- when the processor is interrupted. It can be set by software to accept
--- interrupts.
+-- interrupts. It is also set in response to the 'SwitchingMapBack' strobe from
+-- the MMU, which indicates the completion of an interrupt that was handled in
+-- a different map.
 --
 -- Writes to the IRQST register also serve as enable triggers. Any write sets
 -- the global enable bit. The value written is ignored.
@@ -113,16 +102,17 @@ multiIrqController
   => Vec Width (Signal d Bool)
       -- ^ Interrupt inputs, active high, level-sensitive.
   -> Signal d Bool    -- ^ CPU fetch signal, active high.
+  -> Signal d (Maybe SwitchingMapBack)  -- ^ MMU IRQ re-enable signal.
   -> Signal d (Maybe (BitVector 2, Maybe Cell))   -- ^ I/O bus request.
   -> ( Signal d (Maybe VectorFetchAddress)
      , Signal d (Maybe VectorFetchData)
      , Signal d Cell
      )  -- ^ Vector fetch event strobes and I/O response, respectively.
-multiIrqController irqS fetchS reqS = (vfaS, vfdS, respS)
+multiIrqController irqS fetchS switchS reqS = (vfaS, vfdS, respS)
   where
     (respS, unbundle -> (entryS, sEnS, unbundle -> sIEnS)) =
         moorep datapathT datapathR datapathO
-               (bundle (bundle irqS, fetchS))
+               (bundle (bundle irqS, fetchS, switchS))
                reqS
     vfdS = toStrobe <$> entryS
 
@@ -134,7 +124,7 @@ multiIrqController irqS fetchS reqS = (vfaS, vfdS, respS)
     maskedS = zipWith (.&&.) sIEnS irqS
     vfaS = toStrobe <$> (sEnS .&&. fetchS .&&. foldl1 (.||.) maskedS)
 
-    datapathT s (req, (irqs, fetch)) = s'
+    datapathT s (req, (irqs, fetch, switch)) = s'
       where
         s' = MIS
           { misEn = not entry' && case req of
@@ -142,8 +132,8 @@ multiIrqController irqS fetchS reqS = (vfaS, vfdS, respS)
               Just (0, Just _) -> True
               -- The bottom bit of writes @ 1 gets copied into the enable bit.
               Just (1, Just v) -> unpack $ lsb v
-              -- Anything else leaves matters unchanged.
-              _                -> misEn s
+              -- Anything else leaves matters unchanged unless the MMU asks.
+              _                -> misEn s || fromStrobe switch
 
           , misStatus = maskedIrqs
           , misIEn = case req of

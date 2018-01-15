@@ -16,12 +16,7 @@ import Control.Arrow (first)
 import CFM.Types
 import RTL.Common.Strobe
 import RTL.IOBus
-import RTL.IRQ (VectorFetchAddress)
-
-
-data SwitchingMapBack = SwitchingMapBack
-  deriving (Eq, Show, Enum, Bounded)
-instance Strobe SwitchingMapBack where strobeValue = SwitchingMapBack
+import RTL.Strobes
 
 -- | A Memory Management Unit that divides an address space into an array of
 -- equally-sized pages. The CPU-generated address is a "virtual" address; the
