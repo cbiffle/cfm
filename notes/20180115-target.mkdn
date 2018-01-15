@@ -1,0 +1,141 @@
+
+On implementing MonadTarget in bsforth using MMU trickery.
+
+    class (Monad m) => MonadTarget m where
+      -- | Load a word from memory or I/O. If an error has occured in the target,
+      -- it will be returned in place of the result.
+      tload :: CellAddr -> m (Either Cell Cell)
+      -- | Store a word to memory or I/O.
+      tstore :: CellAddr -> Cell -> m ()
+    
+      -- | Push a word onto the parameter stack.
+      tpush :: Cell -> m ()
+      -- | Pop a word from the parameter stack. If an error has occurred in the
+      -- target, it will be returned in place of the result.
+      tpop :: m (Either Cell Cell)
+    
+      -- | Call a subroutine at the given address for its side effects.
+      tcall :: CellAddr -> m ()
+
+In the current system, the error handling parts of this are unused -- we
+bootstrap until we have CATCH, and then we use it.
+
+Let's assume there is a single global implementation and a single global target.
+A rough set of equivalent operations would be...
+
+    tload   ( t-addr -- x )
+    tstore  ( x t-addr -- )
+
+    tcall  ( i*x t-xt -- j*x )
+
+I've skipped `tpush` and `tpop` because I'm planning on punning the data stack
+to represent both systems. This will make it much easier to get arguments across
+(and works around the part where there is only one hardware stack).
+
+
+Let's assume that the target's memory image consists of 8 contiguous physical
+pages starting at page 8 (i.e. just above the default memory map).
+
+Let's further assume that the host uses page 6 as a movable window into target
+space.
+
+    8 constant >tpage
+    : ttran  ( t-addr -- addr )
+      \ Prepare MMU for a change to virtual page 6.
+      6 $C002 io!
+      \ Switch map 0 page 6 to the requested block.
+      dup 13 rshift >tpage + $C004 io!
+      \ Leave the map 0 virtual address for the word in question.
+      $1FFF and $C000 + ;
+
+    : tload ttran @ ;
+    : tstore ttran ! ;
+
+And calls. We have to actually switch maps for this, meaning we have to prepare
+to un-switch maps. We'll do that by manually assembling a switch sequence into
+target memory before the call, and arranging for the target return address to
+point there.
+
+I'm going to arbitrarily place the sequence at the base of target memory.
+
+    : tcall   ( i*x t-xt -- j*x )
+      $C000 invert $8000 or  0 tstore   \ literal complement $C000
+      $6600 2 tstore                    \ invert
+      $713F 4 tstore                    \ io!d ;
+
+      0 >r    \ "return address" of switch routine
+      >r      \ "return address" to destination
+      $C000 io!d ;  \ switch!
+
+So to test this, we can deposit a return instruction and call it.
+
+    $7C00 6 tstore
+    $DEAD 6 tcall u.
+
+Welp, that sure crashes the machine.
+
+Oh, hey. Forgot to set up map 1. Derp.
+
+    : tinit
+      8 begin
+        1-
+        $C002 io!d
+        dup >tpage + $C006 io!
+        ?dup 0=
+      until ;
+
+So new test sequence is
+
+    tinit
+    $7C00 6 tstore
+    $DEAD 6 tcall u.
+
+Still crashes.
+
+...did I really just misspell the return instruction? Sigh.
+
+    $700C 6 tstore  \ FIXED
+    $DEAD 6 tcall u.
+
+That seems to work.
+
+So does this more interesting case:
+
+    $720F 6 tstore  \ + ;
+    4 5 6 tcall .   \ prints 9
+
+---
+
+Well, that's a great start! The only drawback so far is that the host has
+opinions about the contents of the first six bytes of memory.
+
+Hmmmm. The instructions we're assembling aren't calls or branches. We could put
+them anywhere.
+
+    : tcall   ( i*x t-xt -- j*x )
+      $C000 invert $8000 or  $FFFA tstore   \ literal complement $C000
+      $6600 $FFFC tstore                    \ invert
+      $713F $FFFE tstore                    \ io!d ;
+
+      $FFFA >r  \ "return address" of switch routine
+      >r        \ "return address" to destination
+      $C000 io!d ;  \ switch!
+
+Now the host has opinions about the *last* six bytes in the address space, which
+seems totally workable.
+
+---
+
+How do I imagine this workflow going?
+
+- Read sources from SD card.
+- Assemble in memory.
+- Write final image to SD card.
+
+I think I have many of the pieces I'd need to begin.
+
+For my own sanity, I would also like a way of easily and reliably moving blocks
+between my computer and the SD card. I could do this by removing the SD card and
+hacking it with tools on my computer, or I could implement e.g. XMODEM receive
+to the SD card.
+
