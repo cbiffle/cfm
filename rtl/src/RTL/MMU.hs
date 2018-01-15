@@ -57,6 +57,8 @@ instance Strobe SwitchingMapBack where strobeValue = SwitchingMapBack
 -- - +2: Map Pointer. Holds a 'v'-bit index of a map register.
 -- - +4: Map 0 Access. Reads/writes the part of map 0 selected by Map Pointer.
 -- - +6: Map 1 Access. Reads/writes the part of map 1 selected by Map Pointer.
+-- - +8: Active Map flag in bit 0 (read/write).
+-- - +A: Switched due to IRQ flag in bit 0 (read/write).
 mmu :: forall v p ev ep d g s.
        ( HasClockReset d g s
        , KnownNat v
@@ -69,7 +71,7 @@ mmu :: forall v p ev ep d g s.
        , (p + ep) ~ Width
        )
     => Signal d (Maybe VectorFetchAddress)
-    -> Signal d (Maybe (BitVector 2, Maybe Cell))
+    -> Signal d (Maybe (BitVector 3, Maybe Cell))
     -> ( Signal d Cell
        , Signal d (Maybe SwitchingMapBack)
        , Signal d (Vec (2^v) (BitVector p))
@@ -79,7 +81,7 @@ mmu fetching reqS = (resp, switchBack, cmap)
     (resp, unbundle -> (cmap, switchBack)) = mealyp fT fR fetching reqS
 
     fT :: S v p
-       -> (Maybe (BitVector 2, Maybe Cell), Maybe VectorFetchAddress)
+       -> (Maybe (BitVector 3, Maybe Cell), Maybe VectorFetchAddress)
        -> (S v p, (Vec (2^v) (BitVector p), Maybe SwitchingMapBack))
     fT (S map0 map1 mp m1a sirq) (req, irq) = (s', (activeMap, unswitching))
       where
@@ -96,10 +98,12 @@ mmu fetching reqS = (resp, switchBack, cmap)
 
         m1a' | fromStrobe irq = False
              | Just (0, Just _) <- req = not m1a
+             | Just (4, Just x) <- req = unpack $ lsb x
              | otherwise = m1a
 
         sirq' | fromStrobe irq = m1a
               | Just (0, Just _) <- req = False
+              | Just (5, Just x) <- req = unpack $ lsb x
               | otherwise = sirq
 
         activeMap | not m1a || fromStrobe irq = map0
@@ -112,7 +116,9 @@ mmu fetching reqS = (resp, switchBack, cmap)
            zeroExtend (sMapPtr s) :>
            zeroExtend (sMap0 s !! sMapPtr s) :>
            zeroExtend (sMap1 s !! sMapPtr s) :>
-           Nil
+           zeroExtend (pack (sMap1Active s)) :>
+           zeroExtend (pack (sSwitchedByIRQ s)) :>
+           repeat (errorX "undefined MMU register")
 
 data S v p = S
   { sMap0 :: Vec (2^v) (BitVector p)
