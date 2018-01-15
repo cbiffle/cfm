@@ -2,6 +2,7 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE ViewPatterns #-}
 
 -- | Interrupt support.
 module RTL.IRQ where
@@ -13,16 +14,34 @@ import CFM.Types
 import CFM.Inst
 import RTL.IOBus (moorep)
 
+class Strobe t where
+  strobeValue :: t
+
+toStrobe :: (Strobe t) => Bool -> Maybe t
+toStrobe True = Just strobeValue
+toStrobe False = Nothing
+
+fromStrobe :: (Strobe t) => Maybe t -> Bool
+fromStrobe = isJust
 
 -- | Event type for the data phase of a vector fetch. This is used as @Maybe
 -- VectorFetchData@ as a type isomorphic to 'Bool' but harder to mix up.
 data VectorFetchData = VectorFetchData
   deriving (Eq, Show, Enum, Bounded)
 
+instance Strobe VectorFetchData where strobeValue = VectorFetchData
+
+-- | Event type for the address phase of a vector fetch. This is used as @Maybe
+-- VectorFetchAddress@ as a type isomorphic to 'Bool' but harder to mix up.
+data VectorFetchAddress = VectorFetchAddress
+  deriving (Eq, Show, Enum, Bounded)
+
+instance Strobe VectorFetchAddress where strobeValue = VectorFetchAddress
+
 -- | RAM mux that replaces data with a call to a vector location.
 vectorMux :: Signal d (Maybe VectorFetchData)
           -> Signal d Cell -> Signal d Cell
-vectorMux vf = mux (isJust <$> vf) (pure $ pack $ NotLit $ Call 1)
+vectorMux vf = mux (fromStrobe <$> vf) (pure $ pack $ NotLit $ Call 1)
 
 -- | A simple interrupt controller supporting a single, active-high interrupt
 -- input.
@@ -36,17 +55,20 @@ singleIrqController
   => Signal d Bool    -- ^ Interrupt input, active high, level-sensitive.
   -> Signal d Bool    -- ^ CPU fetch signal, active high.
   -> Signal d (Maybe (BitVector 1, Maybe Cell))   -- ^ I/O bus request.
-  -> ( Signal d (Maybe VectorFetchData)
+  -> ( Signal d (Maybe VectorFetchAddress)
+     , Signal d (Maybe VectorFetchData)
      , Signal d Cell
-     )  -- ^ Vector data fetch event and I/O response, respectively.
-singleIrqController irqS fetchS reqS = (vfdS, respS)
+     )  -- ^ Vector fetch events and I/O response, respectively.
+singleIrqController irqS fetchS reqS = (vfaS, vfdS, respS)
   where
-    (respS, entryS) = moorep datapathT
-                             (repeat . zeroExtend . pack . sisEn)
-                             sisEnter
-                             (bundle (irqS, fetchS))
-                             reqS
-    vfdS = (\f -> if f then Just VectorFetchData else Nothing) <$> entryS
+    (respS, unbundle -> (sEnS, entryS)) = moorep datapathT
+                                          (repeat . zeroExtend . pack . sisEn)
+                                          datapathO
+                                          (bundle (irqS, fetchS))
+                                          reqS
+    vfdS = toStrobe <$> entryS
+
+    vfaS = toStrobe <$> (sEnS .&&. fetchS .&&. irqS)
 
     datapathT (SIS en _) (req, (irq, fetch)) = SIS en' entry'
       where
@@ -59,6 +81,8 @@ singleIrqController irqS fetchS reqS = (vfdS, respS)
         written = case req of
           Just (_, Just _) -> True
           _                -> False
+
+    datapathO (SIS en enter) = (en, enter)
 
 data SIS = SIS
   { sisEn :: Bool
@@ -100,15 +124,25 @@ multiIrqController
       -- ^ Interrupt inputs, active high, level-sensitive.
   -> Signal d Bool    -- ^ CPU fetch signal, active high.
   -> Signal d (Maybe (BitVector 2, Maybe Cell))   -- ^ I/O bus request.
-  -> ( Signal d (Maybe VectorFetchData)
+  -> ( Signal d (Maybe VectorFetchAddress)
+     , Signal d (Maybe VectorFetchData)
      , Signal d Cell
-     )  -- ^ Vector fetch event strobe and I/O response, respectively.
-multiIrqController irqS fetchS reqS = (vfdS, respS)
+     )  -- ^ Vector fetch event strobes and I/O response, respectively.
+multiIrqController irqS fetchS reqS = (vfaS, vfdS, respS)
   where
-    (respS, entryS) = moorep datapathT datapathR misEnter
-                             (bundle (bundle irqS, fetchS))
-                             reqS
-    vfdS = (\f -> if f then Just VectorFetchData else Nothing) <$> entryS
+    (respS, unbundle -> (entryS, sEnS, unbundle -> sIEnS)) =
+        moorep datapathT datapathR datapathO
+               (bundle (bundle irqS, fetchS))
+               reqS
+    vfdS = toStrobe <$> entryS
+
+    -- TODO: this logic duplicates some of the datapath logic below.
+    -- The duplication could be eliminated with a Mealy formulation.
+    -- I'm only avoiding that because I've been having so many issues
+    -- with Clash, and I feel like Moore constructions give it an easier
+    -- time.
+    maskedS = zipWith (.&&.) sIEnS irqS
+    vfaS = toStrobe <$> (sEnS .&&. fetchS .&&. foldl1 (.||.) maskedS)
 
     datapathT s (req, (irqs, fetch)) = s'
       where
@@ -135,6 +169,8 @@ multiIrqController irqS fetchS reqS = (vfdS, respS)
     datapathR s = pack (misStatus s) :>
                   zeroExtend (pack (misEn s)) :>
                   repeat (pack (misIEn s))
+
+    datapathO s = (misEnter s, misEn s, misIEn s)
 
 data MIS = MIS
   { misEn :: Bool

@@ -67,8 +67,8 @@ system raminit ins sram2h urx =
     (ioresp2, irq1 :> irq2 :> Nil) = timer $ partialDecode @2 ioreq2
 
     -- IRQ controller, giving the vector fetch logic constructor.
-    (vecfetchD, ioresp3) = multiIrqController irqs fetch $
-                           partialDecode ioreq3
+    (_, vecfetchD, ioresp3) = multiIrqController irqs fetch $
+                              partialDecode ioreq3
     irqs = irq0 :> irq1 :> irq2 :> hirq :> virq :> evirq :> urxne :>
            repeat (pure False)
 
