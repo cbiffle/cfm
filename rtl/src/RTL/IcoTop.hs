@@ -67,8 +67,8 @@ system raminit ins sram2h urx =
     (ioresp2, irq1 :> irq2 :> Nil) = timer $ partialDecode @2 ioreq2
 
     -- IRQ controller, giving the vector fetch logic constructor.
-    (_, vecfetchD, ioresp3) = multiIrqController irqs fetch $
-                              partialDecode ioreq3
+    (vecfetchA, vecfetchD, ioresp3) = multiIrqController irqs fetch $
+                                      partialDecode ioreq3
     irqs = irq0 :> irq1 :> irq2 :> hirq :> virq :> evirq :> urxne :>
            repeat (pure False)
 
@@ -82,7 +82,7 @@ system raminit ins sram2h urx =
     -- MMU, giving the memory address mapping constructor.
     mmuMap :: Signal dom (Maybe (CellAddr, Maybe Cell))
            -> Signal dom (Maybe (PhysAddr, Maybe Cell))
-    (ioresp6, mmuMap) = mmu d3 d7 d12 $ partialDecode ioreq6
+    (ioresp6, mmuMap) = mmu d3 d7 d12 vecfetchA $ partialDecode ioreq6
 
 
 {-# ANN topEntity (defTop { t_name = "ico_soc"

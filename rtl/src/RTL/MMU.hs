@@ -13,7 +13,9 @@ import Clash.Prelude
 import Control.Arrow (first)
 
 import CFM.Types
+import RTL.Common.Strobe
 import RTL.IOBus
+import RTL.IRQ (VectorFetchAddress)
 
 -- | A Memory Management Unit that divides an address space into an array of
 -- equally-sized pages. The CPU-generated address is a "virtual" address; the
@@ -37,10 +39,16 @@ import RTL.IOBus
 -- register with any value. This is intended to be fused into a return
 -- instruction, to effect an atomic jump-and-change-maps operation.
 --
+-- Interrupt entry causes an automatic switch back to map 0 at the start of
+-- vector fetch, so that the vector is always fetched from map 0. When this
+-- occurs, bit 1 in the Control/Status register will be set. This bit is cleared
+-- by switching maps.
+--
 -- Register set:
 --
--- - +0: Control/Status. Any write toggles bit 0.
+-- - +0: Control/Status. Any write toggles bit 0 and clears bit 1.
 --   - Bit 0: active map.
+--   - Bit 1: switched due to IRQ flag.
 -- - +2: Map Pointer. Holds a 'v'-bit index of a map register.
 -- - +4: Map 0 Access. Reads/writes the part of map 0 selected by Map Pointer.
 -- - +6: Map 1 Access. Reads/writes the part of map 1 selected by Map Pointer.
@@ -62,15 +70,17 @@ mmu :: forall n v p ev ep d g s.
       -- ^ Number of physical bits produced after translation.
     -> SNat n
       -- ^ Number of untranslated bits. A page is @2^n@ words in size.
+    -> Signal d (Maybe VectorFetchAddress)
+      -- ^ Interrupt signal from controller.
     -> Signal d (Maybe (BitVector 2, Maybe Cell))
       -- ^ Connection to the I/O bus.
     -> ( Signal d Cell
         , Signal d (Maybe (BitVector (v+n), Maybe Cell))
           -> Signal d (Maybe (BitVector (p+n), Maybe Cell))
         ) -- ^ I/O response and mapping constructor, respectively.
-mmu _ _ _ ioreq = (ioresp, liftA2 mmapper cmap)
+mmu _ _ _ irq ioreq = (ioresp, liftA2 mmapper cmap)
   where
-    (ioresp, cmap) = mmu' @v @p @ev @ep ioreq
+    (ioresp, cmap) = mmu' @v @p @ev @ep irq ioreq
 
     mapper :: Vec (2^v) (BitVector p)
            -> BitVector (v+n)
@@ -95,15 +105,20 @@ mmu' :: forall v p ev ep d g s.
         , (ep + p) ~ Width
         , (p + ep) ~ Width
         )
-     => Signal d (Maybe (BitVector 2, Maybe Cell))
+     => Signal d (Maybe VectorFetchAddress)
+     -> Signal d (Maybe (BitVector 2, Maybe Cell))
      -> ( Signal d Cell
         , Signal d (Vec (2^v) (BitVector p))
         )
-mmu' = moorep fT fR fO (pure ())
+mmu' = mealyp fT fR
   where
-    fT :: S v p -> (Maybe (BitVector 2, Maybe Cell), ()) -> S v p
-    fT (S map0 map1 mp m1a sirq) (req, _) = S map0' map1' mp' m1a' sirq'
+    fT :: S v p
+       -> (Maybe (BitVector 2, Maybe Cell), Maybe VectorFetchAddress)
+       -> (S v p, Vec (2^v) (BitVector p))
+    fT (S map0 map1 mp m1a sirq) (req, irq) = (s', activeMap)
       where
+        s' = S map0' map1' mp' m1a' sirq'
+
         mp' | Just (1, Just v) <- req = truncateB v
             | otherwise = mp
 
@@ -113,15 +128,16 @@ mmu' = moorep fT fR fO (pure ())
         map1' | Just (3, Just v) <- req = replace mp (truncateB v) map1
               | otherwise = map1
 
-        m1a' | Just (0, Just _) <- req = not m1a
+        m1a' | fromStrobe irq = False
+             | Just (0, Just _) <- req = not m1a
              | otherwise = m1a
 
-        sirq' | Just (0, Just _) <- req = False
-            -- TODO: set on actual interrupt
+        sirq' | fromStrobe irq = m1a
+              | Just (0, Just _) <- req = False
               | otherwise = sirq
 
-    fO s | sMap1Active s = sMap1 s
-         | otherwise = sMap0 s
+        activeMap | not m1a || fromStrobe irq = map0
+                  | otherwise = map1
 
     fR s = zeroExtend (pack (sSwitchedByIRQ s, sMap1Active s)) :>
            zeroExtend (sMapPtr s) :>

@@ -9,20 +9,10 @@ module RTL.IRQ where
 
 import Clash.Prelude
 
-import Data.Maybe (isJust)
 import CFM.Types
 import CFM.Inst
+import RTL.Common.Strobe
 import RTL.IOBus (moorep)
-
-class Strobe t where
-  strobeValue :: t
-
-toStrobe :: (Strobe t) => Bool -> Maybe t
-toStrobe True = Just strobeValue
-toStrobe False = Nothing
-
-fromStrobe :: (Strobe t) => Maybe t -> Bool
-fromStrobe = isJust
 
 -- | Event type for the data phase of a vector fetch. This is used as @Maybe
 -- VectorFetchData@ as a type isomorphic to 'Bool' but harder to mix up.
