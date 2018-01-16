@@ -75,6 +75,14 @@ executable bsforth
                      , containers
   default-language:    Haskell2010
 
+executable blocktool
+  hs-source-dirs:      app
+  main-is:             BlockTool.hs
+  ghc-options:         -Wall
+  build-depends:       base
+                     , split
+  default-language:    Haskell2010
+
 test-suite cfm-tools-test
   type:                exitcode-stdio-1.0
   hs-source-dirs:      test
