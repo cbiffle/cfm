@@ -1,6 +1,16 @@
 \ Bootstrap Forth, second volume. For larger environments.
 
 \ -----------------------------------------------------------------------------
+\ Luxury overrides
+
+: \
+  blk @ if
+    >IN @ 63 + 63 invert and >IN !
+  else
+    SOURCE nip >IN !
+  then ;  immediate
+
+\ -----------------------------------------------------------------------------
 \ Utilities.
 
 : fill  ( c-addr u c -- )
