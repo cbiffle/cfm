@@ -813,12 +813,13 @@ variable 'emit
   repeat
   rdrop nip ;
 
-
 : digit  ( c -- x )
+  dup '0' - 10 u<
+  over 'A' - 25 u<
+  or 0= -13 and throw
   '0' -
   9 over u< 7 and -
   base @ 1- over u< -13 and throw ;
-
 
 \ Converts the given string into a number, in the current base, but respecting
 \ base prefixes $ (hex) and # (decimal). Throws -13 (undefined word) if parsing
