@@ -300,10 +300,6 @@ variable blkall
 \ -------------------------------------------------------------------
 \ Block load and dev support.
 
-variable blk
-  \ Holds the block index currently being used as source, or 0 if
-  \ source is coming from somewhere else.
-
 \ Interprets source code in block u.
 : load  ( i*x u -- j*x )
   \ Save source state.

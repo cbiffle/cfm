@@ -3,6 +3,10 @@
 \ -----------------------------------------------------------------------------
 \ Luxury overrides
 
+variable blk
+  \ Holds the block index currently being used as source, or 0 if
+  \ source is coming from somewhere else.
+
 : \
   blk @ if
     >IN @ 63 + 63 invert and >IN !
