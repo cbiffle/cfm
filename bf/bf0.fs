@@ -428,18 +428,15 @@ $20 constant bl
   \ Early exit if the lengths are different.
   rot over xor if drop 2drop false exit then
   ( c-addr1 c-addr2 u )
-  >r over swap -  ( c-addr1 1-2 ) ( R: u)
-  r> swap >r   ( c-addr1 u ) ( R: 1-2)
-  bounds      ( c-addrE c-addrS ) ( R: 1-2)
   begin
-    over over xor
-  while  ( c-addrE c-addr ) ( R: 1-2 )
-    dup c@  ( c-addrE c-addr c ) ( R: 1-2 )
-    over r@ - c@  ( c-addrE c-addr c c2 ) ( R: 1-2 )
-    xor if 2drop rdrop false exit then
-    1+
-  repeat
-  2drop rdrop true ;
+    ?dup
+  while  ( c-addr1 c-addr2 u )
+    >r
+    over c@ over c@ xor if 2drop rdrop false exit then
+    1+ swap 1+
+    r> 1-
+  repeat ( c-addr1 c-addr2 )
+  2drop true ;
 
 \ Searches a wordlist for a definition with the given name. This is a
 \ variant of standard FIND, which uses a counted string for some reason.
