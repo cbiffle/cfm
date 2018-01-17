@@ -9,14 +9,17 @@
 vocabulary bootstrapper  bootstrapper definitions
 variable tgt-base-page  8 tgt-base-page !
   \ Physical page where target image starts.
-variable tgt-catch-xt   \ cached target CATCH, or 0
 variable tgt-block  variable tgt-eblock  \ block range
+\ Cached target XTs relevant to bootstrapping:
+variable tgt-asm-xt    variable tgt-compile-xt
+variable tgt-docon-xt  variable tgt-catch-xt
+variable tgt-find-xt
 : tgt-reset  \ Reset target memory map and vars
   0 tgt-eblock ! 0 tgt-block !
-  0 tgt-catch-xt !
+  0 tgt-asm-xt ! 0 tgt-compile-xt ! 0 tgt-docon-xt !
+  0 tgt-catch-xt ! 0 tgt-find-xt !
   8 begin
-    1-  $C002 io!d  dup tgt-base-page @ + $C006 io!
-    ?dup 0=
+    1-  $C002 io!d  dup tgt-base-page @ + $C006 io!  ?dup 0=
   until ;
 ---
 \ Bootstrap: target memory access.
@@ -34,6 +37,7 @@ variable tgt-block  variable tgt-eblock  \ block range
 : <!> tgt-tran ! ;    : <c!> tgt-tran c! ;
 : <+!> tgt-tran +! ;
 : <execute>
+  tgt-catch-xt @ ?dup if ['] throw >r then
   \ Assemble a map switch escape sequence at target $FFFA.
   $C000 invert $8000 or  $FFFA <!> $6600 $FFFC <!>
   $713F $FFFE <!>
@@ -70,14 +74,20 @@ $FBFA constant <blkbuf>  $FB7A constant <initial-U0>
   0            <BLK> <!> ;
 ---
 \ Bootstrap: mass storage block transfer
-: block>tgt  ( n -- )
-  block drop
-  1024 0 begin  ( end pos )
+: str>tgt  ( c-addr u -- <c-addr> u )
+  swap >r
+  0 begin
     over over xor
-  while
-    dup blkbuf + @  over <blkbuf> + <!>
-    2 +
-  repeat 2drop ;
+  while ( u i ) ( R: c-addr )
+    r@ over + c@  over <blkbuf> + <c!>
+    1+
+  repeat rdrop drop <blkbuf> swap ;
+: block>tgt  ( n -- )
+  block 1024 str>tgt 2drop ;
+---
+\ Bootstrap: using definitions in the target once available.
+: ?cached ( addr -- )
+  @ ?dup if rdrop <execute> exit then ;
 ---
 \ Bootstrap: target basics
 : <here> <DP> <@> ;
@@ -90,26 +100,26 @@ $FBFA constant <blkbuf>  $FB7A constant <initial-U0>
 : <,> <raw,> <freeze> drop ;
 ---
 \ Bootstrap: target emulated assembler
-: <asm,>
-  <here> <FREEZEP> <@> xor if
-    <here> cell - <@> over $700C = if
-      $F04C over and $6000 = if
-        <-,> nip $100C or <asm,> exit then
-      $E000 over and $4000 = if
-        <-,> nip $1FFF and <asm,> exit then then
+: <asm,> tgt-asm-xt ?cached
+  <here> <FREEZEP> <@> xor if <here> cell - <@> ( new prev )
+    over $700C = if
+      $F04C over and $6000 = if <-,> nip $100C or <asm,> exit
+      then $E000 over and $4000 = if <-,> nip $1FFF and <asm,>
+      exit then then
     over $F0FF and $6003 over = swap $6000 = or if
-      over $0F00 and dup $200 - $400 u< swap $700 = or if
+      over $0F00 and  dup $200 - $400 u< swap $700 = or if 
         $FFFE over and $6180 = if
           1 and + $FFF3 and dup 3 and 1 = $80 and or
-          <-,> <asm,> exit then then then
-    $6081 over = if over $6C00 = if
-      $FF and or <-,> <asm,> exit
-    then then then <raw,> ;
+            <-,> <asm,> exit then
+      then then
+    $6081 over = if over $6C00 = if $FF and or <-,> <asm,> exit
+      then then drop
+  then <raw,> ;
 ---
 : <literal>
   dup 0< if invert true else false then
   swap $8000 or <asm,> if $6600 <asm,> then ;
-: <compile,>
+: <compile,>    tgt-compile-xt ?cached
   dup <@> $F04C and $700C = if <@> $EFF3 and
   else u2/ $4000 or
   then <asm,> ;
@@ -157,8 +167,9 @@ $FBFA constant <blkbuf>  $FB7A constant <initial-U0>
       nip  r> cell+ 1+ + aligned   dup cell+ swap <@> true exit
     then r>
   repeat ;
-: <find>  <CONTEXT> <@> <find-in> if true exit then
-          <CURRENT> <@> <find-in> ;
+: <find>  tgt-find-xt ?cached
+  <CONTEXT> <@> <find-in> if true exit then
+  <CURRENT> <@> <find-in> ;
 variable 'inside  variable 'outside
 : x: CURRENT @ swap CURRENT ! : CURRENT ! ;
 : outside: 'outside x: ;
@@ -166,6 +177,20 @@ variable 'inside  variable 'outside
 ---
 : <]> 1 <STATE> <!> ;   : <[> 0 <STATE> <!> ;
 : <exit>  $700C <asm,> ;
+---
+: tgt-cache!  ( c-addr u addr -- )
+  dup @ if drop 2drop exit then
+
+  >r  2dup  str>tgt <find> if  ( c-addr u xt flags ) ( R: a )
+    drop  ." caching " dup .  r> ! type cr
+  else  ( c-addr u c-addr u ) ( R: a) 2drop 2drop rdrop then ;
+: tgt-rescan
+  S" asm," tgt-asm-xt tgt-cache!
+  S" compile," tgt-compile-xt tgt-cache!
+  S" (docon)" tgt-docon-xt tgt-cache!
+  S" catch" tgt-catch-xt tgt-cache!
+  S" sfind" tgt-find-xt tgt-cache!
+  ;
 ---
 \ Bootstrap: interpret current block
 : <interpret>
@@ -193,6 +218,7 @@ variable 'inside  variable 'outside
   <blkbuf> <'SOURCE> <!> 1024 <'SOURCE> cell+ <!> 0 <>IN> <!>
   <interpret>
   1 tgt-block +!  0 <BLK> <!>
+  tgt-rescan
   <quit> ;
 ---
 \ Bootstrap: entry point
@@ -210,19 +236,37 @@ variable 'inside  variable 'outside
   <BLK> <@> if <>IN> <@> 63 + 63 invert and <>IN> <!>
   else <SOURCE> nip <>IN> <!> then ;
 : <(> [: ')' <> ;] <scan> 2drop ;
+: <:>
+  <align> <here>  <CURRENT> <@>  dup <@> <,>  <!>
+  <parse-name> <s,>
+  0 <,> <]> ;
+---
+\ Bootstrap: bootstrap control flow words
+: <mark>> <freeze> swap <asm,> ;
+: <>resolve> dup <@> <freeze> u2/ or swap <!> ;
 ---
 \ Bootstrap: outside definitions.
 outside: \    <\> ;     outside: ( <(> ;   outside: .  . ;
 outside: asm, <asm,> ;  outside: , <,> ;   outside: c, <c,> ;
 outside: ]    <]> ;
-outside: :
-  <align> <here>  <CURRENT> <@>  dup <@> <,>  <!>
-  <parse-name> <s,>
-  0 <,> <]> ;
+outside: : <:> ;
+outside: constant <:> <[> tgt-docon-xt @ <compile,> <,> ;
 ---
 \ Bootstrap: inside definitions.
 inside: \ <\> ;   inside: ( <(> ;    inside: [ <[> ;
+inside: exit <exit> ;
 inside: ; <exit> <[> ;
+inside: postpone
+  <parse-name> dup if
+    <find> if
+      if <compile,>
+      else <literal>
+         tgt-compile-xt @  dup 0= 1 and throw  <compile,>
+      then exit
+    then
+  then ?? ;
+inside: if $2000 <mark>> ;   inside: then <>resolve> ;
+inside: else 0 <mark>> swap <>resolve> ;
 ---
 remarker clear-target
 ---
