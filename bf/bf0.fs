@@ -72,7 +72,7 @@
 6 constant ROOTWL  ( head of wordlist )
 8 constant DP
 10 constant FREEZEP
-12 constant VOC-LINK
+12 constant PATCHES
 
 : handler U0 @ ;
 : STATE U0 @ 2 + ;
@@ -640,7 +640,7 @@ variable #user  8 #user !
   does> @  U0 @ + ;
 
 : vocabulary
-  create  VOC-LINK >link
+  create  PATCHES >link
           CURRENT @ @ ,
   does> cell+ CONTEXT ! ;
 

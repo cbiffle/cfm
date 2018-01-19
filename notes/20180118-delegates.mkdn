@@ -1,0 +1,114 @@
+There's a pattern in my head trying to escape. I'm hung up on what to name it,
+how to implement it, and how to use it.
+
+It is essentially a multi-way DEFER. Instead of calling exactly one word, it
+calls zero or more words, in a predictable sequence.
+
+SwiftForth, from what I can glean, has a similar concept they call a "chain." I
+think this is a poor name (it describes the data structure, not the function).
+
+Names / analogies I have considered:
+
+- Chain (rejected).
+
+- Delegate or Delegate List. By analogy to the Delegate Pattern. The operation
+  is delegated to the registered words.
+
+- Decorator. It's basically a function decorator. It does function composition
+  in a stateful manner: you can compose functions onto either the front or back.
+
+- Handler. This is one role they might play, but I fear it's insufficiently
+  general.
+
+- There's also a relation to aspect oriented programming.
+
+
+Places in the system where this pattern would be useful:
+
+- Number parsing, adding formats.
+
+- The low-level assembler, adding fusion patterns.
+
+- Incrementally building up the "unrecognized word" behavior, starting with -13
+  THROW and adding console output once such a thing exists.
+
+- Startup hooks to be run during COLD, or even QUIT, or even at the prompt.
+  Basically, hooks in the general case.
+
+- Name lookup, particularly in the bootstrapper, which runs through a sequence
+  of three distinct lookup phases (target, number, and emulation).
+
+
+It seems useful to add new entries to either the front or back of the list,
+making it a deque of sorts.  The list should also be persistent and revertable,
+so that adding a word and then undefining it with a REMARKER does not leave the
+system in a bogus state. I have devised a data structure with these properties,
+which is basically the World's Worst Persistent Deque.
+
+Each node consists of three cells:
+
+- A next-node link, which always goes backwards in time.
+- A semantics cell, containing an xt.
+- A parameter cell, containing the handler routine's xt.
+
+The head node is shaped like a vocabulary, so it can be connected to the list of
+things to patch on REMARKER use.
+
+The semantics cell contains either EXECUTE, meaning the parameter cell should be
+run immediately (i.e. the item was added to the front of the deque), or a
+slightly magic word that instead tucks the parameter XT down on the return
+stack. By exploiting the fact that xts are valid return addresses, we can queue
+up code to be run "on the way out" at the end of the list.
+
+This sort of return stack magic is fragile in the general case, but the words
+stored in the semantics cell would be intimately tied to the traversal
+implementation, so it can be done safely.
+
+
+In the interest of being able to write a damn implementation, I'm calling the
+entity a "dlist" for now. It calls to mind both "delegate list" and "difference
+list," which is a close-ish analog for the data structure.
+
+
+Strawman implementation:
+
+    : dlist  ( "name" -- )  ( Ex: -- dlist )
+      create  VOC-LINK >link  0 ,
+      does> cell+ ;
+
+    : >dlist  ( xt dlist -- )  >link  ['] execute ,  , ;
+    : dlist<  ( xt dlist -- )  >link  [: r> r> rot >r >r >r ;] , , ;
+
+    : run-dlist  ( i*x dlist -- j*x )
+      begin
+        @ ?dup
+      while
+        >r
+        r@ 2 cells + @  r@ cell+ @  execute
+        r>
+      repeat :
+
+Seems to work in test!
+
+
+Notes:
+
+- Requires return stack space linear in the number of append operations. I
+  expect these will be fairly small and reckon I can live with this.
+
+- Persistence works great.
+
+- VOC-LINK is increasingly misnamed.
+
+---
+
+Okay, so what are the things collected in the list rooted at VOC-LINK? They are
+locations in the dictionary that we want to capture with REMARKER and restore.
+What is their name?
+
+- They are things that can be saved, but SAVEABLE is kind of awkward.
+- Revertibles?
+- Patchables? Patch-points?
+- Remarkables? This is a lovely pun on REMARKER. I'm for it.
+
+

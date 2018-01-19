@@ -41,7 +41,7 @@ variable blk
     \ to keep me sane while debugging.
     CURRENT @ ,         \ Identify CURRENT wordlist.
     CONTEXT @ ,         \ Identify CONTEXT wordlist.
-    VOC-LINK @ dup ,    \ Identify most recent vocab.
+    PATCHES @ dup ,     \ Record head of patch list.
     begin               \ For all defined vocabs,
       ?dup
     while
@@ -54,14 +54,14 @@ variable blk
     cell+
     dup @ CONTEXT !     \ Restore CONTEXT
     cell+
-    dup @ dup VOC-LINK !  \ Restore VOC-LINK keeping a copy
+    dup @ dup PATCHES !  \ Restore PATCHES keeping a copy
     swap cell+ swap
-    begin                 \ For each known vocab,
+    begin                 \ For each patch location,
       ?dup
     while ( dict-addr link-addr )
-      over @ over cell+ !     \ restore the head.
+      over @ over cell+ !     \ restore its value,
       swap cell+ swap @ \ advance both marker address and
-                        \ position in the vocab list.
+                        \ position in the patch list.
     repeat
     @ DP ! ;            \ restore DP, finally consuming our addr
 
