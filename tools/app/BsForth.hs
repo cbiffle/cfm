@@ -66,7 +66,9 @@ takeInputLine = do
   case i of
     (l : ls) -> do
       ForthT $ modify $ \s -> s { fsInput = ls }
-      pure $ Just l
+      if l == "---"
+        then takeInputLine
+        else pure $ Just l
     [] -> pure Nothing
 
 ------------------------------------------------------------------------------

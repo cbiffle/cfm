@@ -1,429 +1,381 @@
-\ Bootstrap Forth, my first Forth for the CFM. Volume one.
+\ vim: cc=64:syntax=forth
+\ Bootstrap Forth self-hosting version, volume one.
+---
+\ First, we need a way to refer to CFM machine instructions.
+\ Forth words containing only a single machine instruction
+\ with a fused return will be inlined (by both the bootstrapper
+\ and the system we're building). As a result, such words can
+\ function as mnemonics for instructions like the ones defined
+\ below.
 
+\ Note that the raw instructions are inserted without the fused
+\ return. The bootstrap implementation of ; will insert it.
 
-\ -----------------------------------------------------------------------------
-\ Instruction-level machine-code primitives.
-
-\ The ALU instructions are written without a fused return for clarity, but the
-\ effect of ; will fuse a return into the final instruction. The result is a
-\ definition containing a single returning instruction, which will be noticed
-\ by the inlining algorithm. As a result, these definitions function as an
-\ assembler.
-
-\ Instructions that map to traditional Forth words:
-: +      [ $6203 asm, ] ;
-: swap   [ $6180 asm, ] ;
-: over   [ $6181 asm, ] ;
-: nip    [ $6003 asm, ] ;
-: lshift [ $6d03 asm, ] ;
-: rshift [ $6903 asm, ] ;
-: dup    [ $6081 asm, ] ;
-: =      [ $6703 asm, ] ;
-: drop   [ $6103 asm, ] ;
-: invert [ $6600 asm, ] ;
-: @      [ $6c00 asm, ] ;
-: or     [ $6403 asm, ] ;
-: and    [ $6303 asm, ] ;
-: xor    [ $6503 asm, ] ;
-: -      [ $6a03 asm, ] ;
-: <      [ $6803 asm, ] ;
-: u<     [ $6f03 asm, ] ;
-
-
-\ Odd CFM instructions:
-
-\ Stores x at addr, leaving x (the data, or d) on the stack.
-: !d  ( x addr -- x )  [ $6123 asm, ] ;
-\ Stores x at addr, leaving addr on the stack.
-: !a  ( x addr -- addr )  [ $6023 asm, ] ;
-
-\ Pushes a word containing the depth of the parameter stack in bits 7:0, and
-\ the depth of the return stack in bits 15:8.
-: depths  ( -- x )  [ $6E81 asm, ] ;
-
-\ Pokes x into an I/O port, leaving x.
-: io!d  ( x port -- x )  [ $6133 asm, ] ;
-
-\ Reads from an I/O port.
-: io@  ( port -- x )  [ $6c10 asm, ] ;
-
-\ -----------------------------------------------------------------------------
-\ Support for CONSTANT. CONSTANT is implemented as if written with DOES>, but
-\ we need to start slinging constants before we have DOES> (or CREATE or : for
-\ that matter) so we must roll it by hand.
-
-\ A word created with CONSTANT will call (docon) as its only instruction.
-\ Immediately following the call is a cell containing the value of the
-\ constant.  Thus, (docon) must consume its return address and load the cell.
-
-\ We're working without a definition for R> here, because we're going to write
-\ an optimizing assembler before writing R> .
-
-: (docon)  ( -- x ) ( R: addr -- )
-  [ $6b8d asm, ]  ( machine code for R> )
-  @ ;
-
-\ -----------------------------------------------------------------------------
-\ Useful CONSTANTs.
-
-\ System variables. These memory locations are wired into the bootstrap
-\ program.
-4 constant U0  ( address of user area )
-6 constant ROOTWL  ( head of wordlist )
-8 constant DP
-10 constant FREEZEP
-12 constant PATCHES
-
-: handler U0 @ ;
-: STATE U0 @ 2 + ;
-: 'SOURCE U0 @ 4 + ;
-: >IN U0 @ 8 + ;
-: base U0 @ 10 + ;
-: CURRENT U0 @ 12 + ;
-: CONTEXT U0 @ 14 + ;
-
-$FFFF constant true  ( also abused as -1 below, since it's cheaper )
-0 constant false
-2 constant cell
+\ The other piece we need to start doing useful work is the
+\ target code used to implement CONSTANT, (docon) . For more
+\ on how CONSTANT uses (docon) , see its definition below (the
+\ bootstrapper mimics it).
+---
+\ Assembler fundamentals.
+: nip    [ $6003 asm, ] ;     : !a     [ $6023 asm, ] ;
+: dup    [ $6081 asm, ] ;     : drop   [ $6103 asm, ] ; 
+: !d     [ $6123 asm, ] ;     : io!d   [ $6133 asm, ] ;
+: swap   [ $6180 asm, ] ;     : over   [ $6181 asm, ] ; 
+: +      [ $6203 asm, ] ;     : and    [ $6303 asm, ] ; 
+: or     [ $6403 asm, ] ;     : xor    [ $6503 asm, ] ; 
+: invert [ $6600 asm, ] ;     : =      [ $6703 asm, ] ; 
+: <      [ $6803 asm, ] ;     : rshift [ $6903 asm, ] ; 
+: -      [ $6A03 asm, ] ;     : @      [ $6C00 asm, ] ; 
+: io@    [ $6C10 asm, ] ;     : lshift [ $6D03 asm, ] ; 
+: depths [ $6E81 asm, ] ;     : u<     [ $6F03 asm, ] ;
+: (docon)  [ $6B8D asm, ] @ ;
+---
+\ The bootstrapper and our Forth need to agree on the layout of
+\ certain areas of memory (called the system and user vars)
+\ and the value of certain constants. With our newfound
+\ ability to define constants, perform arithmetic, and access
+\ memory, we can introduce the definitions that make up the
+\ bootstrapping ABI.
+---
+\ Fundamental constants, sysvars, user area
+-1 constant true  0 constant false  2 constant cell
 $20 constant bl
 
-\ -----------------------------------------------------------------------------
-\ More useful Forth words.
+4 constant U0        6 constant ROOTWL     8 constant DP
+10 constant FREEZEP 12 constant PATCHES
 
+: handler U0 @      ;    : STATE   U0 @  2 + ;
+: 'SOURCE U0 @  4 + ;    : >IN     U0 @  8 + ;
+: base    U0 @ 10 + ;    : CURRENT U0 @ 12 + ;
+: CONTEXT U0 @ 14 + ;    : BLK     U0 @ 16 + ;
+---
+\ And now, a grab-bag of basic Forth words. These are defined
+\ largely in terms of the primitives above, but also in terms
+\ of one another.
+
+\ There's no obvious ordering, so they're somewhat random.
+\ They're almost entirely from the standard, so they're light
+\ on docs.
+
+\ Basically, this isn't the fun part, so I blew past it.
+---
+\ Basic Forth words, in terms of assembly prims.
 : tuck  ( a b -- b a b )  swap over ;
-: !  ( x addr -- )  !d drop ;
-: io!  ( x port -- )  io!d drop ;
-: +!  ( x addr -- )  tuck @ + swap ! ;
-: aligned  ( addr -- a-addr )  1 over and + ;
-
-: c@  ( c-addr -- c )
-  dup @
-  swap 1 and if ( lsb set )
-    8 rshift
-  else
-    $FF and
-  then ;
-
-: 2dup over over ;
-: 2drop drop drop ;
-: 1+ 1 + ;
-: 1- 1 - ;
-: 2* 1 lshift ;
-: cell+ cell + ;
-: u2/ 1 rshift ;
+: 2dup  over over ;                        : 2drop  drop drop ;
 : ?dup dup if dup then ;
-: negate 0 swap - ;
-: 0= 0 = ;
-: 0< 0 < ;
-: <> = invert ;
-: u> swap u< ;
+: aligned  ( addr -- a-addr )  1 over and + ;
+: 1+ 1 + ;    : 1- 1 - ;    : 2* 1 lshift ;    : u2/ 1 rshift ;
+: cell+ cell + ;         : cells 2* ;          : cell- cell - ;
+: !  ( x a -- )  !d drop ;       : io!  ( x p -- )  io!d drop ;
+: +!  ( x addr -- )  tuck @ + swap ! ;       : 2!  !a cell+ ! ;
+: negate 0 swap - ;      : 0= 0 = ;            : 0< 0 < ;
+: <> = invert ;          : u> swap u< ;        : > swap < ;
+: >= < 0= ;    : u>= u< 0= ;    : <= > 0= ;    : u<= u> 0= ;
+: depth depths $FF and ;          : rdepth depths 8 rshift 1- ;
+: min  ( n1 n2 -- n ) 2dup < if drop exit else nip exit then ;
+: bounds over + swap ;
+\ Whew!
+---
+\ The dictionary access words let us build up our Forth a cell
+\ at a time. They are fairly traditional. The main exception
+\ is freeze .
 
-: 2!  ( x1 x0 a-addr -- )  !a cell+ ! ;
+\ As we add machine instructions to a definition, the low level
+\ assembler will look for opportunities to fuse instructions
+\ together. This is usually good, but it's a bad idea if one
+\ instruction is (say) before the end of a loop, and the next
+\ is outside it. In cases like this we block fusion by using
+\ freeze , which updates the FREEZEP value (which follows along
+\ behind HERE ).
+---
+\ The dictionary.
+: here  ( -- addr )  DP @ ;      : allot  ( n -- )  DP +! ;
+: align  here aligned DP ! ;
+: freeze  ( -- addr )  here FREEZEP !d ;
+: raw,  ( x -- )  here ! cell allot ;
+: , raw, freeze drop ;    : -, -1 cells allot ;
+---
+\ The low-level assembler is responsible for taking single
+\ machine instructions and appending them to the definition at
+\ the end of the dictionary. It applies the instruction fusion
+\ optimizations.
 
-: depth  depths $FF and ;
-: rdepth  depths 8 rshift 1- ;
-
-\ -----------------------------------------------------------------------------
-\ The Dictionary and the Optimizing Assembler.
-
-\ Because the host manipulates the dictionary, it's important to keep the
-\ layout consistent between us and the host. This is why ROOTWL, DP, and
-\ FREEZEP are part of the system variables block.
-
-: here  ( -- addr )  DP @ ;
-: allot  DP +! ;
-: raw,  here !  cell allot ;
-: cells  2* ;
-: align  here  aligned  DP ! ;
-
-\ Access to the CFA/xt of the most recently defined word.
-: lastxt  ( -- xt )
-  CURRENT @ @  cell+      ( nfa )   \ TODO define actual LATEST
-  dup c@ + 1+ aligned   ( ffa )
-  cell+ ;
-
-\ "Un-comma" rewinds HERE by 1 cell. It's an implementation factor of asm, .
-: -,  ( -- )  true cells allot ;
-
-\ We've been calling the host's emulation of asm, for building words out of
-\ machine code. Here's the actual definition.
-: asm,
-  here FREEZEP @ xor if  ( Fusion is a possibility... )
-    here cell - @   ( new-inst prev-inst )
-
-    over $700C = if ( if we're assembling a bare return instruction... )
-      $F04C over and $6000 = if  ( ...on a non-returning ALU instruction )
-        -,
-        nip  $100C or  asm, exit
-      then
-      $E000 over and $4000 = if  ( ...on a call )
-        -,
-        nip $1FFF and  asm, exit
-      then
-    then
-
-    over $F0FF and  ( new-inst prev-inst masked )
-        $6003 over = ( new-inst prev-inst masked =destr? )
-        swap $6000 = ( new-inst prev-inst =destr? =nd? )
-        or if \ adding a simple ALU op, destructive or not
-      ( new-inst prev-inst )
-      over $0F00 and  dup $200 - $400 u< swap $700 = or if  \ commutes
-        $FFFE over and $6180 = if  \ swap or over, Dadj=0 or 1
-          \ Add the two-bit Dadj field of the two instructions.
-          \ We know the swap/over Dadj field is zero or 1 from the test above.
-          \ We know the ALU op's Dadj is 0 or -1 from the entry test.
-          \ We know that bit 2 (in Radj) is zero. So we can add the two-bit
-          \ fields by allowing overflow into Radj and then clearing it.
-          1 and + $FFF3 and
-          dup 3 and 1 = $80 and or \ Set TN if Dadj > 0
-          -,
-          asm, exit
-        then
-      then
-    then
-
-    $6081 over = if   \ previous instruction is DUP
-      over $6C00 = if   \ just @ for now, others aren't used
-        $FF and or
-        -,
-        asm, exit
-      then
-    then
-
-    ( No patterns matched. )
-    drop
-  then
-  ( Fusion was not possible, simply append the bits. )
-  raw, ;
-
-<TARGET-ASM>
-
-\ Sometimes we want a clear separation between one instruction and the next.
-\ For example, if the second instruction is the target of control flow like a
-\ loop or if. The word freeze updates FREEZEP, preventing fusion of any
-\ instructions already present in the dictionary. It returns the value of here,
-\ because we basically always want that when using freeze.
-: freeze  ( -- addr )
-  here FREEZEP !d ;
-
-\ Encloses a data cell in the dictionary. Prevents misinterpretation of the
-\ data as instructions by using freeze . Thus using , to assemble machine
-\ instructions will *work* but the results will have poor performance.
-: ,  ( x -- )  raw, freeze drop ;
-
-\ -----------------------------------------------------------------------------
-\ Aside: IMMEDIATE and STATE manipulation.
-
-\ Sets the flags on the most recent definition.
-: immediate
-  lastxt cell -
-  true swap ! ;
-
-\ Switches from compilation to interpretation.
-: [ 0 STATE ! ; immediate
-\ Switches from interpretation to compilation.
-: ] 1 STATE ! ;
-
-\ -----------------------------------------------------------------------------
-\ Forth return stack words. These are machine-language primitives like we have
-\ above, but since they affect the return stack, they (1) must be inlined at
-\ their site of use, and (2) cannot be automatically inlined by the compiler,
-\ because that would change the meaning of the code. Thus these are our first
-\ IMMEDIATE definitions as they have side effects on the current definition.
-
-\ It would be reasonable to describe this as the start of the compiler.
-
-: r>  $6b8d asm, ; immediate
-: >r  $6147 asm, ; immediate
-: r@  $6b81 asm, ; immediate
-: rdrop $600C asm, ; immediate
-: exit  $700c asm, ; immediate
-
-\ -----------------------------------------------------------------------------
-\ Support for VARIABLE .
-
-\ Like CONSTANT, words created with VARIABLE will call (dovar) as their only
-\ instruction, thus handing us the address of the actual variable on the return
+\ It is currently very ugly.
+---
+\ The low level assembler. TODO: factor
+: asm,  ( inst -- )
+  here FREEZEP @ xor if here cell - @ ( new prev )
+    over $700C = if
+      $F04C over and $6000 = if -, nip $100C or asm, exit
+      then $E000 over and $4000 = if -, nip $1FFF and asm,
+      exit then then
+    over $F0FF and $6003 over = swap $6000 = or if
+      over $0F00 and  dup $200 - $400 u< swap $700 = or if 
+        $FFFE over and $6180 = if
+          1 and + $FFF3 and dup 3 and 1 = $80 and or
+            -, asm, exit then
+      then then
+    $6081 over = if over $6C00 = if $FF and or -, asm, exit
+      then then drop
+  then raw, ;
+---
+\ The CFM's address space is byte-addressed, but the hardware
+\ only provides cell-sized memory operations. If we want to
+\ load and store bytes, we have to implement it ourselves.
+---
+: c@  ( c-addr -- c )
+  dup @  swap 1 and if  8 rshift  else  $FF and  then ;
+: c!  ( c c-addr -- )
+  1 over and if swap  8 lshift  over @ $FF and or  swap ! exit
+           then swap $FF and over @ $FF00 and or swap ! ;
+: c,  here c!  1 allot  freeze drop ;
+: count  ( c-addr -- c-addr' u )  dup 1+ swap c@ ;
+---
+\ We now have enough ability to manipulate the dictionary that
+\ we can extend our simple assembler with macros -- that is,
+\ IMMEDIATE words. IMMEDIATE words execute at compile time.
+\ On CFM we need them to compile any references to the return
 \ stack.
 
-\ Because we don't need VARIABLE until much later in bootstrap, we were able to
-\ wait until now to write its code fragment, where we have R> available.
+\ At this stage, we can also define [ and ] , which shadow the
+\ bootstrap emulated versions instantly upon definition.
+---
+\ Immediate; State; Return Stack; things using it.
+: lastxt  ( -- xt )  \ Gives xt of last word on CURRENT.
+  CURRENT @ @ cell+  ( nfa )  count + aligned  ( ffa )  cell+ ;
+: immediate  true  lastxt cell-  ! ;
+: [ 0 STATE ! ;  immediate       : ] 1 STATE ! ;
 
-: (dovar) r> ;
+: r> $6B8D asm, ; immediate    : >r $6147 asm, ; immediate
+: r@ $6B81 asm, ; immediate    : rdrop $600C asm, ; immediate
+: exit $700C asm, ; immediate
 
-\ -----------------------------------------------------------------------------
-\ EXECUTE
+: execute >r ;      : rot  >r swap r> swap ;
+---
+\ With the ability to define IMMEDIATE words, we can start
+\ adding syntax. We'll begin with IF ELSE THEN and simple
+\ BEGIN UNTIL / AGAIN loops. We've been relying on bootstrap
+\ emulation of IF ELSE THEN so far to access the CFM's
+\ conditional branch instruction, but the bootstrapper hasn't
+\ given us any loop primitives (other than tail recursion), so
+\ this will really level up our expressive powers.
+---
+\ Basic control structures, conditionals, simple loops
+\ 'template' is a branch instruction with zero operand.
+: mark>  ( template -- orig )  freeze swap asm, ;
+: >resolve  ( orig -- )  dup @  freeze u2/ or  swap ! ;
+  \ > here indicates forward control flow edges.
+\ $2000 = 0branch, $0000 = unconditional branch
+: if  $2000 mark> ; immediate
+: then >resolve ; immediate
+: else  $0000 mark>  swap >resolve ; immediate
 
-\ The CFM provides no indirect branch or call instructions, but it does provide
-\ return. So to call an arbitrary address, we call EXECUTE (leaving the origin
-\ return address), and EXECUTE inserts the address on the return stack before
-\ "returning" to it.
-
-: execute  ( i*x xt -- j*x )  >r ; ( NOINLINE )
-
-\ -----------------------------------------------------------------------------
-\ Basic control structures.
-
-\ Records the current location as the destination of a backwards branch, yet
-\ to be assembled by <resolve .
 : mark<  ( -- dest )  freeze ;
-\ Assembles a backwards branch (using the given template) to a location left
-\ by mark< .
-: <resolve  ( dest template -- )
-  swap u2/  \ convert to word address
-  or asm, ;
+: <resolve  ( dest template -- )  swap u2/ or asm, ;
+  \ < here indicates backward control flow edges.
+: begin  mark< ;  immediate
+: again  $0000 <resolve ; immediate
+: until  $2000 <resolve ; immediate
+---
+\ Most Forth flow control words can be defined in terms of what
+\ we have now. In particular, we can add WHILE and REPEAT .
+\ These use the bootstrap emulated version of POSTPONE since
+\ we haven't got our own yet.
 
-\ Assembles a forward branch (using the given template) to a yet-unknown
-\ location. Leaves the address of the branch (the 'orig') on the stack for
-\ fixup via >resolve .
-: mark>  ( template -- orig )
-  freeze
-  swap asm, ;
-\ Resolves a forward branch previously assembled by mark> by updating its
-\ destination field.
-: >resolve  ( orig -- )
-  dup @
-  freeze u2/ or
-  swap ! ;
+\ While we're POSTPONE-ing things to effect control flow, let's
+\ define ; . This is tricky, because target definitions shadow
+\ bootstrap definitions *immediately* to allow tail recursion,
+\ and the definition of ; needs to use ; to end its definition.
+\ (Got it?)
 
-\ The host has been providing IF ELSE THEN until now. These definitions
-\ immediately shadow the host versions.
-: if  ( C: -- orig )  $2000 mark> ; immediate
-: then  ( C: orig -- )  >resolve ; immediate
-: else  ( C: orig1 -- orig2 )
-  $0000 mark>
-  swap >resolve ; immediate
+\ This only requires one trick, which is setting ; IMMEDIATE
+\ from *within* the definition. This causes the compiler to
+\ call the unfinished definition to *finish compiling itself.*
+\ Tying the knot in the Forth compiler.
+---
+\ More flow control: loops, semi
+: while  postpone if swap ; immediate
+: repeat  postpone again  postpone then ; immediate
 
-\ Loop support!
-: begin  ( C: -- dest )  mark< ; immediate
-: again  ( C: dest -- )  0 <resolve ; immediate
-: until  ( C: dest -- )  $2000 <resolve ; immediate
+: ;  [ immediate ]  postpone exit  postpone [  ;
+---
+\ Now that we have loops, we can use them to mess with the
+\ stacks. The current CFM doesn't have instructions to write
+\ the stack pointers (though I am very much considering it).
+\ Thus to move the stacks to a particular level, on abort or
+\ throw, we have to do it the hard way.
 
-\ -----------------------------------------------------------------------------
-\ Exception handling.
-
-\ The CFM makes this difficult by not allowing us to write the stack pointers
-\ directly. Instead, to adjust the stack pointers to a specified value, we
-\ have to perform a sequence of stack manipulations.
-
-: SP!   ( tgt -- * )
-  1+ depth - dup 0< if   \ going down
-    begin
-      ?dup if
-        nip 1+
-      else
-        exit
-      then
-    again
-  else  \ going up
-    begin
-      ?dup if
-        dup 1-
-      else
-        exit
-      then
-    again
-  then ;
-
-: RSP!   ( tgt -- * )
-  rdepth 1- - dup 0< if   \ going down
-    begin
-      ?dup if
-        r> rdrop >r 1+
-      else
-        exit
-      then
-    again
-  else  \ going up
-    begin
-      ?dup if
-        r@ >r 1-
-      else
-        exit
-      then
-    again
-  then ;
-
-: catch
-  depth >r
-  handler @ >r
-  rdepth handler !
+\ With the ability to set the stack pointers, we can implement
+\ ANS-style exceptions, which we will need to do basically
+\ anything interesting in the interpreter. Exceptions work by
+\ recording state to be restored on the return stack, and then
+\ recording the return stack level in the user var HANDLER .
+\ Our code matches the ANS reference code nearly exactly.
+---
+\ Stack pointer manipulation (ewwww) and exceptions (yay!)
+: SP!  ( u -- it's complicated )
+  1+ depth - dup 0< if   begin ?dup while nip 1+ repeat
+  else   begin ?dup while dup 1- repeat then ;
+: RSP!  ( u -- )  ( R: it's complicated )
+  rdepth 1- - dup 0< if  begin ?dup while r> rdrop >r 1+ repeat
+  else  begin ?dup while r@ >r 1- repeat then ;
+: catch  ( i*x xt -- j*x 0 | i*x n )
+  depth >r      handler @ >r    rdepth handler !
   execute
-  r> handler !
-  rdrop
-  0 ;
-
-: throw
+  r> handler !  rdrop   0 ;
+: throw  ( i*x n -- i*x | j*x n )
   ?dup if
-    handler @ RSP!
-    r> handler !
-    r> swap >r
+    handler @ RSP!      r> handler !    r> swap >r
     SP! drop r>
   then ;
+---
+\ Okay, back to the compiler. The words COMPILE, and LITERAL
+\ form the low-level compiler (cf low-level assembler).
 
-<TARGET-CATCH>
+\ COMPILE, takes an XT and assembles machine code to call it at
+\ the end of the current definition. This is where inlining of
+\ single-instruction definitions occurs.
 
-\ -----------------------------------------------------------------------------
-\ LITERAL
+\ LITERAL takes a number and assembles machine code to push it.
+\ Because CFM can only push 15-bit constants, if the number has
+\ its high bit set, it requires two machine instructions.
 
-\ Compiles code to insert a computed literal into a definition.
-: literal  ( C: x -- )  ( -- x )
-  dup 0< if  ( MSB set )
-    invert true
-  else
-    false
-  then
-  swap $8000 or asm,
-  if $6600 asm, then ; immediate
-
-
-\ -----------------------------------------------------------------------------
-\ The inlining XT compiler.
-
-\ Appends the execution semantics of a word to the current definition. In
-\ practice, this means either compiling in a call, or inlining it (if the
-\ target word contains a single returning instruction). The result goes
-\ through asm, and thus may be subject to fusion.
+\ With these definitions we can now use the bootstrap POSTPONE
+\ on non-IMMEDIATE words, a feature we will use shortly.
+---
+\ The inlining XT compiler, and the number compiler.
 : compile,  ( xt -- )
-  \ Check if the instruction at the start of the target code field is a
-  \ fused operate-return instruction.
-  dup @  $F04C and  $700C = if
-    \ Retrieve it and mask out its return effect.
-    @ $EFF3 and
+  dup @ $F04C and $700C = if    \ first inst returns
+    @ $EFF3 and \ inline w/o return effect
   else
-    \ Convert the CFA into a call.
-    u2/ $4000 or
-  then
-  asm, ;
+    u2/ $4000 or \ convert to a call
+  then asm, ;
 
+: literal  ( C: x -- ) ( -- x )
+  dup 0< if invert true else false then
+  swap $8000 or asm,  if $6600 asm, then ;  immediate
+---
+\ With our new POSTPONE powers we can add support for
+\ anonymous definitions. We use these pretty extensively.
 
-\ -----------------------------------------------------------------------------
-\ More loop words, implemented with POSTPONE, which we can use now.
+\ :NONAME is a standard word that defines an anonymous word; at
+\ the terminating ; its XT is left on the stack.  (Typically,
+\ you'd do something with it right away.)
 
-: while  ( C: dest -- orig dest )
-  postpone if
-  swap ; immediate
-: repeat  ( C: orig dest -- )
-  postpone again
-  postpone then ; immediate
+\ [: and ;] are similar to :NONAME and ; , but define a
+\ *nested* anonymous word called a quotation. When the
+\ surrounding word is executed, the quotation code is skipped
+\ and its XT left on the stack. (The syntax is patterned after
+\ gforth.)
+---
+\ Anonymous definitions.
+: :noname  align freeze ] ;
+: (doquot)  r@ cell+  r> @ 2* >r ;
+: [:  postpone (doquot)  0 mark> ;  immediate
+: ;]  postpone exit      >resolve ;  immediate
+---
+\ Most string processing in this Forth is functional: it chews
+\ on strings using user-provided words. We can now start
+\ implementing it.
 
-\ -----------------------------------------------------------------------------
-\ Useful Forth words.
+\ SFOLDL applies a two-argument word to each character of a
+\ string, and the result of the last application. This may be
+\ easiest to understand by looking at uses below. (The use in
+\ S, is arguably an abuse, so keep reading.)
 
-: rot  ( x1 x2 x3 -- x2 x3 x1 )
-  >r swap r> swap ;
+\ SKIP-WHILE drops characters from the front of a string while
+\ a predicate -- a word with shape (c -- ?) -- returns true.
+---
+\ String processing
+: /string   ( c-addr u n -- c-addr' u' )
+  >r  r@ - swap  r> + swap ;
+: sfoldl  ( c-addr u x0 xt -- x )
+  >r >r bounds begin
+    over over xor
+  while
+    dup c@ r> r@ execute >r 1+
+  repeat 2drop r> rdrop ;
+: skip-while  ( c-addr u xt -- c-addr' u' )
+  >r begin  over c@ r@ execute over and
+     while 1 /string
+     repeat rdrop ;
+: s,  ( c-addr u -- ) dup c,  0 [: swap c, ;] sfoldl drop
+  align ;
+---
+\ Time to apply our string manipulation to the input source, so
+\ we can start processing some code. We break input into tokens
+\ using a pair of words, SCAN and SKIP .
 
-: bounds over + swap ;
+\ SCAN returns the prefix of the remaining input such that all
+\ characters match a predicate. If it doesn't reach the end of
+\ input, it consumes the first character that doesn't match the
+\ predicate (the delimiter).
 
-\ Convert a counted string to a normal string. We use counted strings rarely,
-\ but they're useful in the dictionary.
-: count  ( c-addr1 -- c-addr2 u )
-  dup 1+ swap c@ ;
+\ SKIP discards input characters while they match a predicate.
 
-\ -----------------------------------------------------------------------------
-\ Dictionary search.
+\ With these, expressing PARSE-NAME -- which collects a Forth
+\ name from the input, skipping leading whitespace -- is easy.
+---
+\ Input processing
+: SOURCE  ( -- c-addr u )  'SOURCE dup @ swap cell+ @ ;
+: scan  ( pred -- c-addr u )
+  SOURCE  >IN @  /string   over >r   rot skip-while
+  2dup  1 min  +  'SOURCE @ -  >IN !   drop r> tuck - ;
+: skip  ( pred -- )
+  SOURCE  >IN @  /string             rot skip-while
+  drop            'SOURCE @ -  >IN !                  ;
+: parse-name ( -- c-addr u )
+  [: bl u<= ;] skip   [: bl u> ;] scan ;
+---
+\ With the ability to parse input, we can define the words that
+\ produce non-anonymous definitions. These will replace the
+\ bootstrap versions as they are defined.
 
-\ Compares two strings.
+\ Because this is a native-code Forth, : is the most primitive
+\ of the defining words. The others are defined in terms of it.
+\ But because : has effects on STATE, the other words need to
+\ postpone [ to switch the compiler back off.
+
+\ This dense screen is essentially the rest of the compiler
+\ back-end. It shadows the rest of the bootstrap defining words
+\ and adds new powers like VARIABLE , DOES> , and VOCABULARY .
+---
+\ Defining words, vocabularies.
+: >link  ( addr -- )  align here   swap dup @ ,  ! ;
+: :  CURRENT @ >link  parse-name s,  0 ,  ] ;
+: create    :  postpone [  [: r> ;] compile,  freeze drop ;
+: constant  :  postpone [  postpone (docon)   , ;
+: variable  create 0 , ;
+: does>  [: r> u2/ $4000 or lastxt ! ;] compile,
+         postpone r> ; immediate
+variable #user  16 #user !
+: user  create  #user @ ,  cell #user +!  does> @  U0 @ + ;
+: vocabulary   create  PATCHES >link
+                       CURRENT @ @ ,
+               does> cell+ CONTEXT ! ;
+: definitions  CONTEXT @ CURRENT ! ;
+vocabulary forth   forth definitions
+---
+\ Let's add the rest of the Forth syntax words that we can,
+\ given that we haven't implemented dictionary search. This
+\ means words that collect input without interpreting it:
+\ comments and string literals.
+---
+\ Parsing words that don't involve dictionary lookups.
+: \  SOURCE nip >IN ! ;  immediate
+: (  [: ')' <> ;] scan 2drop ;  immediate
+: S" [: '"' <> ;] scan
+     [: r> count over over + aligned  >r ;] compile,
+     s, ;  immediate
+---
+\ This is about as far as we can get without implementing
+\ dictionary search, so let's do that.
+
+\ The first step is defining how to compare two strings for
+\ equivalence. Should I break down and make word lookup be
+\ case-insensitive, this is where it would happen.
+---
+\ String comparison
 : s= ( c-addr1 u1 c-addr2 u2 -- ? )
   \ Early exit if the lengths are different.
   rot over xor if drop 2drop false exit then
@@ -437,371 +389,121 @@ $20 constant bl
     r> 1-
   repeat ( c-addr1 c-addr2 )
   2drop true ;
-
-\ Searches a wordlist for a definition with the given name. This is a
-\ variant of standard FIND, which uses a counted string for some reason.
+---
+\ Words in the dictionary are each linked into a single list.
+\ There can be multiple wordlists woven together through the
+\ dictionary. The primitive action when searching for a word
+\ is to search a single wordlist.
+---
+\ Dictionary search - within one wordlist.
 : find-in  ( c-addr u wl -- c-addr u 0 | xt flags true )
   begin          ( c-addr u lfa )
     @ dup
   while
-    >r  ( stash the LFA ) ( c-addr u )              ( R: lfa )
-    2dup                  ( c-addr u c-addr u )     ( R: lfa )
-    r@ cell+ count        ( c-addr u c-addr u c-addr u ) ( R: lfa )
-    s= if                 ( c-addr u )              ( R: lfa )
-      nip                 ( u )                     ( R: lfa )
-      r> cell+            ( u nfa )
-      1+  +  aligned      ( ffa )
+    >r  2dup  r@ cell+ count
+    s= if                 ( c-addr u )       ( R: lfa )
+      2drop r>            ( lfa )
+      cell+ count + aligned ( ffa )
       dup cell+           ( ffa cfa )
       swap @              ( cfa flags )
       true exit           ( cfa flags true )
     then    ( c-addr u ) ( R: lfa )
-    r>      ( c-addr u lfa )
-  repeat ;
+    r> repeat ;     ( c-addr u lfa )
+---
+\ This Forth uses a FIG-Forth-style vocabulary system, where
+\ there are two wordlists in scope, called CONTEXT and
+\ CURRENT. When searching the dictionary, we search CONTEXT
+\ first, then CURRENT.
 
-\ Searches CONTEXT, then CURRENT, for a definition with the given name. This is
-\ a variant of standard FIND, which uses a counted string for some reason.
+\ SFIND implements this algorithm. (It would be called FIND,
+\ but the standard includes a word called FIND that is subtly
+\ different -- one of the reasons I am not attempting ANS
+\ conformance.)
+---
+\ Dictionary search - in CONTEXT and CURRENT
 : sfind  ( c-addr u -- c-addr u 0 | xt flags true )
   CONTEXT @ find-in if true exit then
   CURRENT @ find-in ;
+---
+\ We're about to start dealing in words that search the
+\ dictionary and report errors if they can't find something.
+\ This means we need a way of reporting errors. But so far we
+\ haven't assumed there's a terminal, or defined any way of
+\ interacting with it. This makes it hard to report which word
+\ was not found.
 
-\ -----------------------------------------------------------------------------
-\ More useful Forth words.
+\ Deferred words to the rescue. We'll defer the definition of
+\ ?? until later, when we can do proper error reporting. But
+\ we can start using it immediately, since its default
+\ behavior will be to throw.
 
-: min  ( n1 n2 -- lesser )
-  2dup < if drop else nip then ;  ( TODO could be optimized )
+\ Using this, we can implement ' , and using that, we can
+\ finish the implementation of deferred words.
+---
+\ Deferred words and tick
+: defer :  [: -1 throw ;] compile,  postpone ;  ;
+: defer!  ( xt dxt -- )  swap u2/ swap ! ;
+: defer@  ( dxt -- xt )  @ 2* ;
 
-: u<= swap u< 0= ;
+defer ??
 
-: c!  ( c c-addr -- )
-  dup >r
-  1 and if  \ LSB set
-    8 lshift  \ position our bits
-    $FF       \ prepare the mask
-  else
-    $FF and   \ ensure top bits are clear
-    $FF00     \ prepare the mask
+: '  parse-name dup if sfind if  drop exit  then then ?? ;
+: [']  '  postpone literal ; immediate
+
+: is  STATE @ if  postpone [']  postpone defer!
+            else  '  defer!
+            then ;  immediate
+: action-of  STATE @ if  postpone [']  postpone defer@
+                   else  '  defer@
+                   then ;  immediate
+---
+\ We can also implement POSTPONE at this point. This is a bit
+\ tricky, because the obvious way to implement POSTPONE is in
+\ terms of POSTPONE -- but unlike with ; it doesn't call itself
+\ in tail position. So we need a way to keep the definition
+\ from recursing, and keep the bootstrap version in view.
+
+\ (This is the one case where having a smudge bit like a
+\ traditional Forth would be super handy.)
+
+\ We define a word called POSTPONE_ and then shorten its length
+\ by one character leaving POSTPONE. The underscore winds up
+\ in the unused padding after the name.
+---
+\ Postpone, the one case where a smudge bit would be nice.
+: postpone_
+  parse-name dup if
+    sfind if  ( xt flags )
+      if compile, \ immediate
+      else postpone literal postpone compile, \ normal
+      then exit
+    then
   then
-  r@ @ and or r> ! ;
-
-: c,  here c!  1 allot ;
-
-: :noname
-  align freeze ] ;
-
-\ -----------------------------------------------------------------------------
-\ Quotations (inline anonymous definitions).
-
-\ A quotation is a nameless function nested within another function.
-\ At compile time, we generate code to skip over the inlined quotation code,
-\ and push its CFA / XT. Thus at runtime it acts as an XT literal for an
-\ unfindable word.
-
-\ Runtime implementation for [:
-: ([:)
-  \ Compute the CFA of the definition from the return address, and stack it.
-  r@ cell+
-  \ Adjust the return address to skip the definition.
-  r> @ 2* >r
-  ;
-
-\ Introduces a quotation. May nest.
-: [:
-  postpone ([:)
-  0 mark>
-  ; immediate
-
-\ Ends a quotation.
-: ;]
-  postpone exit
-  >resolve
-  ; immediate
-
-\ Processes a string character-by-character with an accumulator parameter. The
-\ xt will be executed with the presumed stack effect
-\    c x -- x'
-\ Initially x is x0; after that, it is the result of the last execution. The
-\ final x is left on the stack.
-: sfoldl  ( c-addr u x0 xt -- x )
-  >r >r
-  bounds
-  begin
-    over over xor
-  while
-    dup c@ r> r@ execute >r
-    1+
-  repeat
-  2drop r> rdrop ;
-
-\ -----------------------------------------------------------------------------
-\ Basic source code input support and parsing.
-
-\ Returns the current input as a string.
-: SOURCE  ( -- c-addr u )  'SOURCE dup @ swap cell+ @ ;
-
-: /string   ( c-addr u n -- c-addr' u' )
-  >r  r@ - swap  r> + swap ;
-
-: skip-while  ( c-addr u xt -- c-addr' u' )
-  >r
-  begin
-    over c@ r@ execute
-    over and
-  while
-    1 /string
-  repeat
-  rdrop ;
-
-\ Consume source code characters while they match a predicate, plus the
-\ first character to match (if one does). Return the matched section as a
-\ string. If the end of input is reached, the string will be zero-length.
-: scan  ( pred -- c-addr u )
-  SOURCE  >IN @  /string    \ Get unconsumed tail of input.
-  over >r                   \ Stash the start address.
-  rot skip-while            \ Skip characters matching the predicate.
-  2dup  1 min  +            \ Compute new start of input, eating delim.
-  'SOURCE @ -  >IN !        \ Advance input to there.
-  drop r> tuck -            \ Compute string bounds.
-  ;
-
-\ Skip source code characters while they match a predicate.
-: skip  ( pred -- )
-  SOURCE  >IN @  /string    \ Get unconsumed tail of input.
-  rot skip-while            \ Skip characters matching the predicate.
-  drop                      \ We only care about the start address.
-  'SOURCE @ -  >IN !        \ Advance input to there.
-  ;
-
-: parse-name
-  [: bl u<= ;] skip
-  [: bl u> ;] scan ;
-
-
-\ -----------------------------------------------------------------------------
-\ Header creation and defining words.
-
-\ Encloses a string in the dictionary as a counted string.
-: s,  ( c-addr u -- )
-  dup c,        ( Length byte )
-  0 [: swap c, ;] sfoldl drop
-  align ;
-
-\ Given the head of a linked list starting at 'addr', creates a new link at
-\ HERE by comma-ing the old head into place and storing HERE as the new
-\ head. Implementation factor.
-: >link  ( addr -- )
-  align here  ( head newlink )
-  swap dup @ ,  ( newlink head )
-  ! ;
-
-\ Since Forth code is effectively equivalent to machine code on CFM, colon is
-\ the simplest of the words that introduce headers. Other words are defined
-\ in terms of it. This is unusual; CREATE is more often the shared factor.
-: :
-  CURRENT @ >link
-  \ Name
-  parse-name s,
-  \ Flags
-  0 ,
-  \ And begin compiling
-  ] ;
-  \ Note that this definition gets used immediately.
-
-: create
-  :
-  postpone [        \ Turn compiler back off
-  postpone (dovar)  \ Compile code to push address.
-  ;
-
-: constant
-  :
-  postpone [        \ Turn compiler back off.
-  postpone (docon)  \ Compile code to push following cell.
-  ,                 \ Compile constant value.
-  ;
-
-: variable create 0 , ;
-
-: does>
-  \ End the defining code with a non-tail call to (does>)
-  [:  ( R: tail-addr -- )
-      \ Patch the first instruction of the last (current) definition to contain
-      \ a call to the code after DOES> .
-      lastxt  r> u2/ $4000 or  swap !
-  ;] compile,
-  \ Control will reach this point from the call instruction at the start of the
-  \ code field. We need to reveal the parameter field address by postponing r>
-  postpone r>
-  ; immediate
-
-variable #user  8 #user !
-  \ Holds the number of user variables that have been defined.
-: user
-  create  #user @ cells ,  1 #user +!
-  does> @  U0 @ + ;
-
-: vocabulary
-  create  PATCHES >link
-          CURRENT @ @ ,
-  does> cell+ CONTEXT ! ;
-
-: definitions  CONTEXT @ CURRENT ! ;
-
-vocabulary forth
-forth definitions
-
-\ -----------------------------------------------------------------------------
-\ Semicolon. This is my favorite piece of code in the kernel, and the most
-\ heavily commented punctuation character of my career thus far.
-
-\ Recall that the Forth word ; (semicolon) has the effect of compiling in a
-\ return-from-colon-definition sequence and returning to the interpreter.
-
-\ Recall also that ; is an IMMEDIATE word (it has to be, to have those effects
-\ during compilation).
-
-\ Finally, note that BsForth never hides definitions. A definition is available
-\ for recursion without further effort, in deviation from the standard.
-
-\ Alright, that said, let's go.
-: ;
-  postpone exit
-  postpone [
-
-  \ Now we have a condundrum. How do we end this definition? We've been using a
-  \ host-emulated version of ; to end definitions 'till now. But now that a
-  \ definition exists in the target, it *immediately* shadows the emulated
-  \ version. We can't simply write ; because ; is not yet IMMEDIATE. But we can
-  \ fix that:
-  [ immediate ]
-
-  \ Because ; is now IMMEDIATE, we are going to recurse *at compile time.* We
-  \ invoke the target definition of ; to complete the target definition of ; by
-  \ performing the actions above.
-  ;
-
-\ Voila. Tying the knot in the Forth compiler.
-
-
-\ -----------------------------------------------------------------------------
-\ More useful Forth words.
-
-
+  ?? ; immediate
+8  CURRENT @ @ cell+  c!  \ fix the length
+---
+\ We're about to need division and multiplication to do numeric
+\ formatting, so this seems as good a time as any to define
+\ them.
+---
+\ 16-bit division and modulo
 : u/mod  ( num denom -- remainder quotient )
-  0 0 16
-  begin                   ( n d r q i )
-    >r                    ( n d r q ) ( R: i )
-    >r >r                 ( n d ) ( R: i q r )
+  0 0 16 begin  ( n d r q i )
+    >r >r >r              ( n d ) ( R: i q r )
     over 15 rshift        ( n d n[15] ) ( R: i q r )
     r> 2* or              ( n d 2*r+n[15] )  ( R: i q )
-    >r >r                 ( n ) ( R: i q 2*r+n[15] d )
-    2*                    ( 2*n ) ( R: i q 2*r+n[15] d )
-    r> r>                 ( 2*n d 2*r+n[15] ) ( R: i q )
-    r> 2* >r              ( 2*n d 2*r+n[15] ) ( R: i 2*q )
+    >r >r 2*              ( 2*n ) ( R: i q 2*r+n[15] d )
+    r> r> r> 2* >r        ( 2*n d 2*r+n[15] ) ( R: i 2*q )
     2dup u<= if
       over -
       r> 1 or >r
     then
-    r> r>
-    1-
-    dup 0=
-  until ( n d r q i )
-  drop >r nip nip r> ;
-
+    r> r> 1- dup 0=
+  until ( n d r q i ) drop >r nip nip r> ;
 : u/  u/mod nip ;
 : umod  u/mod drop ;
-
-.( Before terminal support, HERE is )
-here host.
-
-\ -----------------------------------------------------------------------------
-\ User-facing terminal.
-
-\ We assume there is a terminal that operates like a, well, terminal, without
-\ fancy features like online editing. We can't assume anything about its
-\ implementation, however, so we have to define terminal operations in terms
-\ of hooks to be implemented later for a specific device.
-
-\ XT storage for the key and emit vectors. This is strictly less efficient than
-\ using DEFER and should probably get changed later.
-variable 'key
-variable 'emit
-10 base !
-:noname drop ; 'emit !
-:noname 0 ; 'key !
-
-: key 'key @ execute ;
-: emit 'emit @ execute ;
-
-: space bl emit ;
-: beep 7 emit ;
-
-: cr $D emit $A emit ;
-  \ This assumes a traditional terminal and is a candidate for vectoring.
-
-: type  ( c-addr u -- )
-  0 [: swap emit ;] sfoldl drop ;
-
-\ Receive a string of at most u characters, allowing basic line editing.
-\ Returns the number of characters received, which may be zero.
-: accept  ( c-addr u -- u )
-  >r 0
-  begin ( c-addr pos ) ( R: limit )
-    key
-
-    $1F over u< if  \ Printable character
-      over r@ u< if   \ in bounds
-        dup emit  \ echo character
-        >r over over + r>  ( c-addr pos dest c )
-        swap c! 1+    ( c-addr pos' )
-        0  \ "key" for code below
-      else  \ buffer full
-        beep
-      then
-    then
-
-    3 over = if   \ ^C - abort
-      2drop 0     \ Reset buffer to zero
-      $D          \ act like a CR
-    then
-
-    8 over = if   \ Backspace
-      drop
-      dup if  \ Not at start of line
-        8 emit  space  8 emit   \ rub out character
-        1-
-      else    \ At start of line
-        beep
-      then
-      0
-    then
-
-    $D =
-  until
-  rdrop nip ;
-
-: u.
-  here 16 +   \ get a transient buffer big enough for even base 2
-  begin  ( u c-addr )
-    1- swap
-    base @ u/mod  ( c-addr rem quot )
-    >r            ( c-addr rem ) ( R: quot )
-    9 over u< 7 and + '0' +  over c!  ( c-addr ) ( R: quot )
-    r>            ( c-addr quot )
-    ?dup          ( c-addr quot quot )
-  while
-    swap          ( u' c-addr )
-  repeat
-  here 16 + over -
-  type
-  space ;
-
-: .  dup 0< if  '-' emit  negate  then u. ;
-
-\ -----------------------------------------------------------------------------
-\ Text interpreter.
-
-: ABORT true throw ;
-
+---
+\ 16-bit multiplication and #bit
 : u*
   >r 0    ( a 0 ) ( R: b )
   begin
@@ -812,191 +514,133 @@ variable 'emit
     r> u2/ >r
   repeat
   rdrop nip ;
+: #bit  1 swap lshift ;
+---
+\ Time for terminal output. This will let us resolve the word
+\ ?? we deferred earlier. We assume a vaguely ANSI-style
+\ terminal with bell support, a decision that is probably
+\ worth revisiting later.
+---
+\ Basic terminal output.
+defer emit  ( c -- )
+: space bl emit ;   : beep 7 emit ;   : cr $D emit $A emit ;
+: type  0 [: swap emit ;] sfoldl drop ;
+: u.
+  here 16 + begin  ( u c-addr )
+    1-  swap base @ u/mod  >r  ( c-addr rem ) ( R: quot )
+    9 over u< 7 and + '0' +  over c!  ( c-addr ) ( R: quot )
+    r> ?dup       ( c-addr quot | c-addr 0 )
+  while swap      ( u' c-addr )
+  repeat
+  here 16 + over - type space ;
+: . dup 0< if  '-' emit negate  then u. ;
+: ."  postpone S"  postpone type ; immediate
+\ And here's the real definition of ??
+:noname type  '?' emit cr  -13 throw ; is ??
+---
+\ Terminal input, in the form of KEY and ACCEPT.
 
+\ KEY reads a character from the console. ACCEPT is a line
+\ editor.
+---
+\ ACCEPT
+defer key
+: accept  ( c-addr u -- u )
+  >r 0 begin ( c-addr pos ) ( R: limit )
+    key
+    $1F over u< if  \ Printable character
+      over r@ u< if   \ in bounds
+        dup emit  >r over over + r>  ( c-addr pos dest c )
+        swap c! 1+ 0  ( c-addr pos' 0 )
+      else beep then then
+    3 over = if   \ ^C - abort
+      2drop 0 $D then  \ act like a CR
+    8 over = if   \ Backspace
+      drop dup if 8 emit  space  8 emit 1- else beep then
+      0 then
+    $D = until rdrop nip ;
+---
+\ Converting digits to integers. Because of the way this is
+\ used, when digit conversion fails, it throws an unknown
+\ word exception.
+---
+\ Digit to integer conversion.
 : digit  ( c -- x )
-  dup '0' - 10 u<
-  over 'A' - 25 u<
-  or 0= -13 and throw
-  '0' -
-  9 over u< 7 and -
-  base @ 1- over u< -13 and throw ;
-
-\ Converts the given string into a number, in the current base, but respecting
-\ base prefixes $ (hex) and # (decimal). Throws -13 (undefined word) if parsing
-\ fails.
+  dup '0' - 10 u<  over 'A' - 25 u<  or 0= -13 and throw
+  '0' - 9 over u< 7 and -   base @ 1- over u< -13 and throw ;
+---
+\ Generalized numeric conversion. This accepts prefixes for
+\ hex ($) and decimal (#), and character literals.
+---
+\ Number parsing.
 : number  ( c-addr u -- x )
-  3 over = if   \ string is exactly three characters, check for char literal
+  3 over = if   \ check for char literal
     over  dup c@ ''' =  swap 2 + c@ ''' =  and if
-      drop 1+ c@ exit
-    then
-  then
-  1 over u< if  \ string is at least two characters, check for prefix
+      drop 1+ c@ exit then then
+  1 over u< if  \ check for prefix
     over c@ '-' = if  \ negative
-      1 /string
-      number
-      negate exit
-    then
+      1 /string number negate exit then
     over c@ '#' - 2 u< if  \ number prefix
-      \ Note: this exploits the fact that the decimal prefix '#' and the
-      \ hex prefix '$' are adjacent numerically.
+      \ Note: this exploits the fact that the decimal prefix
+      \ '#' and the hex prefix '$' are adjacent numerically.
       base @ >r
-      over c@ '#' - 6 u* 10 + base !
-      1 /string
+      over c@ '#' - 6 u* 10 + base !  1 /string
       [ ' number ] literal catch
-      r> base !
-      throw exit
-    then
-  then
+      r> base !  throw exit then then
   0 [: base @ u*  swap digit + ;] sfoldl ;
-
-\ Reports an unknown word.
-: ??  ( c-addr u -- * )
-  type  '?' emit  cr  -13 throw ;
-
+---
+\ INTERPRET takes a buffer of text (in SOURCE ) and, well,
+\ interprets it. This is the core of the high-level source
+\ interpreter.
+---
+\ Interpreter for a buffer of text.
 : interpret
-  begin
-    parse-name
-  ?dup while
-    sfind if  \ word found
-      ( xt flags )
-      if  \ immediate
-        execute
-      else  \ normal
-        STATE @ if  \ compiling
-          compile,
-        else  \ interpreting
-          execute
-        then
+  begin parse-name ?dup while
+    sfind if ( xt flags )
+      if execute
+      else   STATE @ if compile, else execute then
       then
     else  \ word unknown
       2dup >r >r  \ save string
       [ ' number ] literal catch
-      ?dup if \ failed
-        r> r> ??
-      else
-        rdrop rdrop   \ discard saved string
-        STATE @ if  \ compile it as a literal
-          postpone literal
-        then
-        \ otherwise just leave it on the stack.
+      ?dup if r> r> ??
+      else rdrop rdrop   \ discard saved string
+           STATE @ if postpone literal then
       then
     then
-  repeat
-  drop ;
-
-\ -----------------------------------------------------------------------------
-\ Parsing words and target syntax.
-
-: '  ( "name" -- xt )
-  parse-name dup if
-    sfind if  ( xt flags )
-      drop exit
-    then
-    \ Got input, but the input was bogus.
-  then
-  ?? ;
-
-\ Line comments simply discard the rest of input.
-: \
-  SOURCE nip >IN ! ;  immediate
-
-\ Block comments look for a matching paren.
-: (
-  [: ')' <> ;] scan 2drop ;  immediate
-
-: S"
-  [: '"' <> ;] scan
-
-  [:  ( -- c-addr u )
-      \ Uses its return address to locate a string literal. Pushes the
-      \ literal onto the stack and updates the return address to skip
-      \ it.
-      r>        ( addr )
-      count     ( c-addr u )
-      over over + aligned  ( c-addr u end )
-      >r
-  ;] compile,
-  s, ;  immediate
-
-: ."
-  postpone S"
-  postpone type
-  ; immediate
-
-: postpone_
-  parse-name dup if
-    sfind if  ( xt flags )
-      if  \ immediate
-        compile,
-      else  \ normal
-        postpone literal
-        postpone compile,
-      then
-      exit
-    then
-  then
-  ?? ; immediate
-8  CURRENT @ @ cell+  c!  \ fix the length
-
-: [']  ' postpone literal ; immediate
-
-
-\ -------------------------------------------------------------------
-\ Terminal input buffer and text interpreter
-
-\ TODO the TIB should probably be in the user area.
-
+  repeat drop ;
+---
+\ QUIT wraps INTERPRET with error handling, prompt, and input
+\ source control. It also rewinds the return stack, making it
+\ a useful way to return *with the data stack contents* from
+\ some deeply nested point in a program.
+---
+\ Text interpreter loop.
 create TIB 80 allot
-
 : quit
-  0 RSP!
-  0 handler !
-  postpone [
+  0 RSP!  0 handler !  postpone [
   begin
-    80 TIB 'SOURCE 2!
-    0 >IN !
-    SOURCE accept  'SOURCE cell+ !
-    space
-    ['] interpret catch
-    ?dup if
-      true over = if
-        \ abort isn't supposed to print
-        drop
-      else 
-        . '!' emit
-      then
+    80 TIB 'SOURCE 2!  0 >IN !  SOURCE accept  'SOURCE cell+ !
+    space ['] interpret catch ?dup if
+      true over = if drop else . '!' emit then
     else
-      STATE @ 0= if
-        ." ok"
-      then
-    then
-    cr
+      STATE @ 0= if ." ok" then
+    then cr
   again ;
+---
+\ And now, the cold-boot startup routine! This sets up the user
+\ vars, prints a banner, and runs the interpreter.
 
-\ -------------------------------------------------------------------
-\ Cold start skeleton
-
-variable oncold
-variable ramtop
-
+\ To adapt this to a particular board, you must implement the
+\ deferred word oncold .
+---
+\ Cold start routine.
+defer oncold  variable ramtop
 : cold
-  \ Set up user area at end of RAM.
-  ramtop @  #user @ cells -  U0 !
-  \ Initialize user variables known to the system
-  0 handler !
-  10 base !
-  forth definitions
-
-  \ Run system cold hook, if provided.
-  oncold @ ?dup if execute then
-
-  ." bsforth | "
-  U0 @ here - u. ." bytes free | last word: "
+  ramtop @ #user @ cells - U0 !
+  0 handler !  10 base !  forth definitions
+  oncold
+  ." bsforth | " U0 @ here - u. ." bytes free | last word: "
   CURRENT @ @ cell+ count type cr
   quit ;
-
-\ Converts a bit index into a bit mask.
-: #bit  ( u -- mask )  1 swap lshift ;
-
-.( Volume 1 compiled, size:)
-here host.
+---

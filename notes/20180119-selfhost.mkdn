@@ -1,0 +1,50 @@
+Lurching toward self-hosting.
+
+At this point I have
+- A bootstrapper written in bsforth that basically works.
+- A block-formatted version of bf0.fs.
+
+I have successfully sent the former over the serial port, written the latter to
+an SD card, and run the bootstrap.
+
+To send the bootstrapper, I'm using blocktool to pack it and then unpack it raw,
+removing the block delimiters. I can send the result using minicom's Send Ascii
+feature, effectively just typing it into the console.
+
+To transfer the block-formatted bf0, I use blocktool to pack it, and then send
+it to the SD card using XMODEM and these words:
+
+    ( XMODEM block loader - first parts )
+    : xblk#  ( -- u )
+      rx! rx!  over 255 swap - <>  2 and throw  1- $FF and ;
+    : >xraddr  ( blk i -- c-addr )
+      swap over 3 rshift +  block   swap 7 and 7 lshift + ;
+    : xblk  ( blk -- blk' )
+      xblk#  dup .   2dup >xraddr  ( blk i c-addr )
+      0 >r 128 bounds begin ( blk i c-addrE c-addr ) ( R: cksum )
+        over over xor
+      while  rx!  2dup swap c!  r> + >r  1+
+      repeat 2drop  ( blk i )  ( R: checksum )
+      rx! r> $FF and <> if '?' emit  drop  $15
+                      else update  $FF = 32 and +  $06
+                      then tx ;
+    
+    ( XMODEM block loader - final parts )
+    : xrecv   ( blk -- )
+      $15 tx  \ start of transmission request
+      begin
+        rx! \ block type
+        4 over = if  drop $06 tx drop exit  then  \ EOT
+        1 <> if 1 throw then  \ otherwise we expect a block.
+        xblk
+      again ;
+
+To actually get a bootable image out of it, I need to
+
+- Block-format the Icoboard-specific code.
+- Develop a tool to extract the image from target memory space, once it's done
+  cooking.
+- Either do the hi-memory-reload trick, write it to EEPROM, or develop words to
+  reboot from SD.
+
+

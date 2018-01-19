@@ -539,15 +539,15 @@ variable kbdmod
   ['] sdinit catch drop
 
   IN io@  4 #bit and if   \ If S2 is held, boot with serial console
-    ['] tx 'emit !
-    ['] rx! 'key !
+    ['] tx is emit
+    ['] rx! is key
   else  \ otherwise, normal config
     vid
-    ['] vemit 'emit !
-    ['] kbdkey 'key !
+    ['] vemit is emit
+    ['] kbdkey is key
   then
   ei ;
-oncold !
+is oncold
 
 blkbuf ramtop !
 

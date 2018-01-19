@@ -5,11 +5,9 @@
 :noname
   uart-rx-init
   347 UARTRD io! \ Set baud rate to 115200
-
-  ['] tx 'emit !
-  ['] rx! 'key !
+  ['] tx is emit  ['] rx! is key
   ei ;
-oncold !
+is oncold
 
 $1C00 ramtop !
 
