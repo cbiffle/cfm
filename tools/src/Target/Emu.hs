@@ -102,13 +102,14 @@ instance (Monad m) => MonadTarget (EmuT m) where
     pure $ Right v
 
   tcall x = do
-    -- Prepare CPU to execute from $7FFC
-    sMS . msPC .= 0x3FFE
+    -- Prepare CPU to execute from $7FFA
+    sMS . msPC .= 0x3FFD
     sMS . msBusState .= BusData False
 
     -- Assemble there a call to the requested address, and a trap.
-    tstore 0x3FFE $ 0x4000 .|. fromIntegral x
-    tstore 0x3FFF $ 0x4000 .|. 0x3FFF
+    tstore 0x3FFD $ 0x4000 .|. fromIntegral x
+    tstore 0x3FFE 0x6000
+    tstore 0x3FFF 0x6000
 
     -- On the first transition the processor will issue a fetch.
     modify step
