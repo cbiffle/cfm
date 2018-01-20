@@ -57,9 +57,10 @@ $20 constant bl
 \ They're almost entirely from the standard, so they're light
 \ on docs.
 
-\ Basically, this isn't the fun part, so I blew past it.
+\ Basically, this isn't the fun part, so I'm getting it over
+\ with.
 ---
-\ Basic Forth words, in terms of assembly prims.
+\ Basic Forth words, in terms of assembly prims and each other.
 : tuck  ( a b -- b a b )  swap over ;
 : 2dup  over over ;                        : 2drop  drop drop ;
 : ?dup dup if dup then ;
@@ -123,6 +124,7 @@ $20 constant bl
 \ only provides cell-sized memory operations. If we want to
 \ load and store bytes, we have to implement it ourselves.
 ---
+\ Byte-sized memory access.
 : c@  ( c-addr -- c )
   dup @  swap 1 and if  8 rshift  else  $FF and  then ;
 : c!  ( c c-addr -- )
@@ -517,8 +519,10 @@ defer ??
 : #bit  1 swap lshift ;
 ---
 \ Time for terminal output. This will let us resolve the word
-\ ?? we deferred earlier. We assume a vaguely ANSI-style
-\ terminal with bell support, a decision that is probably
+\ ?? we deferred earlier, though we'll defer more words so
+\ the platform can define how to actually interact with the
+\ terminal. We assume a vaguely ANSI-style terminal with bell
+\ support, a decision that is proving awkward and is probably
 \ worth revisiting later.
 ---
 \ Basic terminal output.
