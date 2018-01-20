@@ -246,7 +246,7 @@ variable 'inside  variable 'outside
 : <>resolve> dup <@> <freeze> u2/ or swap <!> ;
 ---
 \ Bootstrap: outside definitions.
-outside: \    <\> ;     outside: ( <(> ;   outside: .  . ;
+outside: \    <\> ;     outside: ( <(> ;   outside: host.  . ;
 outside: asm, <asm,> ;  outside: , <,> ;   outside: c, <c,> ;
 outside: ]    <]> ;
 outside: : <:> ;
