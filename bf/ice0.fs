@@ -2,7 +2,7 @@
 
 \ Multi-interrupt controller
 $C000 constant IRQST  ( status / enable trigger )
-\ $E002 constant IRQEN  ( enable )
+$C002 constant IRQEN  ( enable )
 $C004 constant IRQSE  ( set enable )
 $C006 constant IRQCE  ( clear enable )
 

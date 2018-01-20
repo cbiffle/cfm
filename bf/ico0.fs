@@ -1,7 +1,7 @@
 \ vim: syntax=forth:cc=64
 \ Icoboard common definitions.
 \ Multi-interrupt controller
-$6000 constant IRQST \ $6002 constant IRQEN 
+$6000 constant IRQST   $6002 constant IRQEN 
 $6004 constant IRQSE   $6006 constant IRQCE
 15 constant irq#negedge  14 constant irq#m0
 13 constant irq#m1        9 constant irq#rxne

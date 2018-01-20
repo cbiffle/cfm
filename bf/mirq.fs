@@ -5,7 +5,7 @@
 ' IRQST drop  ' IRQSE drop  ' IRQCE drop
 \ Enable interrupts. Serves as atomic return-from-ISR when used
 \ in tail position.
-: ei  IRQST io!d ;
+: ei  IRQST io!d ;    : di  0 IRQEN io! ;
 : irq-off  ( u -- )  #bit IRQCE io! ; \ Disable IRQ by index.
 : irq-on   ( u -- )  #bit IRQSE io! ; \ Enable IRQ by index.
 ---
