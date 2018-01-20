@@ -346,12 +346,12 @@ emuElse = do
 
 emuPostpone :: (MonadTarget m) => ForthT m ()
 emuPostpone = do
-  ccxt <- tick "compile,"
   n <- parseName
   mdef <- find n
   case mdef of
     Nothing -> peekString n >>= throwError . UnknownWord
     Just (xt, 0) -> do
+      ccxt <- tick "compile,"
       literal xt
       compileComma ccxt
     Just (xt, _) -> compileComma xt
