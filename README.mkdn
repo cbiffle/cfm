@@ -21,5 +21,7 @@ More reading:
 - [The interrupt model](doc/interrupts.mkdn)
 - [The Icoboard demo](doc/icoboard.mkdn)
 - [The Icestick demo](doc/icestick.mkdn)
+- [Self-hosting](doc/self-hosting.mkdn): how to recompile BsForth from within
+  BsForth, without using a separate computer.
 
 [Clash]: www.clash-lang.org

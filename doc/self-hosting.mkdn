@@ -1,0 +1,59 @@
+BsForth Self-Hosting
+====================
+
+> Note: this reflects the state of the system on 2018-01-20. If you want to
+> check out code that behaves the way this document describes, I suggest
+> checking out the commit where this doc was last modified.
+
+On the [Icoboard](icoboard.mkdn) with an SD card, BsForth can recompile itself.
+You can make changes at any level of the BsForth stack, produce a new system
+image, and reboot into it, all without needing a separate computer. (Though
+you'll want to have one handy for when you bork your Flash.)
+
+The process is a little labor intensive at the moment. Here it is.
+
+
+Desktop Preparations
+--------------------
+
+First, you'll need to get BsForth running on CFM on the Icoboard, as described
+in the [Icoboard directions](icoboard.mkdn).
+
+You will also need an SD card. Currently it must be 2GiB or smaller. It doesn't
+matter how *much* smaller -- we'll only use about 300 kiB. I use an old 32 MiB
+card I found.
+
+Next, we'll need to convert some of the BsForth sources into packed Forth block
+format, and write them onto an SD card. I'll assume your SD card is `/dev/sdg`
+here. **Note that this will destroy whatever data is currently on the SD card.**
+
+    $ make build/bf-ico.fblocks build/meta.fblocks
+    $ dd if=/dev/zero of=/dev/sdg bs=1024 count=300
+    $ dd if=build/meta.fblocks of=/dev/sdg bs=1024
+    $ dd if=build/bf-ico.fblocks of=/dev/sdg bs=1024 seek=99
+    $ sync  # for good measure
+
+Your SD card now contains the BsForth bootstrapper (Forth version) starting at
+block 1 (physical block 0) and the BsForth sources corresponding to your
+checkout starting at block 100 (physical block 99).
+
+
+On the CFM
+----------
+
+Insert the SD card.
+
+At the BsForth prompt, type the following to load the bootstrapper:
+
+    1 25 thru
+
+This should take around two seconds, and respond with `ok`. Now:
+
+    begin-bootstrap  100 199 <thru>  end-bootstrap
+
+This should list the blocks as they are consumed until finally printing the
+number of bytes used in the target, after about five seconds.
+
+At this point you could test the system by running
+  
+    reboot-into
