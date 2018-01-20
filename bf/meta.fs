@@ -224,6 +224,7 @@ variable 'inside  variable 'outside
 \ Bootstrap: entry point
 : begin-bootstrap ( -- )
   ." starting" cr
+  0 begin cell- $DEAD over <!>  ?dup 0= until
   tgt-reset  tgt-init-vars ;
 : <thru>
   1+ tgt-eblock !  tgt-block ! <quit> ;
