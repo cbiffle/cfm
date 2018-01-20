@@ -268,5 +268,10 @@ inside: postpone
 inside: if $2000 <mark>> ;   inside: then <>resolve> ;
 inside: else 0 <mark>> swap <>resolve> ;
 ---
-remarker clear-target
+: reboot-into
+  8 begin  1-  $C002 io!d $C006 io!d  ?dup 0= until
+  di  $C000 io!d
+  8 begin  1-  $C002 io!d  8 over + $C004 io!  ?dup 0= until
+  0 >r $C000 io!d ;
+remarker bootstrap-loaded
 ---
