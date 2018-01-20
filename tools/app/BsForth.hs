@@ -151,6 +151,7 @@ data UVar = HANDLER
           | BASE
           | CURRENT
           | CONTEXT
+          | BLK
           deriving (Eq, Show, Enum, Bounded)
 
 instance Var UVar where
@@ -200,6 +201,7 @@ initializeVars = do
                        , (BASE, 10)
                        , (CURRENT, sysaddr RootWordlist)
                        , (CONTEXT, sysaddr RootWordlist)
+                       , (BLK, 0)
                        ]
 
 ----------------

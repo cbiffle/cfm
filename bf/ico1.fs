@@ -170,12 +170,12 @@ variable blkall
 \ Loading source code from blocks.
 : load  ( i*x u -- j*x )
   \ Save source state.
-  blk @ >r   SOURCE >r >r   >IN @ >r
+  BLK @ >r   SOURCE >r >r   >IN @ >r
   \ Set up input to read from the block.
-  dup blk !   1024 swap block 'SOURCE 2!  0 >IN !
+  dup BLK !   1024 swap block 'SOURCE 2!  0 >IN !
   ['] interpret catch
   \ Whether that succeeded or failed, restore the input spec.
-  r> >IN !  r> r> swap 'SOURCE 2!  r> dup blk ! ( ex old-blk )
+  r> >IN !  r> r> swap 'SOURCE 2!  r> dup BLK ! ( ex old-blk )
   \ If we were loading from a block before LOAD, the address is
   \ likely wrong. Update it.
   ?dup if  block 'SOURCE !  then

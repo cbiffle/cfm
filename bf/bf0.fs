@@ -364,7 +364,9 @@ vocabulary forth   forth definitions
 \ comments and string literals.
 ---
 \ Parsing words that don't involve dictionary lookups.
-: \  SOURCE nip >IN ! ;  immediate
+: \  BLK @ if  >IN @ 63 + 63 invert and >IN !
+     else SOURCE nip >IN !
+     then ;  immediate
 : (  [: ')' <> ;] scan 2drop ;  immediate
 : S" [: '"' <> ;] scan
      [: r> count over over + aligned  >r ;] compile,

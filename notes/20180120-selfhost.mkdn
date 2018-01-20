@@ -1,0 +1,45 @@
+Now all the sources are reformatted to be block-compatible. I should be able to
+bootstrap in-system with the exact same sources I use on my desktop.
+
+Only one way to find out...
+
+
+I've added some build rules to support this.
+
+    make build/bf-ico.fblocks
+
+will pack and concatenate the files required for the Icoboard.
+
+    make build/meta.fblocks
+
+will similarly pack the bootstrapper.
+
+These can then be sent over using the xmodem block receive words from my notes
+yesterday. I have loaded the bsforth sources in blocks 200 - 295 (inclusive) and
+the bootstrapper into blocks 100 - 124 (inclusive).
+
+Loading the bootstrapper with
+
+    100 124 thru
+
+takes about two seconds to an ok prompt.
+
+Let's compile the system!
+
+    begin-bootstrap
+    200 295 <thru>
+    end-bootstrap
+
+Hm. Takes about four seconds, generates the output I'd expect, but reports a
+final HERE of 2726. Which seems quite suspiciously low. By contrast, the desktop
+bootstrapper eating the same sources produces a 7832-byte file.
+
+2726 is the HERE value at the end of block 232, which is the parsing words.
+
+...the comment words. They are not block-aware. How does this work on the
+desktop?
+
+Ahhh, the desktop is doing per-line transfer, while the self-hosted compiler is
+doing blocks. Of course.
+
+
