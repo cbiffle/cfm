@@ -42,4 +42,85 @@ desktop?
 Ahhh, the desktop is doing per-line transfer, while the self-hosted compiler is
 doing blocks. Of course.
 
+Downloading fixed sources, now in blocks 200 - 294 inclusive.
 
+(Hm, xmodem transfers are fairly slow. I should figure out why. I bet it's the
+SD interface.)
+
+
+Loading the bootstrapper:
+
+    100 124 thru
+
+1.5 - 2 seconds still.
+
+Bootstrapping the system:
+
+    begin-bootstrap
+    200 294 <thru>
+    end-bootstrap
+
+~4 seconds. HERE is 7806. Smaller than the code produced on my desktop --
+curious. OH! It's because of my fixes to the comments word. The output is
+exactly the same size as my desktop! Yay!
+
+...now how do I try it?
+
+If I can get the image out to my desktop, I can send it back using my existing
+high-memory reload commands.
+
+But that seems silly.
+
+It's already in physical memory. All I really need to do is switch MMU map 0 to
+match map 1. Carefully. I'm working in a fairly old bsforth, whatever happens to
+be in SPI flash on the icoboard right now, so I can't assume I have modern
+conveniences like DI.
+
+    : go
+      \ Reset map 1 to match map 0.
+      8 begin  1-  $C002 io!d  $C006 io!d  ?dup 0= until
+      0 $6002 io! \ because interrupts right now would be very unfortunate.
+      $C000 io!d  \ switch into map 1
+      \ From map 1, prepare map 0.
+      8 begin  1-  $C002 io!d  8 over + $C004 io!  ?dup 0= until
+      \ Call the reset vector in map 0.
+      0 >r $C000 io!d ;
+
+Well, that didn't work. It appears to have rebooted my base system, with the
+bootstrapper vocabulary intact, in map 0.
+
+Reformulating: from cold boot, where it says 56814 free (old build):
+
+    100 124 thru begin-bootstrap 200 294 <thru> end-bootstrap
+    : reset-map1 8 begin 1- $C002 io!d $C006 io!d ?dup 0= until ;
+    reset-map1
+    : go
+      0 $6002 io!
+      $C000 io!d
+      8 begin 1- $C002 io!d 8 over + $C004 io! ?dup 0= until
+      0 >r $C000 io!d ;
+    go
+
+I am now in a system with 56674 bytes free, where the last word is empty, and
+  
+  $C002 io@ . $C004 io@ .
+
+shows me that page 0 of map 0 is physical page 8. It worked!
+
+(I assume that my first crack failed due to simple transcription error, since
+I'm typing this stuff on my awful PS/2 keyboard.)
+
+
+So, using the SPI flash interaction words I've saved on SD (see notes from
+2018-01-06), I ought to be able to make this image persist with
+
+    11 12 thru
+    save
+
+Yup! I now have an image compiled entirely on-board burned into SPI flash and
+booting.
+
+
+Heh, and I have a bug. Forgot to clear BLK. So the system comes up convinced
+it's loading from a block, and things *mostly* work except when they don't.
+Fixed!

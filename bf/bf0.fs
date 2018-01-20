@@ -624,7 +624,7 @@ defer key
 \ Text interpreter loop.
 create TIB 80 allot
 : quit
-  0 RSP!  0 handler !  postpone [
+  0 RSP!  0 handler !  postpone [  0 BLK !
   begin
     80 TIB 'SOURCE 2!  0 >IN !  SOURCE accept  'SOURCE cell+ !
     space ['] interpret catch ?dup if
@@ -644,7 +644,7 @@ create TIB 80 allot
 defer oncold  variable ramtop
 : cold
   ramtop @ #user @ cells - U0 !
-  0 handler !  10 base !  forth definitions
+  0 handler !  10 base !  forth definitions  0 BLK !
   oncold
   ." bsforth | " U0 @ here - u. ." bytes free | last word: "
   CURRENT @ @ cell+ count type cr

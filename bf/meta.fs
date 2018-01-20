@@ -19,7 +19,7 @@ variable tgt-find-xt
   0 tgt-asm-xt ! 0 tgt-compile-xt ! 0 tgt-docon-xt !
   0 tgt-catch-xt ! 0 tgt-find-xt !
   8 begin
-    1-  $C002 io!d  dup tgt-base-page @ + $C006 io!  ?dup 0=
+    1-  $C002 io!d  tgt-base-page @ over + $C006 io!  ?dup 0=
   until ;
 ---
 \ Bootstrap: target memory access.

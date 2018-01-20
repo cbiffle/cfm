@@ -29,6 +29,18 @@ build/bf-ico.fs: bf/bf0.fs bf/bf1.fs \
 	mkdir -p build
 	cat $^ > $@
 
+build/%.fblocks: bf/%.fs
+	mkdir -p build
+	stack --silent setup && \
+	  stack --silent build && \
+	  stack --silent exec blocktool pack $< $@
+
+build/bf-ico.fblocks: build/bf0.fblocks build/bf1.fblocks \
+                 build/ico0.fblocks build/mirq.fblocks build/uart.fblocks \
+		 build/ico1.fblocks
+	mkdir -p build
+	cat $^ > $@
+
 build/bf-%.hex: build/bf-%.fs
 	mkdir -p build
 	stack --silent setup && \
