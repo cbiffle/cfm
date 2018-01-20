@@ -223,7 +223,6 @@ outside =
   , ("]", emuRBrack)
   , ("constant", emuConstant)
   , ("variable", emuVariable)
-  , ("'", emuTick)
   , ("host.", emuHostDot)
 
   , ("<TARGET-CATCH>", targetCatch)
@@ -286,14 +285,6 @@ emuVariable = do
   createCommon
   compileComma dovar
   comma 0
-
-emuTick :: (MonadTarget m) => ForthT m ()
-emuTick = do
-  ns <- parseName
-  mdef <- find ns
-  case mdef of
-    Nothing -> peekString ns >>= throwError . UnknownWord
-    Just (xt, _) -> push xt
 
 createCommon :: (MonadTarget m) => ForthT m ()
 createCommon = do
