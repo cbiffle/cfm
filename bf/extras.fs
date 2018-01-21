@@ -57,7 +57,7 @@
 \ Reloader: copy an image from hi to lo memory and reboot.  1/1
 here  $3B00 DP ! ]
 $3B00 begin 2 - dup $4000 + @ swap !a dup 0 = until >r ; DP !
-: reload $3B00 >r ;
+: reload di $3B00 >r ;
 
 ( Note: $3B00 is toward the top of branch range )
 ---
