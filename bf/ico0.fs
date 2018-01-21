@@ -23,6 +23,10 @@ $A004 constant UARTTX   $A006 constant UARTRX
 \ Timer-counter.
 $4000 constant TIMV    $4002 constant TIMF
 $4004 constant TIMM0   $4006 constant TIMM1
+\ MMU.
+$C000 constant MMUCS   $C002 constant MMUMP
+$C004 constant MMUM0   $C006 constant MMUM1
+$C008 constant MMUACT  $C00A constant MMUIRQ
 \ Output pin mapping.
 : outpin   create #bit ,
            does> @ swap if OUTSET else OUTCLR then io! ;
