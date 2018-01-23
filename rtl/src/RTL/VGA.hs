@@ -70,7 +70,7 @@ chargen ioreq = ( resp
     (charWr, glyphWr) = unbundle $ ramsplit <$> register def wrth
 
     -- Past the character memory we are delayed one cycle.
-    achar' = blockRamFilePow2 @_ @_ @11 @16 "random-2k.readmemb"
+    achar' = blockRamFilePow2 @_ @_ @11 @16 "rtl/syn/random-2k.readmemb"
              (unpack <$> charAddr)
              (fmap (second truncateB) <$> charWr)
     (foreI', backI', char') = ( slice d15 d12 <$> achar'
@@ -86,7 +86,7 @@ chargen ioreq = ( resp
     cursor' = register False cursor
 
     -- Past the glyph memory we're delayed another cycle.
-    gslice'' = blockRamFilePow2 @_ @_ @11 @8 "font-8x16.readmemb"
+    gslice'' = blockRamFilePow2 @_ @_ @11 @8 "rtl/syn/font-8x16.readmemb"
                (unpack <$> charf')
                (fmap (second truncateB) <$> glyphWr)
     pxlAddr'' = register def pxlAddr'

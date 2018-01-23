@@ -1,7 +1,7 @@
 The Icestick Demo
 =================
 
-> Note: this reflects the state of the demo on 2018-01-11. If you want to check
+> Note: this reflects the state of the demo on 2018-01-22. If you want to check
 > out code that behaves the way this document describes, I suggest checking out
 > the commit where this doc was last modified.
 
@@ -38,7 +38,7 @@ easier to see with the commands above.)
 
 Plug in your Icestick and run
 
-    $ make program-icestick
+    $ make -j program-icestick
 
 This should run synthesis, bootstrap the Forth environment, and flash the
 bitstream onto the Icestick.

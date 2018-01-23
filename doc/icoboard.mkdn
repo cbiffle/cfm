@@ -1,7 +1,7 @@
 The Icoboard Demo
 =================
 
-> Note: this reflects the state of the demo on 2018-01-10. If you want to check
+> Note: this reflects the state of the demo on 2018-01-22. If you want to check
 > out code that behaves the way this document describes, I suggest checking out
 > the commit where this doc was last modified.
 
@@ -56,7 +56,7 @@ easier to see with the commands above.)
 
 Now, run synthesis:
 
-    $ make bits-ico
+    $ make -j all-ico
 
 Connect your Icoboard (I have only tested it using the USB base board).
 
@@ -66,13 +66,12 @@ Write the Forth boot image into SPI flash:
 
 Now send the circuit and bootloader bitstream to the FPGA:
 
-    $ make program-ico
+    $ make program-ico-fpga
 
 The system should boot into Forth. If you want to flash the bitstream, so that
-it survives power cycles, I haven't automated it in the Makefile at the moment.
-Run:
+it survives power cycles:
 
-    $ icoprog -f < build/ico-prog.bin
+    $ make program-ico-fpga-flash
 
 
 Easily upload a new Forth image

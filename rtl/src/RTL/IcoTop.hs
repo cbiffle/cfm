@@ -115,4 +115,4 @@ topEntity :: Clock System 'Source
              , Signal System Cell  -- SRAM data
              , Signal System Bit
              )
-topEntity c r = withClockReset c r $ system "random-256.readmemb"
+topEntity c r = withClockReset c r $ system "rtl/syn/random-256.readmemb"
