@@ -135,7 +135,6 @@ ICE_RTL_SOURCES=\
 
 ICE_BF_SOURCES=\
   bf/bf0.fs \
-  bf/bf1.fs \
   bf/ice0.fs \
   bf/mirq.fs \
   bf/uart.fs \
