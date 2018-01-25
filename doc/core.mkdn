@@ -129,7 +129,7 @@ address*, pointing into the lower 8 kiW / 16 kiB of the address space.
 
 ### ALU
 
-    15   13                          0
+    15   13                                 0
     +------+--+--------+--+--+--+--+----+----+
     |0 1 1 |RP| Tmux   |TN|TR|NM|IO|Radj|Dadj|
     +------+--+--------+--+--+--+--+----+----+
