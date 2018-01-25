@@ -272,9 +272,8 @@ $20 constant bl
 ---
 \ Anonymous definitions.
 : :noname  align freeze ] ;
-: (doquot)  r@ cell+  r> @ 2* >r ;
-: [:  postpone (doquot)  0 mark> ;  immediate
-: ;]  postpone exit      >resolve ;  immediate
+: [:  $4000 mark> ;  immediate
+: ;]  postpone exit   >resolve  postpone r> ;  immediate
 ---
 \ Most string processing in this Forth is functional: it chews
 \ on strings using user-provided words. We can now start
