@@ -42,9 +42,7 @@
   begin
     @ dup
   while
-    2 over +  \ compute address of name field
-    count     \ convert to counted string
-    type space
+    dup name>string type space
   repeat
   drop ;
 ---

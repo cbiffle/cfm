@@ -143,8 +143,9 @@ $20 constant bl
 \ bootstrap emulated versions instantly upon definition.
 ---
 \ Immediate; State; Return Stack; things using it.
+: name>string  cell+ count ;
 : lastxt  ( -- xt )  \ Gives xt of last word on CURRENT.
-  CURRENT @ @ cell+  ( nfa )  count + aligned  ( ffa )  cell+ ;
+  CURRENT @ @ name>string + aligned  ( ffa )  cell+ ;
 : immediate  true  lastxt cell-  ! ;
 : [ 0 STATE ! ;  immediate       : ] 1 STATE ! ;
 
@@ -646,6 +647,6 @@ defer oncold  variable ramtop
   0 handler !  10 base !  forth definitions  0 BLK !
   oncold
   ." bsforth | " U0 @ here - u. ." bytes free | last word: "
-  CURRENT @ @ cell+ count type cr
+  CURRENT @ @ name>string type cr
   quit ;
 ---
