@@ -150,7 +150,7 @@ $20 constant bl
 
 : r> $6B8D asm, ; immediate    : >r $6147 asm, ; immediate
 : r@ $6B81 asm, ; immediate    : rdrop $600C asm, ; immediate
-: exit $700C asm, ; immediate
+: exit $700C asm, ; immediate  : >r> $6B40 asm, ; immediate
 
 : execute >r ;      : rot  >r swap r> swap ;
 ---
@@ -227,7 +227,7 @@ $20 constant bl
   r> handler !  rdrop   0 ;
 : throw  ( i*x n -- i*x | j*x n )
   ?dup if
-    handler @ RSP!      r> handler !    r> swap >r
+    handler @ RSP!      r> handler !    >r>
     SP! drop r>
   then ;
 ---
