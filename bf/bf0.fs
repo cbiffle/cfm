@@ -166,7 +166,7 @@ $20 constant bl
 ---
 \ Basic control structures, conditionals, simple loops
 \ 'template' is a branch instruction with zero operand.
-: mark>  ( template -- orig )  freeze swap asm, ;
+: mark>  ( template -- orig )  here swap , ;
 : >resolve  ( orig -- )  dup @  freeze u2/ or  swap ! ;
   \ > here indicates forward control flow edges.
 \ $2000 = 0branch, $0000 = unconditional branch
