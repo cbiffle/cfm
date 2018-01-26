@@ -102,14 +102,14 @@ variable sdcyc  50 sdcyc !
 ---
 \ SD card - CRC16
 : sdcrc16  ( c-addr u -- crc )
-  0   \ initial CRC seed
+  0 rot rot   \ initial CRC seed
   [: \ Swap bytes
-    dup 8 lshift swap 8 rshift or
+    swap dup 8 lshift swap 8 rshift or
     xor
     $FF over and 4 rshift xor
     dup 12 lshift xor
     $FF over and 5 lshift xor
-  ;] sfoldl ;
+  ;] s-each ;
 ---
 \ SD card - sector read
 : sdrd ( dest seclo sechi -- )
@@ -126,12 +126,7 @@ variable sdcyc  50 sdcyc !
 : sdwr ( src seclo sechi -- )
   24 sdcmd sdr1 throw   sdidle  $FE sdx drop
   dup 512 sdcrc16 >r
-  512 bounds begin
-    over over xor
-  while
-    dup c@ sdx drop
-    1+
-  repeat 2drop
+  512 bounds [: sdx drop ;] s-each
   r> dup 8 rshift sdx drop sdx drop
   begin $FF sdx dup $FF = while drop repeat
   $1F and   begin $FF sdx $FF = until

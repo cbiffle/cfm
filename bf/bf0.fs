@@ -319,10 +319,9 @@ $20 constant bl
 \ on strings using user-provided words. We can now start
 \ implementing it.
 
-\ SFOLDL applies a two-argument word to each character of a
-\ string, and the result of the last application. This may be
-\ easiest to understand by looking at uses below. (The use in
-\ S, is arguably an abuse, so keep reading.)
+\ S-EACH applies a word to each character of a string. The
+\ word should have the stack effect ( i*x c -- j*x ) -- that
+\ is, it can access the stack below.
 
 \ SKIP-WHILE drops characters from the front of a string while
 \ a predicate -- a word with shape (c -- ?) -- returns true.
@@ -330,18 +329,15 @@ $20 constant bl
 \ String processing
 : /string   ( c-addr u n -- c-addr' u' )
   >r  r@ - swap  r> + swap ;
-: sfoldl  ( c-addr u x0 xt -- x )
-  >r >r bounds begin
-    over over xor
-  while
-    dup c@ r> r@ execute >r 1+
-  repeat 2drop r> rdrop ;
+: s-each  ( i*x c-addr u xt -- j*x )
+  rot rot bounds ?do
+    i c@ swap dup >r execute r>
+  loop drop ;
 : skip-while  ( c-addr u xt -- c-addr' u' )
   >r begin  over c@ r@ execute over and
      while 1 /string
      repeat rdrop ;
-: s,  ( c-addr u -- ) dup c,  0 [: swap c, ;] sfoldl drop
-  align ;
+: s,  ( c-addr u -- ) dup c,  [: c, ;] s-each  align ;
 ---
 \ Time to apply our string manipulation to the input source, so
 \ we can start processing some code. We break input into tokens
@@ -576,7 +572,7 @@ defer ??
 \ Basic terminal output.
 defer emit  ( c -- )
 : space bl emit ;   : beep 7 emit ;   : cr $D emit $A emit ;
-: type  0 [: swap emit ;] sfoldl drop ;
+: type  ['] emit s-each ;
 : u.
   here 16 + begin  ( u c-addr )
     1-  swap base @ u/mod  >r  ( c-addr rem ) ( R: quot )
@@ -639,7 +635,7 @@ defer key
       over c@ '#' - 6 u* 10 + base !  1 /string
       [ ' number ] literal catch
       r> base !  throw exit then then
-  0 [: base @ u*  swap digit + ;] sfoldl ;
+  0 rot rot [: digit swap  base @ u*  + ;] s-each ;
 ---
 \ INTERPRET takes a buffer of text (in SOURCE ) and, well,
 \ interprets it. This is the core of the high-level source
