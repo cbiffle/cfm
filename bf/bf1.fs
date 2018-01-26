@@ -21,28 +21,17 @@
 ---
 \ REMARKER
 : remarker  ( "name" -- )
-  create  CURRENT @ , CONTEXT @ , PATCHES @ dup ,
-    begin ?dup while   dup cell+ @ ,  @ repeat
+  create  CURRENT @ , CONTEXT @ , PATCHES @ ,
+    PATCHES [: cell+ @ , false ;] traverse drop
     here cell+ ,        \ Dictionary pointer to restore.
   does>
     dup @ CURRENT !  cell+
     dup @ CONTEXT !  cell+
-    dup @ dup PATCHES !  \ Restore PATCHES keeping a copy
-    swap cell+ swap
-    begin ?dup while      \ For each patch location,
-      ( dict-addr link-addr )
-      over @ over cell+ !     \ restore its value,
-      swap cell+ swap @
-    repeat
+    dup @ PATCHES !  cell+
+    PATCHES [: over @ swap cell+ ! cell+ false ;] traverse drop
     @ DP ! ;          \ restore DP, finally consuming our addr
 ---
 \ WORDS
 : words
-  CURRENT @
-  begin
-    @ dup
-  while
-    dup name>string type space
-  repeat
-  drop ;
+  CURRENT @ [: name>string type space false ;] traverse drop ;
 ---

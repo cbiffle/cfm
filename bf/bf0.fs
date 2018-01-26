@@ -394,6 +394,21 @@ vocabulary forth   forth definitions
   repeat ( c-addr1 c-addr2 )
   2drop true ;
 ---
+\ This Forth uses singly-linked lists extensively, most visibly
+\ in the wordlists that make up the dictionary. The word
+\ traverse provides a general way of processing a linked list,
+\ with early-exit.
+: traverse  ( i*x head xt -- j*x ? )
+  >r begin   ( i*x head|link-addr ) ( R: xt)
+    @ ?dup
+  while ( i*x link-addr ) ( R: xt )
+    r@ over >r  ( i*x link-addr xt ) ( R: xt link-addr )
+    execute
+    ?dup if   rdrop rdrop exit   else r> then
+  repeat
+  ( i*x ) ( R: xt )
+  rdrop false ;
+---
 \ Words in the dictionary are each linked into a single list.
 \ There can be multiple wordlists woven together through the
 \ dictionary. The primitive action when searching for a word
@@ -401,18 +416,11 @@ vocabulary forth   forth definitions
 ---
 \ Dictionary search - within one wordlist.
 : find-in  ( c-addr u wl -- c-addr u 0 | xt flags true )
-  begin          ( c-addr u lfa )
-    @ dup
-  while
-    >r  2dup  r@ cell+ count
-    s= if                 ( c-addr u )       ( R: lfa )
-      2drop r>            ( lfa )
-      cell+ count + aligned ( ffa )
-      dup cell+           ( ffa cfa )
-      swap @              ( cfa flags )
-      true exit           ( cfa flags true )
-    then    ( c-addr u ) ( R: lfa )
-    r> repeat ;     ( c-addr u lfa )
+  [: >r  2dup  r@ name>string s= if
+    2drop r> name>string + aligned dup cell+ swap @ true
+  else
+    rdrop false
+  then ;] traverse ;
 ---
 \ This Forth uses a FIG-Forth-style vocabulary system, where
 \ there are two wordlists in scope, called CONTEXT and

@@ -1,0 +1,67 @@
+I feel like I could extract some words for dealing with linked lists. The
+SwiftForth-inspired `>LINK` has been valuable (though I grow uncomfortable with
+its name, which ought to include a comma imho).
+
+The standard suggests `TRAVERSE-WORDLIST`. It's specific to wordlists, which
+makes sense, since the standard (1) doesn't provide any other way to traverse a
+wordlist, and (2) doesn't specify that wordlists are constructed from linked
+lists.
+
+But it also seems wrong.
+
+- There's no easy way to distinguish early termination from running off the end
+  of the list.
+- The parameters are in the wrong order. (The xt that specifies the traversal
+  action should clearly be the last parameter, since it will be partially
+  applied the most often.)
+
+In particular, try implementing `FIND` or a `FIND`-like word using
+`TRAVERSE-WORDLIST`. It requires some hoop-jumping.
+
+(Also, the sense of the continue-flag returned from the xt seemed backwards.)
+
+It seems like this formulation makes more sense:
+
+```forth
+: traverse  ( i*x head xt -- j*x ? )
+  >r  ( i*x head ) ( R: xt )
+  begin   ( i*x head|link-addr ) ( R: xt)
+    @ ?dup
+  while ( i*x link-addr ) ( R: xt )
+    r@ over >r  ( i*x link-addr xt ) ( R: xt link-addr )
+    execute
+    ?dup if rdrop rdrop exit
+    else r>
+    then
+  repeat
+  ( i*x ) ( R: xt )
+  rdrop false ;
+```
+- The traversal word must return false to continue, true to early-exit.
+- The final such flag is left on the stack for the caller to inspect.
+- The order of the parameters is fixed.
+
+With that I can implement a version of bsforth's `find-in` (which I've
+simplified to return name tokens after gforth, because I think I like that
+approach):
+
+```forth
+: name>string  cell+ count ;
+
+: find-in'  ( c-addr u wl -- c-addr u 0 | nt true )
+  [:  ( c-addr u lfa -- c-addr u 0 | nt true )
+    >r  2dup  r@ name>string s= if   ( c-addr u ) ( R: lfa )
+      2drop r> true
+    else
+      rdrop false
+    then
+  ;] traverse ;
+```
+
+And WORDS is real easy:
+
+```forth
+: words  CURRENT @ [: name>string type space false ;] traverse drop ;
+```
+
+
