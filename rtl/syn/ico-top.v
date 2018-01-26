@@ -5,7 +5,7 @@ module top(
   output TX,
   input RX,
   output cts_n,
-  output [3:0] led,
+  output [2:0] led,
   output vga_hsync,
   output vga_vsync,
   output [4:3] vga_r,
@@ -139,7 +139,7 @@ wire ext_reset = S1;
           .uart_rx(RX_),
         );
 
-        assign led = out1[8:5];
+        assign led = out1[7:5];
         assign cts_n = out1[1];
         assign {sd_cs_n, sd_mosi, sd_sck} = out1[4:2];
         assign {spi_flash_cs, spi_flash_mosi, spi_flash_sclk} = out1[11:9];
