@@ -95,6 +95,7 @@ $20 constant bl
 : freeze  ( -- addr )  here FREEZEP !d ;
 : raw,  ( x -- )  here ! cell allot ;
 : , raw, freeze drop ;    : -, -1 cells allot ;
+: >link  ( addr -- )  align here   swap dup @ ,  ! ;
 ---
 \ The low-level assembler is responsible for taking single
 \ machine instructions and appending them to the definition at
@@ -343,7 +344,6 @@ $20 constant bl
 \ and adds new powers like VARIABLE , DOES> , and VOCABULARY .
 ---
 \ Defining words, vocabularies.
-: >link  ( addr -- )  align here   swap dup @ ,  ! ;
 : :  CURRENT @ >link  parse-name s,  0 ,  ] ;
 : create    :  postpone [  [: r> ;] compile,  freeze drop ;
 : constant  :  postpone [  postpone (docon)   , ;
