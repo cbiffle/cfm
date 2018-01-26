@@ -48,6 +48,7 @@ $20 constant bl
 : 'SOURCE U0 @  4 + ;    : >IN     U0 @  8 + ;
 : base    U0 @ 10 + ;    : CURRENT U0 @ 12 + ;
 : CONTEXT U0 @ 14 + ;    : BLK     U0 @ 16 + ;
+: LEAVES  U0 @ 18 + ;
 ---
 \ And now, a grab-bag of basic Forth words. These are defined
 \ largely in terms of the primitives above, but also in terms
@@ -277,6 +278,43 @@ $20 constant bl
 : [:  $4000 mark> ;  immediate
 : ;]  postpone exit   >resolve  postpone r> ;  immediate
 ---
+\ We can exploit quotations to implement DO LOOPs with a
+\ minimum of visible implementation factors (or "clutter").
+
+\ This implementation is designed for size first and speed
+\ second, because this machine is fairly fast but small. It
+\ generates BEGIN UNTIL loops supplemented with calls to
+\ anonymous loop setup and increment words.
+
+\ The ?DO variant wraps the whole shebang in a test and IF
+\ THEN. DO and ?DO are implemented by common code; they pass
+\ a flag on the compilation-time stack to be consumed by +LOOP
+\ telling whether a THEN is required.
+
+\ LOOP is compiled as 1 +LOOP for simplicity.
+---
+\ DO LOOP - basics
+: (do)
+  [: over >r> >r  swap -  >r> >r ;] compile,
+  LEAVES @    0 LEAVES !
+  postpone begin ;
+: ?do  $6581 asm, ( over over xor )  postpone if  true (do)
+  ; immediate
+: do false (do) ; immediate
+: +loop
+  [: r> r> rot + 0 over = rot rot >r >r ;] compile,
+  postpone until
+  LEAVES @  begin ?dup while dup @ swap here u2/ swap ! repeat
+  LEAVES !
+  $6008 asm,  \ that's 2rdrop
+  if  postpone then  then ; immediate
+: loop  1  postpone literal  postpone +loop ; immediate
+---
+\ DO LOOP - extras
+: i  r> r> r@ over >r + swap >r ;
+: unloop  $6008 asm,  ( 2rdrop again ) ; immediate
+: leave  LEAVES >link ; immediate
+---
 \ Most string processing in this Forth is functional: it chews
 \ on strings using user-provided words. We can now start
 \ implementing it.
@@ -350,7 +388,7 @@ $20 constant bl
 : variable  create 0 , ;
 : does>  [: r> u2/ $4000 or lastxt ! ;] compile,
          postpone r> ; immediate
-variable #user  16 #user !
+variable #user  18 #user !
 : user  create  #user @ ,  cell #user +!  does> @  U0 @ + ;
 : vocabulary   create  PATCHES >link
                        CURRENT @ @ ,

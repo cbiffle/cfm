@@ -1,0 +1,66 @@
+
+```forth
+10 for  i .  next
+
+
+: for
+  postpone begin
+  postpone 1-
+  postpone >r
+; immediate
+
+: i  r@ ;
+
+: next
+  postpone r>
+  [: 0 over = ;] compile,
+  postpone until
+  postpone drop
+; immediate
+
+```
+
+```forth
+10 0 do  i .  loop
+
+variable leaves
+
+: (do)  ( check-flag -- )
+  leaves @ swap    0 leaves !
+  [: over r> swap >r >r  swap - ;] compile,
+  if
+    [: 0 over = ;] compile, postpone if  leaves >link  postpone then
+  then
+  postpone begin
+  postpone >r
+;
+
+: do false (do) ; immediate
+: ?do true (do) ; immediate
+
+: i  r> r> r@ over >r + swap >r ;
+
+: +loop
+  [: r> r> swap >r + 0 over = ;] compile,
+  postpone until
+  leaves @  begin  ?dup while  dup @ swap here u2/ swap !  repeat
+  postpone drop
+  postpone rdrop
+  leaves !
+; immediate
+
+: loop  1 postpone literal postpone +loop ; immediate
+
+: unloop
+  postpone rdrop
+  postpone rdrop
+; immediate
+
+: leave
+  postpone r>
+  leaves >link
+; immediate
+
+```
+
+

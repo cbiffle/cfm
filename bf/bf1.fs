@@ -3,14 +3,9 @@
 ---
 \ Utilities.
 : fill  ( c-addr u c -- )
-  >r
-  bounds begin
-    over over xor
-  while
-    r@ over c!
-    1+
-  repeat
-  rdrop 2drop ;
+  rot rot bounds do
+    dup i c!
+  loop drop ;
 ---
 \ REMARKER Creates a word that marks a point in the dictionary.
 \ When executed, the word will restore the dictionary, search

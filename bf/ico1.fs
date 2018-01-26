@@ -14,11 +14,11 @@
 \ Text mode video display: fundamentals.
 \ Overwrites a section of video memory with a given value.
 : vfill  ( v-addr u x -- )
-  VWA io@ >r >r  swap VWA io! ( u ) ( R: oldVWA x )
-  begin dup while ( count ) ( R: vwa x )
-    1- r@ VWD io!
-  repeat
-  rdrop drop r> VWA io!  ;
+  VWA io@ >r  rot VWA io!
+  swap 0 do
+    VWD io!d
+  loop drop
+  r> VWA io!  ;
 variable vcols    variable vrows
 : vsize vcols @ vrows @ u* ;
 variable vatt   \ attributes for text in top 8 bits
@@ -94,7 +94,7 @@ variable sdcyc  50 sdcyc !
   50 sdcyc !  \ Use slow clock.
   1 >sdmosi   1 >sdcs_
   \ Send 9 bytes with MOSI high (=81 edges, > required 74)
-  9 begin dup while 1- $FF sdx drop repeat drop
+  9 0 do $FF sdx drop loop
   0 >sdcs_   \ select card
   sdcmd0  1 <> 1 and throw
   begin sdacmd41 0= until
@@ -116,12 +116,9 @@ variable sdcyc  50 sdcyc !
   17 sdcmd sdr1 throw
   begin $FF sdx $FF xor until
   dup >r    \ stash the buffer address
-  512 bounds begin
-    over over xor
-  while
-    $FF sdx over c!
-    1+
-  repeat 2drop
+  512 bounds do
+    $FF sdx i c!
+  loop
   $FF sdx 8 lshift $FF sdx or   \ read the CRC16
   r> 512 sdcrc16 xor throw  sdidle ;
 ---
@@ -183,18 +180,13 @@ variable blkall
 ---
 \ Thru, List
 : thru  ( i*x u1 u2 -- j*x )
-  begin
-    >r dup >r  load  r> r>  over over xor
-  while
-    swap 1+ swap
-  repeat 2drop ;
+  1+ swap do
+    i load
+  loop ;
 : list  ( u -- )
-  block 1024 bounds
-  begin
-    over over xor
-  while
-    dup 64 cr type  64 +
-  repeat 2drop ;
+  block 1024 bounds do
+    cr  i 64 type
+  64 +loop ;
 ---
 \ PS/2 keyboard interface: init, receive ISR
 variable kbdbuf
