@@ -1,0 +1,194 @@
+I'm currently amused by the notion of evolving bsforth into a useful kernel
+providing Unix-like multiprogramming and isolation. The obvious name for such a
+kernel is 'ok', since that's the only thing bsforth ever says on its own. It's
+presumably a recursive acronym for 'ok kernel', because we computer people only
+have so many jokes.
+
+This collects some random musings around that topic.
+
+
+---
+
+Current state of isolation/MMU
+------------------------------
+
+I can currently run two mostly-isolated programs, with the current memory
+management hardware, and I use it for recompilation and bootstrapping. The
+current scheme isn't fully general though:
+
+- The stacks are shared, so it really only supports up-calls into mostly trusted
+  code.
+- Transfer between the two environments is by direct jump to arbitrary address.
+  Limiting it to gates would be preferable.
+
+I could fix the first one by swapping the stack contents, which is just software
+I haven't written yet.
+
+The second one may require hardware changes.
+
+A simple change would have the MMU generate an interrupt if map 1 tries to
+switch back to map 0. This would still have the effect of switching to map 0
+(because interrupts do that) but would do so after saving map 1's return address
+and vectoring to a controlled gate location.  However, this implies that map 1
+can still access I/O devices, which is probably a power that should be revoked
+from normal user applications.
+
+If I/O access were able to be revoked, simply attempting an I/O operation might
+cause an interrupt, which could also be treated as a system call.
+
+I don't really have space in the CFM instruction encoding for an explicit
+syscall operation, so that's out.
+
+
+On Banning I/O, and abusing it for syscalls
+-------------------------------------------
+
+Let's assume I want to ban direct I/O access by some programs. If such a program
+attempted an I/O operation, the system would generate an interrupt. I haven't
+really considered memory access faults, which is basically what this is.
+
+Some piece of memory management hardware would need to block the operation
+before it hits the I/O bus.
+
+The interrupt would get processed on the fetch phase after the operation. This
+is the bus response cycle for a memory or I/O operation -- an idle cycle for
+stores, and the completion cycle for loads.
+
+Because of instruction fusion, I'm not sure that arbitrary instructions can be
+cleanly restarted. So it might be difficult to implement fault-driven virtual
+memory on this CPU, not that I was planning on it.
+
+But this means that illegal I/O operations probably can't be emulated, either.
+
+However, *specially crafted* I/O operations could be used to trigger reliable
+faults.
+
+
+Syscalls by trigger address
+---------------------------
+
+Interrupt on any execution of the last word in virtual memory. Because the
+instruction set makes it hard to generate compact code up there, this is
+unlikely to occur by accident.
+
+Or the first word, which could be skipped in code generation.
+
+Either way, the likely mechanism is that the IRQ controller gets extended to
+recognize a fetch of the trigger address as an immediate interrupt condition
+causing a vector fetch and map switch. This is slightly odd because the vector
+fetch doesn't need to be a call; being a synchronous exception, we can expect
+the caller to have saved whatever state they're interested in saving, including
+the return address. But that might be too much complication, so maybe the
+handler just knows there's an extra return address to dispose of / ignore.
+
+The current implementation of the interrupt controllers supports this kind of
+thing, though I haven't done it before. An interrupt condition asserted during
+the fetch address phase takes effect immediately. So I wouldn't need to change
+the IRQC, just add a fetch address comparator as an interrupt source.
+
+
+Controlling I/O through the MMU
+-------------------------------
+
+It occurs to me that I could ban I/O by user programs pretty easily if I/O were
+still memory mapped: don't map the I/O space into their address spaces. I could
+pack all devices into a page, thus losing 4-8kiB of physical RAM in exchange for
+not having to build out an "I/O control" facility.
+
+Or, I could alter the MMU such that individual pages are either memory or device
+space, thereby retaining the full MiB of memory range. Though I'd be kind of
+surprised to wind up with enough device space to fill a page; I bet device space
+would just wind up with the same partially decoded repeating devices throughout.
+
+On the other hand, I'm not sure what translating the device addresses would do
+to timing. ...okay, no, it should do nothing to timing so long as I pack the
+devices into a page. Their decoder would ignore the translation completely.
+
+Having memory vs. device be an attribute in the MMU page table has the advantage
+that it's basically free to decode. When an access hits the MMU, it reads the
+corresponding page entry, and muxes it to memory or I/O based on a single flop.
+(Compare to placing all devices in a physical page, say page $FF000; that
+requires a comparator on the top eight bits.) So I expect the "device attribute"
+option to be faster.
+
+
+---
+
+Architecture sketching
+----------------------
+
+I'm inclined to go with something quite like early versions of Minix, because
+they're simple and still fairly principled. I suspect that doing it in Forth
+will produce a smaller system; I have a pretty decent compiler that fits in a
+single page of RAM, for example.
+
+But we'll see!
+
+Specifically...
+
+The core of the kernel provides process scheduling, interrupts, and message
+passing. This should be pretty easy to get working.
+
+Drivers are processes. They might be lightweight processes running within the
+kernel address space, as in Minix 1, or separate processes; doing separate
+processes would be pretty easy if I can map I/O space as discussed above. I
+don't entirely understand why Minix 1 has drivers in the kernel in the first
+place; there's a comment in the First Edition that AST was concerned about
+context switch overhead, but on an 8088 you're already paying most of the
+context switch overhead by multiprogramming drivers at all. I guess you can skip
+saving the segment registers?
+
+Anyway. Drivers are processes in the sense of being independently scheduled, but
+the rest of the implications are TBD.
+
+On top of the kernel and drivers are server processes, which are definitely
+user-mode but trusted. I am inclined to support loadable filesystems, which
+Minix 1 did not. I'd borrow parts of Minix 3's VFS model. So we'd wind up with
+the following likely servers:
+
+- MM handles memory assignment to processes, fork, exec.
+- NS (namespace) keeps track of process namespaces, mount points, open files.
+- Individual FS servers handle each mounted filesystem, subordinate to NS. I'd
+  probably start a new instance on any mount. This implies that we need to be
+  able to start/stop servers at runtime.
+- Eventually, some form of network server.
+
+The NS server is also where I'd implement Plan 9 style per-process namespaces,
+if desired. With some care, this can be a fairly isolated user-space change.
+
+
+On the MM front, I'd expect to roll like Minux 1 and not bother with swapping or
+paging, at least initially. Segment swapping would be easy enough to add later.
+Note that the MMU *would* enable compaction of allocated memory, unlike Minix 1.
+
+
+It would be an interesting experiment to try to enable the mounting of
+unprivileged user processes (i.e. not system-recognized servers at all), as in
+Plan 9. This assumes that private namespaces are a thing, of course. For changes
+to a single global namespace, root privilege (and thus the ability to register
+trusted semi-privileged servers) seems appropriate.
+
+
+I'm not convinced that network and filesystem servers are all that different.
+Might not be necessary to distinguish.
+
+For that matter, I'm not convinced that device drivers and filesystem servers
+are all that different.
+
+---
+
+Minix's MM-FS division seems like it would make it quite difficult to implement
+/proc. Looks like someone has done it, in Minix 3 at least, but I can't find a
+detailed specific design doc.
+
+---
+
+The kernel would need to operate a lot like the outer interpreter in Forth, in
+that it would not be in control of the stacks. On interrupt, the kernel has some
+preempted task's stack; if a task switch is required, it must drain the stack
+into a buffer and reload from another.
+
+Like the outer interpreter, the kernel is basically stateless, and mostly
+charged with forwarding control from one bit of code to another.
+
+

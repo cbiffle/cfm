@@ -1,0 +1,361 @@
+Musings on the Minix architecture
+=================================
+
+Minix versions late enough to have networking support have a third core server
+that handles it. Networking appears as a device, e.g. `/dev/ip`. The networking
+server must thus have a way of registering itself with the FS and claiming the
+associated major device number(s), because FS hosts the dev switch.
+
+On the other end, the network service presumably interacts directly with the
+network drivers.
+
+In 2.0.4:
+
+- INET registers with FS using a signon message claiming a particular device
+  with style CLONE. Amusingly, it reads the device node...by statting /dev/ip.
+
+- FS allows a superuser process to claim any open device number (one not already
+  bound to a task in its dmap) with the svrctl FSSIGNON message.
+
+- The CLONE style causes FS to use the `clone_opcl` procedure to process open
+  and close requests. This differs from `gen_opcl` in that the device may, in
+  response to OPEN, return a new minor device number. If this occurs, FS
+  allocates an open-but-unlinked inode on the root device to represent the
+  ephemeral device file of the cloned device. From then on, the minor device
+  number forms a sort of session identifier distinguishing separate open calls
+  to the device.
+
+- Despite getting some shade in the Plan 9 namespaces paper, this scheme isn't
+  actually a lot of code, and doesn't seem like a giant hack. A small hack, yes.
+
+- So: INET registers to handle the /dev/ip device, which when opened will
+  allocate a new minor number to distinguish various IP-level sessions.
+
+Before registering as a service, INET interacts with FS and MM as a normal user
+process. After becoming a service, it seems like it would need to be more
+careful. I'd love to have a design doc.
+
+
+INET does not appear to use the filesystem to locate ethernet devices. Instead,
+it gets a static configuration file mapping ethernet device names to kernel task
+names, and then looks up the tasks by name during startup. It records the
+process numbers of the tasks for future communication.
+
+For each interface, it creates a minor number (and occupies one of INET's
+internal fd table slots) for interacting with the raw ethernet device.
+
+
+
+So that's all fairly simple.
+
+
+---
+
+The mechanism exploited by INET basically allows for pseudo-devices, in the same
+sense as pseudo-ttys: it allows loadable out-of-kernel processes to claim a
+major device number and manage it. It is more powerful than ptys, which only
+allow a process to claim a single clone instance of a device, not the entire
+family (major number). However, to do so, they must become a server, unlike with
+ptys.
+
+It nevertheless feels odd to have both mechanisms. In particular, I feel like
+with the mechanisms that allow INET to exist, there is no need for a kernel pty
+driver -- it could become a server.
+
+---
+
+Minix versions up to and including the book version of 3 don't have a VFS.
+
+One got added in, like 3.2, iirc.
+
+With the addition of a VFS, filesystems wind up looking a lot more like the INET
+server. They serve requests from the VFS process, which is still responsible for
+maintaining things like the dev switch. Behind the scenes they send messages to
+other servers/tasks, which they presumably locate using insider information
+provided to them on mount.
+
+This raises the question of whether INET could reasonably be a filesystem. After
+all, Minix's interface to the network does go through special files, unlike most
+modern Unices.
+
+---
+
+Modeling a filesystem as a server could operate like INET: the FS server process
+maintains a registry of mount points, as it does today, but rather than direct
+inode numbers and devices it thinks in terms of server processes implementing
+the mounted filesystems.
+
+A program started as the superuser could upgrade itself into a filesystem server
+by registering in the proper places, like INET. In fact, the process of mounting
+a filesystem is probably *exactly that*: running a new copy of the filesystem
+server. The mount command itself becomes unnecessary.
+
+How does the filesystem find the underlying device(s) it needs? I feel like the
+Unixy way would be to open the devices before registering as a service,
+analogous to opening redirection files before execing. Once it becomes a
+service, it's no longer allowed to use FS's public API, but it *is* provided
+with the inside scoop on its open FDs at the time it registered: what process
+they route to and what context information distinguishes them.
+
+If done correctly, this would eliminate the need for loopback devices: a
+filesystem could just as easily open a file before registering as a device.
+
+---
+
+Signing on as a server in Minux 2.0.4 is a three-step process. INET is the
+canonical one, and the manpage for the relevant calls literally says "the only
+way to know how to properly use these calls is to study the associated ...
+code."
+
+So.
+
+The process is:
+
+- Do whatever setup you need to do while still a normal process.
+
+- Sign on with MM (no arguments, pass/fail).
+
+- Sign on with SYS (no arguments, feeds back caller's raw proc nr).
+
+- Sign on with FS (takes device to own).
+
+Breaking this out in more detail.
+
+MM Signon
+---------
+
+MM interprets the MMSIGNON message as follows:
+
+- Ensure that the caller is privileged.
+- Inform FS that the caller has exited, simulating the filesystem portion of
+  exit.
+  - Unsuspend? Poorly commented section I don't understand immediately.
+  - Close open files.
+  - Release directories (root and wd)
+  - If the exiting process is a session leader, processes in its session will
+    share its tty. Close all instances out, leaving them headless. This code is
+    absent in Minix 1, but I think the notion of sessions is new (analogous to
+    v7 proc groups?)
+- Wake the parent if the parent is waiting, simulating the process tree portion
+  of exit.
+- Move child processes to init, simulating the other tree portion.
+- Zero the pid and make the process parentless.
+
+This is a sort of reincarnation. The process is, for most purposes, killed: its
+children are orphaned, its files are closed, and its parent is notified. And yet
+the process's memory image lives on, under a new identity as a server.
+
+Architecturally, I find this operation fairly elegant; it reminds me of exec.
+From an engineering perspective, there is a dangerous level of algorithm
+duplication between this and `mm_exit`. I would expect drift over time.
+
+It would be interesting to compare Minix 3, which I believe uses an entirely
+different server generation method.
+
+SYS Signon
+----------
+
+SYS signon actually occurs through the SYSCTL call. The procedure within SYS is:
+
+- Ensure the caller is a privileged user process.
+- Provide it with its proc nr (which, as opposed to a PID, user processes can't
+  normally come by).
+- Raise its priority to SERVER.
+- Clear its pid.
+
+FS Signon
+---------
+
+Remember that, at this point, FS thinks the process is dead. For reals; MM sent
+the exact same message it would send on actual process death.
+
+So FS is now hearing about a *new* process that happens to occupy the same slot.
+What does FS do?
+
+- Verifies that the sender is running as the superuser. (Remember, this signon
+  message comes *from the server* and thus could be forged!)
+- Copies in the arguments, which are a `dev_t` to be managed and a management
+  style.
+- Verifies that the arguments are in range for the dmap (dev switch).
+- Verifies that the requested major dev is not claimed by either a driver or an
+  earlier server.
+- Sets up an open/close strategy function based on the requested style.
+- Assigns the `PID_SERVER` pid, which is -1.
+
+Hm. Observations:
+
+- It's interesting that fs and mm assign servers numerically different pids (0
+  in mm, -1 in fs).
+- Only a dmap entry with `dmap_task` ANY can be claimed. The initial contents of
+  the dmap are hardcoded in table.c; device drivers *do not* use the same claim
+  mechanism.
+- dmap claims are permanent. In particular, there does not appear to be any
+  mechanism for un-claiming a device should the server exit or crash. (And there
+  is certainly not a syscall for doing it cooperatively.) It seems like if INET
+  crashes, Minix 2 is boned.
+- The code for FS is odd. In particular, in param.h, there are a lot of
+  unhygenic macros that implicitly reference locals with particular names. I
+  also think I'm seeing information passed around in globals (though it might
+  secretly be locals, because unhygenic macros). All in all, my impression is
+  that FS is not engineered to the same standards as some of the other system
+  components.
+
+Process notes
+-------------
+
+A process becoming a server loses filesystem access immediately upon the first
+signon step, because MM tattles to FS. I think this is kind of unfortunate,
+because open files are a useful version of capabilities in Unix: the set of file
+descriptors forms a nice, hard to forge, and very general description of the
+authority a process has.
+
+As I mentioned above, the idea of a server using its user-process authority to
+open some resources (such as an ethernet device, in the case of INET) and then
+convert to a server while holding those resources appeals to me. Otherwise, the
+server needs some (ad-hoc) way of finding and claiming devices.
+
+In the case of INET, this means scanning kernel task names looking for known
+values. It's like the filesystem, but separate, less flexible, and probably less
+well tested. (This is the basic argument the Plan 9 devs made.)
+
+At the same time, once a process has become a server, it may not be able to use
+FS. (Some can. MM appears to use normal filesystem calls, and FS does maintain
+state for servers after signon. But I'm imagining a future world where servers
+can be filesystems, and those certainly cannot call back to FS.)
+
+This implies some way of converting the open file descriptor entry into some
+sort of server-world channel. It would need to keep the file open (retain the
+inode in cache, not close the device, etc), and would need to allow the server
+to communicate directly with the implementor (another filesystem server, a
+device driver, wherever pipes live) but using server mechanisms like direct
+messaging. This means (as I noted above) a task ID and some sort of context
+parameter.
+
+To ensure that the file abstraction is maintained, the messages sent by a
+filesystem to a block device should follow the same protocol as that used to
+talk to filesystems themselves.
+
+
+---
+
+The way asynchronous sends are implemented in Minix 3 is simpler than I had
+expected. (The original paper calls this ASEND, but if you're trying to find it
+in the modern sources, search for SENDA instead.)
+
+(Side note: any concerns I had about unhygenic macros, large loop bodies, and
+variables being reused in different roles in Minix 2 pale in comparison to the
+Minix 3 sources. See: the undocumented `A_RETRIEVE` macro in proc.c.)
+
+Asynchronous sends allow a process to have multiple sends outstanding. They are
+buffered in caller space, not kernel space. The implementation of this is:
+
+The kernel maintains, for each server process, a pair of pointers defining the
+asynchronous send buffer. These are virtual addresses in the caller's space.
+
+The SENDA operation updates these values, throwing away whatever their previous
+values were. (And thus a SENDA with a zero-length table can be used to stop
+asynchronous sends, though it's a race, so you'd want to check the contents of
+the table after.)
+
+Immediately upon being provided with the table, the kernel takes a first pass
+over it, marking any entries that use reserved bits or send to illegal
+destinations, for example. (Empty entries have a flag word of zero; previously
+processed entries have the `AMF_DONE` flag set. The kernel skips both, allowing
+the use of a partially-filled or previously-processed buffer.)
+
+During the first pass, messages are delivered to any partner that is waiting to
+receive. If the kernel succeeds in delivering all of the messages, it records a
+zero-length table (which is going to be important in a minute).
+
+Messages to partners that cannot be delivered immediately cause a bit in the
+partner's `p_misc_flags` to be set (the `MF_ASYNMSG` flag), recording that an
+asynchronous message is pending from *somewhere*. (This is where things have
+gotten simpler than I expected, and it's actually fairly clever.)
+
+
+The next phase occurs during receive. Messages at this point in the system's
+evolution can be received from *three* sources: notifications, rendezvous
+callers, and asynchronous sends. The receive algorithm scans them in that order.
+So if a process is trying to receive, and there are no pending notifications (or
+they are blocked because it's a sendrec), and there are no waiting callers, the
+kernel will check for asynchronous messages iff the process's `MF_ASYNMSG` flag
+is set.
+
+The `MF_ASYNMSG` flag being set is not a guarantee that messages are pending.
+The caller might have changed their mind, for instance, or died. So when a
+process finds the flag set during receive, it needs to go scan tables to see if
+there's an actual message pending.
+
+Which tables? Well, if the process is requesting to receive from only one
+source, that's easy: scan the corresponding process. If it's ANY, scan all of
+them.
+
+But not *all* of them. Only servers can originate asynchronous sends. The kernel
+recognizes this indirectly by scanning the priv table instead of the proc table.
+In Minix 3, server-specific fields are broken out into the priv structure, and
+while each server has one, all user processes *share* one. So the number of
+processes to be checked is the number of servers, plus one, and the final one is
+expected to have an empty table.
+
+The scan is stopped as soon as a suitable, non-DONE message is found. The
+worst-case cost is the product of the sizes of all registered asynchronous send
+tables. In theory, this can be `num_servers * gigabytes`, but in practice (1)
+many servers are prevented by policy from having asynchronous send tables in the
+first place, and (2) servers with access to the mechanism are trusted not to
+register ridiculously giant tables.
+
+This is the insight I was referring to above as surprising. I'm accustomed to
+hard real time environments that don't assume any particular segregation of
+processes, and in such an environment, this implementation would have terrifying
+worst case timing and could not be used. In Minix, it seems pretty well suited.
+
+
+A few more random notes on the mechanism.
+
+Nothing prevents a caller from altering the contents of the asynchronous send
+table after passing it to the kernel. I would assume that servers using SENDA
+would register a table early on and leave it registered for their entire life.
+But this doesn't work, because of a thing I noted above, and a thing I elided.
+First, if you hand the kernel an empty table, it won't get registered. Second,
+if the kernel later scans the table and finds no work to do, it will
+*un-register* it. So you need to re-register the table each time you know
+there's new work to do.
+
+If the caller alters the table without calling SENDA, the kernel will not
+discover the alteration and set the corresponding `MF_ASYNMSG` bits. It is
+still possible for a 'late-arriving' message like this to be delivered, however,
+if it is found during a scan by a process whose `MF_ASYNMSG` bit was set *by
+someone else*. This seems like a source of bugs, in that one could forget to
+re-call SENDA and have it still mostly work. But these bugs would affect the
+server, not the kernel, and so I think the current mechanism design is
+reasonable. (People seem to use SENDA through the `asynsend` wrapper, which
+copies messages into a private buffer. It is careful not to overwrite any
+section of the buffer while it is registered, using a zero-length SENDA to
+unregister it before moving anything around.)
+
+When the kernel delivers a message, it sets `AMF_DONE`. The `AMF_NOTIFY` flag
+requests that the process hosting the asynchronous message table be notified
+whenever this occurs; of course, because it's a notification, the process is not
+told which message was delivered, and will have to inspect the `AMF_DONE` bits
+if it needs this information. Seems reasonable.
+
+The notification is not generated if the message is sent during the initial
+SENDA scan. No flag is returned to indicate that sends happened. This seems like
+a bug. I expect callers will have to assume sends happened after any SENDA and
+check the table.
+
+Asynchronous messages *can* be replies to sendrec, which seems like a nice
+mechanism for servers dealing with lots of untrusted clients. The `AMF_NOREPLY`
+bit disables this on a per-message basis.
+
+If the kernel discovers iffy data in the message table of a process, it will
+unregister the table. This includes finding an entry that is not empty but does
+not have its `AMF_VALID` bit set. The process hosting the table *cannot discover
+that this occurred*: no notification is sent, and processes do not appear to be
+able to read back their currently registered tables. I would argue that this is
+a design flaw, but it could be fixed. (By notifying, or by treating it as memory
+corruption and getting a message to RS.)
+
+There is a 100-line procedure that appears to be duplicated between the SENDA
+and receive implementations of the table scan. I say "appears" because they
+might be slightly different, who knows.
