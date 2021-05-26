@@ -1,5 +1,7 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE TypeFamilies #-}
@@ -52,8 +54,8 @@ import RTL.Strobes
 -- - +6: Map 1 Access. Reads/writes the part of map 1 selected by Map Pointer.
 -- - +8: Active Map flag in bit 0 (read/write).
 -- - +A: Switched due to IRQ flag in bit 0 (read/write).
-mmu :: forall v p ev ep d g s.
-       ( HasClockReset d g s
+mmu :: forall v p ev ep d.
+       ( HiddenClockResetEnable d
        , KnownNat v
        , KnownNat p
        , KnownNat ev
@@ -92,12 +94,12 @@ mmu vecfetchS enirqS = mealyp fT fR $ bundle (vecfetchS, enirqS)
         m1a' | fromStrobe vecfetch = False
              | fromStrobe enirq && sirq = True
              | Just (0, Just _) <- req = not m1a
-             | Just (4, Just x) <- req = unpack $ lsb x
+             | Just (4, Just x) <- req = bitCoerce $ lsb x
              | otherwise = m1a
 
         sirq' | fromStrobe vecfetch = m1a
               | fromStrobe enirq && sirq = False
-              | Just (5, Just x) <- req = unpack $ lsb x
+              | Just (5, Just x) <- req = bitCoerce $ lsb x
               | otherwise = sirq
 
         activeMap | not m1a || fromStrobe vecfetch = map0
@@ -117,7 +119,7 @@ data S v p = S
   , sMapPtr :: BitVector v
   , sMap1Active :: Bool
   , sSwitchedByIRQ :: Bool
-  }
+  } deriving (Generic, NFDataX)
 
 instance (KnownNat v, KnownNat p) => Default (S v p) where
   def = S

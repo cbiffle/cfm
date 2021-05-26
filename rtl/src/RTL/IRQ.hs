@@ -1,5 +1,7 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE ViewPatterns #-}
@@ -28,7 +30,7 @@ vectorMux vf = mux (fromStrobe <$> vf) (pure $ pack $ NotLit $ Call 1)
 -- space. They are disabled when an interrupt occurs. Currently, there is no
 -- way to disable interrupts programatically.
 singleIrqController
-  :: (HasClockReset d g s)
+  :: (HiddenClockResetEnable d)
   => Signal d Bool    -- ^ Interrupt input, active high, level-sensitive.
   -> Signal d Bool    -- ^ CPU fetch signal, active high.
   -> Signal d (Maybe (BitVector 1, Maybe Cell))   -- ^ I/O bus request.
@@ -67,7 +69,7 @@ data SIS = SIS
   , sisEnter :: Bool
     -- ^ Interrupt entry event strobe. Goes high on the cycle when a fetch
     -- is being replaced by a vector.
-  } deriving (Show)
+  } deriving (Show, Generic, NFDataX)
 
 instance Default SIS where def = SIS False False
 
@@ -96,7 +98,7 @@ instance Default SIS where def = SIS False False
 --    interrupt. On writes, zero bits are ignored. Reads as the interrupt
 --    enable mask (the same as IRQSE).
 multiIrqController
-  :: (HasClockReset d g s)
+  :: (HiddenClockResetEnable d)
   => Vec Width (Signal d Bool)
       -- ^ Interrupt inputs, active high, level-sensitive.
   -> Signal d Bool    -- ^ CPU fetch signal, active high.
@@ -123,7 +125,7 @@ multiIrqController irqS fetchS reqS = (vfaS, vfdS, eiS, respS)
               -- Any write to the enable-trigger register enables.
               Just (0, Just _) -> True
               -- The bottom bit of writes @ 1 gets copied into the enable bit.
-              Just (1, Just v) -> unpack $ lsb v
+              Just (1, Just v) -> bitCoerce $ lsb v
               -- Anything else leaves matters unchanged.
               _                -> misEn s
 
@@ -154,7 +156,7 @@ data MIS = MIS
     -- ^ Individual interrupt enable flags.
   , misEnter :: Bool
     -- ^ Vector fetch flag. Set during the cycle where we intercede in fetch.
-  } deriving (Show)
+  } deriving (Show, Generic, NFDataX)
 
 instance Default MIS where
   def = MIS False (repeat False) (repeat False) False

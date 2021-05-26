@@ -1,5 +1,7 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeOperators #-}
 
@@ -32,7 +34,7 @@ type Ctr = BitVector CtrWidth
 -- register, the corresponding match bit in the status register will be set.
 --
 -- The match bits in the status register are also exposed as IRQs.
-timer :: (HasClockReset d g s)
+timer :: (HiddenClockResetEnable d)
       => Signal d (Maybe (Addr, Maybe Cell))
       -> ( Signal d Cell
          , Vec MatchCount (Signal d Bool)
@@ -42,6 +44,7 @@ timer = second unbundle . moorep timerT timerR timerO (pure ())
     timerO (TimS _ irqs _) = irqs
 
 data TimS = TimS Ctr (Vec MatchCount Bool) (Vec MatchCount Ctr)
+  deriving (Generic, NFDataX)
 
 instance Default TimS where
   def = TimS 0 (repeat False) (repeat 0)

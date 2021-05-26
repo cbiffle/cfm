@@ -79,9 +79,9 @@ step s = S ms' os' mem' ds' rs' cyc'
     cyc' = s ^. sCyc + 1
 
 newtype EmuT m x = EmuT { runEmuT :: StateT S m x }
-  deriving (Functor, Applicative, Monad, MonadState S, MonadIO)
+  deriving (Functor, Applicative, Monad, MonadState S, MonadIO, MonadFail)
 
-instance (Monad m) => MonadTarget (EmuT m) where
+instance (Monad m, MonadFail m) => MonadTarget (EmuT m) where
   tload a = do
     Just v <- preuse $ sMEM . ix (fromIntegral a)
     pure $ Right $ fromIntegral v

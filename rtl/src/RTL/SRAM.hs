@@ -23,7 +23,7 @@ import CFM.Types
 -- period offset within the cycle.
 --
 -- It currently seems easier to do this outside of Clash than within it.
-extsram :: (HasClockReset d g s)
+extsram :: (HiddenClockResetEnable d, KnownNat a)
         => Signal d (Maybe (BitVector a, Maybe Cell)) -- ^ Memory request.
         -> ( Signal d (BitVector a)
            , Signal d Bool

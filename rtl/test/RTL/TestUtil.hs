@@ -157,7 +157,7 @@ genspec sf = do
         u = errorX "must not be used in this test"
 
     it "pushes return PC to R as byte address" $ property $ \x (Fetch s) ->
-      go s x ^. _2 . osROp . _3 == Just (zeroExtend $ (s ^. msPC + 1) ++# low)
+      go s x ^. _2 . osROp . _3 == Just (zeroExtend $ (s ^. msPC + 1) ++# pack low)
 
     it "always jumps" $ property $ \x (Fetch s) ->
       go s x ^. _1 . msPC == zeroExtend x

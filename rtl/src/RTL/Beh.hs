@@ -68,7 +68,7 @@ executeNormally = do
       msRPtr += 1  -- push return stack
       fetch
         <&> osROp . _2 .~ 1
-        <&> osROp . _3 .~ Just (zeroExtend $ pc' ++# low)
+        <&> osROp . _3 .~ Just (zeroExtend $ pc' ++# pack low)
 
     NotLit (ALU rpc t' tn tr nm space rd dd) -> do
       n <- view isDData

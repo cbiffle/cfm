@@ -15,7 +15,6 @@ module CFM.Inst
   ) where
 
 import Clash.Prelude
-import GHC.Generics
 import Control.DeepSeq (NFData)
 import Test.QuickCheck
 
@@ -69,7 +68,7 @@ data TMux = T         -- ^ 0: Same value as this cycle.
           deriving (Eq, Enum, Bounded, Show)
 
 data Space = MSpace | ISpace
-  deriving (Eq, Show, Enum, Bounded, Generic, ShowX, NFData)
+  deriving (Eq, Show, Enum, Bounded, Generic, ShowX, NFData, NFDataX)
 
 instance BitPack Space where
   type BitSize Space = 1

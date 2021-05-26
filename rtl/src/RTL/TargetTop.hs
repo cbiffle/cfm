@@ -13,7 +13,7 @@ import CFM.Types
 import RTL.IOBus
 import RTL.Core
 
-host :: (HasClockReset d g s)
+host :: (HiddenClockResetEnable d)
      => Signal d (Maybe Cell)   -- ^ Host-to-target data
      -> Signal d Bool           -- ^ Host "take" signal clears the T2H buffer
      -> Signal d (Maybe (BitVector 2, Maybe Cell))  -- ^ ioreq
@@ -47,7 +47,7 @@ host h2tS htakeS reqS = mooreB hostT hostO def (h2tS, htakeS, reqS)
     
         h2tEmpty = isNothing h2t
 
-target :: (HasClockReset dom gated synchronous, KnownNat n)
+target :: (HiddenClockResetEnable dom, KnownNat n)
        => Vec n Cell                -- ^ RAM image
        -> Signal dom (Maybe Cell)   -- ^ Host-to-target channel
        -> Signal dom Bool           -- ^ Host "take" or ready signal
@@ -61,14 +61,14 @@ target raminit h2t htake = (t2h, h2tEmpty)
 
 targetTop :: (KnownNat n)
           => Vec n Cell                -- ^ RAM image
-          -> Clock System 'Source
-          -> Reset System 'Asynchronous
+          -> Clock System
+          -> Reset System
           -> ( Signal System (Maybe Cell)
              , Signal System Bool
              )
           -> ( Signal System (Maybe Cell)
              , Signal System Bool
              )
-targetTop img c r = withClockReset c r $
+targetTop img c r = withClockResetEnable c r enableGen $
                     uncurry $
                     target img

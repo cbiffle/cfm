@@ -75,7 +75,7 @@ topBits = fst . split
 -- Each cycle, the 'ioDecoder' sends its muxing decision as a @BitVector m@
 -- (when an I/O device is selected at all. On the next cycle, the 'responseMux'
 -- selects the corresponding channel out of @2 ^ m@ device response channels.
-responseMux :: forall m t d g s. (KnownNat m, HasClockReset d g s)
+responseMux :: forall m t d. (KnownNat m, HiddenClockResetEnable d)
             => Vec (2 ^ m) (Signal d t)  -- ^ response from each device
             -> Signal d (Maybe (BitVector m)) -- ^ decoder output
             -> Signal d t  -- ^ response to core
@@ -98,7 +98,7 @@ partialDecode = fmap truncateAddr
 --
 -- The reset state of the machine is given by 'def' for the state type, for
 -- convenience.
-moorep :: (KnownNat a, HasClockReset dom gated synchronous, Default s)
+moorep :: (KnownNat a, HiddenClockResetEnable dom, Default s, NFDataX s)
        => (s -> (Maybe (BitVector a, Maybe Cell), i) -> s)
         -- ^ State transition function.
        -> (s -> Vec (2^a) Cell)
@@ -129,7 +129,7 @@ moorep ft fr fo = \inp ioreq ->
 --
 -- The reset state of the machine is given by 'def' for the state type, for
 -- convenience.
-mealyp :: (KnownNat a, HasClockReset dom gated synchronous, Default s)
+mealyp :: (KnownNat a, HiddenClockResetEnable dom, Default s, NFDataX s)
        => (s -> (Maybe (BitVector a, Maybe Cell), i) -> (s, o))
         -- ^ State transition and outputs function.
        -> (s -> Vec (2^a) Cell)

@@ -8,7 +8,6 @@
 module RTL.CoreInterface where
 
 import Clash.Prelude hiding (cycle)
-import GHC.Generics
 
 import Control.DeepSeq (NFData)
 import Control.Lens hiding ((:>))
@@ -24,7 +23,7 @@ data BusState = BusFetch
               | BusData Bool
                 -- ^ The bus was used for something else. The bool flag
                 -- indicates that the bus response should be written to T.
-  deriving (Eq, Show, Generic, ShowX, NFData)
+  deriving (Eq, Show, Generic, ShowX, NFData, NFDataX)
 
 instance Arbitrary BusState where
   arbitrary = oneof [ pure BusFetch
@@ -46,7 +45,7 @@ data MS = MS
   , _msT :: Cell
   , _msBusState :: BusState
   , _msLastSpace :: Space
-  } deriving (Show, Generic, ShowX, NFData)
+  } deriving (Show, Generic, ShowX, NFData, NFDataX)
 makeLenses ''MS
 
 -- At reset, pretend we're in the second phase of a store. We'll ignore the

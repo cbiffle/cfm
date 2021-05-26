@@ -13,14 +13,14 @@ import RTL.Str
 import RTL.CoreInterface
 
 -- | Registered version of the core datapath.
-core :: HasClockReset dom gated synchronous
+core :: HiddenClockResetEnable dom
      => Signal dom IS -> Signal dom OS
 core = mealy datapath def
 
 -- | Combines 'core' with the selected implementation of stacks, and exposes
 -- the local bus interface.
 coreWithStacks
-  :: (HasClockReset dom gated synchronous)
+  :: (HiddenClockResetEnable dom)
   => Signal dom Cell    -- ^ read response from memory
   -> Signal dom Cell    -- ^ read response from I/O
   -> ( Signal dom BusReq
@@ -38,7 +38,7 @@ coreWithStacks mresp ioresp = (mreq, ireq, fetch)
     n = stack "D" $ coreOuts <&> (^. osDOp)
     r = stack "R" $ coreOuts <&> (^. osROp)
 
-stack :: (HasClockReset d g s)
+stack :: (HiddenClockResetEnable d)
       => String -> Signal d (SP, SDelta, Maybe Cell) -> Signal d Cell
 stack name op = readNew (blockRamPow2 (repeat $ errorX name))
                         (op <&> (^. _1) <&> unpack)
@@ -50,7 +50,7 @@ stack name op = readNew (blockRamPow2 (repeat $ errorX name))
 -- | Combines 'coreWithStacks' with a RAM built from the given constructor, and
 -- an I/O bridge, exposing the I/O bus.
 coreWithRAM
-  :: (HasClockReset dom gated synchronous)
+  :: (HiddenClockResetEnable dom)
   => (Signal dom (Maybe (CellAddr, Maybe Cell)) -> Signal dom Cell)
     -- ^ RAM constructor
   -> Signal dom Cell    -- ^ I/O read response, valid when addressed.

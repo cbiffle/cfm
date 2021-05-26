@@ -32,9 +32,9 @@ datapath (MS dptr rptr pc t bs lastSpace) (IS m i n r) =
       pc1 = pc + 1
       -- Magnitude comparison and subtraction are implemented in terms of each
       -- other.
-      (lessThan, nMinusT) = split @_ @1 (n `minus` t)
+      (lessThan, nMinusT) = split @_ @1 (n `sub` t)
       signedLessThan | msb t /= msb n = msb n
-                     | otherwise = lessThan
+                     | otherwise = unpack lessThan
 
       loadResult = case lastSpace of
             MSpace -> m
@@ -48,7 +48,7 @@ datapath (MS dptr rptr pc t bs lastSpace) (IS m i n r) =
             NotLit (JumpZ _)              -> (-1, Nothing)
             _                             -> (0, Nothing)
       (rptr', rdlt, rop) = stack rptr $ case inst of
-            NotLit (Call _)               -> (1, Just (zeroExtend $ pc1 ++# low))
+            NotLit (Call _)               -> (1, Just (zeroExtend $ pc1 ++# pack low))
             NotLit (ALU _ _ _ tr _ _ d _) -> (d, if tr then Just t else Nothing)
             _                             -> (0, Nothing)
       -- Register updates other than the ALU
@@ -82,7 +82,7 @@ datapath (MS dptr rptr pc t bs lastSpace) (IS m i n r) =
               -- the subtractor output against zero. However, the subtractor is
               -- one of the longer paths through the ALU, and testing its
               -- result adds to that, reducing speed.
-            NLtT     -> signExtend signedLessThan
+            NLtT     -> signExtend (pack signedLessThan)
             NRshiftT -> n `rightShift` slice d3 d0 t
             NMinusT  -> nMinusT
             R        -> r
