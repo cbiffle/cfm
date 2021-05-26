@@ -12,13 +12,11 @@
 module RTL.VGA.FrameGen (framegen) where
 
 import Clash.Prelude
-import GHC.Generics
 import Data.Maybe (fromMaybe)
 import Control.Lens hiding ((:>))
 import Control.Arrow (second)
 import Control.DeepSeq
 import Test.QuickCheck hiding ((.&.))
-import Test.QuickCheck.Arbitrary.Generic (genericArbitrary)
 import CFM.Types
 import RTL.VGA.Timing (TimingSigs(..))
 
@@ -45,7 +43,7 @@ data GState = GState
   , _gsReadValue :: Cell
     -- ^ Read value, registered to improve bus timing.
   }
-  deriving (Show, Generic, NFData)
+  deriving (Show, Generic, NFData, NFDataX)
 
 makeLenses ''GState
 
@@ -64,12 +62,24 @@ instance Default GState where
     }
 
 instance Arbitrary GState where
-  arbitrary = genericArbitrary
+  -- arbitrary = genericArbitrary -- Ugh, missing `Arbitrary Bit` instance
+  arbitrary =
+    GState
+      <$> arbitrary -- _gsPixels
+      <*> arbitrary -- _gsShadowPixels
+      <*> arbitrary -- _gsChar0
+      <*> arbitrary -- _gsHIF
+      <*> arbitrary -- _gsVIF
+      <*> arbitrary -- _gsEVIF
+      <*> arbitrary -- _gsFB
+      <*> ((,) <$> (unpack <$> arbitrary) <*> arbitrary) -- _gsAddr
+      <*> arbitrary -- _gsWriteValue
+      <*> arbitrary -- _gsReadValue
 
 -- | The frame generator coordinates with two timing machines to produce
 -- control signals for driving the character generator. It is roughly analogous
 -- to an MC6845.
-framegen :: (HasClockReset d g s)
+framegen :: (HiddenClockResetEnable d)
          => Signal d (Maybe (BitVector 3, Maybe Cell))
          -> Signal d TimingSigs
          -> Signal d TimingSigs

@@ -12,7 +12,6 @@ module RTL.VGA.Timing
   ) where
 
 import Clash.Prelude
-import GHC.Generics
 import Data.Maybe (fromMaybe)
 import Control.DeepSeq
 import Test.QuickCheck hiding ((.&.))
@@ -21,7 +20,7 @@ import CFM.Types
 
 -- | Timing machine circuit for one axis (horizontal or vertical) of a raster
 -- display.
-timing :: ( HasClockReset d g s
+timing :: ( HiddenClockResetEnable d
           , KnownNat nx, KnownNat n
           , (nx + n) ~ Width
           , (n + nx) ~ Width  -- siiiiiigh
@@ -61,7 +60,7 @@ data Phase = FrontPorch -- ^ Start of blanking interval.
            | SyncPulse  -- ^ Sync pulse.
            | BackPorch  -- ^ End of blanking interval.
            | VisibleArea  -- ^ Actual pixels.
-           deriving (Show, Eq, Ord, Enum, Bounded, Generic, NFData)
+           deriving (Show, Eq, Ord, Enum, Bounded, Generic, NFData, NFDataX)
 
 instance Arbitrary Phase where arbitrary = genericArbitrary
 
@@ -101,7 +100,7 @@ data TState n = TState
   , tsCycLeft :: BitVector n
     -- ^ Cycles remaining within current phase.
   }
-  deriving (Show, Generic, NFData)
+  deriving (Show, Generic, NFData, NFDataX)
 
 instance Default (TState n) where def = TState VisibleArea def
 instance (KnownNat n) => Arbitrary (TState n) where arbitrary = genericArbitrary

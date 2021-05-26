@@ -52,12 +52,17 @@ responseMuxSpec
   :: forall m. (KnownNat m)
   => SNat m -> Spec
 responseMuxSpec mS = context ("responseMux " L.++ show mS) $ do
-  let special = withClockReset systemClockGen systemResetGen $
+  let special = withClockResetEnable systemClockGen systemResetGen enableGen $
                 responseMux @m @(BitVector m)
       sim :: [Vec (2^m) (BitVector m)] -> [Maybe (BitVector m)]
           -> [BitVector m]
-      sim inputs ch =
-        let ix = indices (d2 `powSNat` mS)
+      sim [] [] = []
+      sim (i0:inputs') (ch0:ch') =
+            -- reset is only de-asserted after the first active edge,
+            -- so duplicate the first sample
+        let inputs = i0:i0:inputs'
+            ch = ch0:ch0:ch'
+            ix = indices (d2 `powSNat` mS)
             sep = map (\i -> L.map (!! i) inputs) ix
             inputsS = map fromList sep
             chS = fromList ch

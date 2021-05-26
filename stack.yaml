@@ -1,29 +1,9 @@
-resolver: nightly-2017-08-15
+resolver: nightly-2021-05-26
 
 packages:
 - arch
 - rtl
 - tools
-- location:
-    git: https://github.com/clash-lang/clash-compiler.git
-    commit: 78fd08edec641d1ef6950054fcb0deb399486495
-  subdirs:
-  - clash-lib
-  - clash-ghc
-  extra-dep: true
-- location:
-    git: https://github.com/clash-lang/clash-prelude.git
-    commit: 7fbf635210c184038ee8638cfde84c0ca4a0559a
-  extra-dep: true
-
-extra-deps:
-- ghc-tcplugins-extra-0.2.1
-- ghc-typelits-extra-0.2.3
-- ghc-typelits-knownnat-0.3
-- ghc-typelits-natnormalise-0.5.3
-- uu-parsinglib-2.9.1.1
-- uu-interleaved-0.2.0.0
-- generic-arbitrary-0.1.0
 
 flags: {}
 

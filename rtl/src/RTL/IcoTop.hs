@@ -21,8 +21,8 @@ import qualified RTL.UART as U
 
 type PhysAddr = BitVector 19
 
-system :: forall dom gated synchronous.
-          (HasClockReset dom gated synchronous)
+system :: forall dom.
+          (HiddenClockResetEnable dom)
        => FilePath
        -> Signal dom Cell -- input port
        -> Signal dom Cell -- SRAM-to-host
@@ -83,26 +83,26 @@ system raminit ins sram2h urx =
     (ioresp6, mmuMap) = mmu @3 @7 vecfetchA ei $ partialDecode ioreq6
 
 
-{-# ANN topEntity (defTop { t_name = "ico_soc"
-                          , t_inputs = [ PortName "clk_core"
-                                       , PortName "reset"
-                                       , PortName "inport"
-                                       , PortName "sram_to_host"
-                                       , PortName "uart_rx"
-                                       ]
-                          , t_output = PortField ""
-                                       [ PortName "out1"
-                                       , PortName "hsync"
-                                       , PortName "vsync"
-                                       , PortName "vid"
-                                       , PortName "sram_a"
-                                       , PortName "sram_wr"
-                                       , PortName "host_to_sram"
-                                       , PortName "uart_tx"
-                                       ]
-                          }) #-}
-topEntity :: Clock System 'Source
-          -> Reset System 'Synchronous
+{-# ANN topEntity (Synthesize { t_name = "ico_soc"
+                              , t_inputs = [ PortName "clk_core"
+                                           , PortName "reset"
+                                           , PortName "inport"
+                                           , PortName "sram_to_host"
+                                           , PortName "uart_rx"
+                                           ]
+                              , t_output = PortProduct ""
+                                           [ PortName "out1"
+                                           , PortName "hsync"
+                                           , PortName "vsync"
+                                           , PortName "vid"
+                                           , PortName "sram_a"
+                                           , PortName "sram_wr"
+                                           , PortName "host_to_sram"
+                                           , PortName "uart_tx"
+                                           ]
+                              }) #-}
+topEntity :: Clock System
+          -> Reset System
           -> Signal System Cell
           -> Signal System Cell
           -> Signal System Bit
@@ -115,4 +115,4 @@ topEntity :: Clock System 'Source
              , Signal System Cell  -- SRAM data
              , Signal System Bit
              )
-topEntity c r = withClockReset c r $ system "rtl/syn/random-256.readmemb"
+topEntity c r = withClockResetEnable c r enableGen $ system "rtl/syn/random-256.readmemb"

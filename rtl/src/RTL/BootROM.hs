@@ -31,7 +31,7 @@ import CFM.Types
 -- monitors the CPU fetch bus, and on the *second* such jump (the first having
 -- activated the boot program at reset), the interposer disables itself and
 -- normal RAM is exposed.
-bootROM :: (HasClockReset d g s, KnownNat a)
+bootROM :: (HiddenClockResetEnable d, KnownNat a)
         => SNat n
           -- ^ Size of the ROM.
         -> FilePath

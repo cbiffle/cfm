@@ -71,7 +71,7 @@ ICO_BF_SOURCES=\
 build/ico_soc_clash.v: $(ICO_RTL_SOURCES) build/stack
 	rtl/clash -irtl/src -iarch/src -outputdir build/clash \
 	          -fclash-inline-limit=50 --verilog rtl/src/RTL/IcoTop.hs
-	cat build/clash/verilog/RTL/ico_soc/*.v > $@
+	cat build/clash/RTL.IcoTop.topEntity/*.v > $@
 
 build/ico.blif: build/ico_soc_clash.v rtl/syn/ico-top.v
 	cd rtl/syn && yosys -q \
@@ -143,7 +143,7 @@ ICE_BF_SOURCES=\
 build/icestick_soc_clash.v: $(ICE_RTL_SOURCES) build/stack
 	rtl/clash -irtl/src -iarch/src -outputdir build/clash \
 	          -fclash-inline-limit=50 --verilog rtl/src/RTL/IcestickTop.hs
-	cat build/clash/verilog/RTL/icestick_soc/*.v > $@
+	cat build/clash/RTL.IcestickTop.topEntity/*.v > $@
 
 build/icestick.blif: build/icestick_soc_clash.v rtl/syn/icestick-top.v
 	cd rtl/syn && yosys -q \

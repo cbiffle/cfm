@@ -12,8 +12,8 @@ import RTL.IOBus (moorep)
 -- | The palette maps @2^n@ attribute colors to output colors of @c@ bits each.
 -- It is a small asynchronous memory with N read ports (e.g. foreground and
 -- background), and a secondary synchronous port for the CPU.
-palette :: forall n c rp cx d g s.
-           ( HasClockReset d g s
+palette :: forall n c rp cx d.
+           ( HiddenClockResetEnable d
            , KnownNat n
            , KnownNat c
            , KnownNat cx

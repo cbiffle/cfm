@@ -1,5 +1,7 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE TypeFamilies #-}
@@ -19,7 +21,7 @@ import RTL.IOBus
 -- | A simple UART.
 --
 -- This currently provides one level of transmit queueing.
-uart :: (HasClockReset d g s)
+uart :: (HiddenClockResetEnable d)
      => Signal d Bit
      -> Signal d (Maybe (BitVector 2, Maybe Cell))
      -> ( Signal d Cell
@@ -38,7 +40,7 @@ uart din ioreq = (ioresp, txready, txidle, rxne, txout)
 ------------------------------------------------------------------------------
 -- Common registers and interface for both the transmitter and receiver.
 
-common :: (HasClockReset d g s)
+common :: (HiddenClockResetEnable d)
        => Signal d Bool -- ^ transmit register empty / ready
        -> Signal d Bool -- ^ transmitter idle
        -> Signal d (Maybe (Either FramingError (BitVector 8)))
@@ -91,7 +93,7 @@ data CS = CS
   , csCyclesPerBit :: Cell
   , csReceived :: Maybe (Either FramingError (BitVector 8))
   , csDelayedTake :: Bool
-  }
+  } deriving (Generic, NFDataX)
 instance Default CS where def = CS def def def False
 
 
@@ -108,7 +110,7 @@ type Transmit d = Signal d (Maybe (BitVector 8))  -- new data
 -- | Transmitter with a single shift register. A new value cannot be loaded for
 -- transmission until the transmitter is completely idle (that is, ready ==
 -- idle).
-transmit :: (HasClockReset d g s)
+transmit :: (HiddenClockResetEnable d)
          => Signal d (Unsigned 16)
          -> Transmit d
 transmit = curry $ mooreB transmitT transmitO def
@@ -142,7 +144,7 @@ data TS = TS
     -- placed on the wire.
   , tsTimer :: Unsigned 16
     -- ^ Core cycles remaining in current bit.
-  }
+  } deriving (Generic, NFDataX)
 instance Default TS where def = TS def (-1) def
 
 -- | Adds a single level of transmit holding buffer to a transmitter. This
@@ -150,7 +152,7 @@ instance Default TS where def = TS def (-1) def
 -- initiation of transmission by one core clock cycle.
 --
 -- This can be stacked if desired.
-addTxHold :: (HasClockReset d g s)
+addTxHold :: (HiddenClockResetEnable d)
           => Transmit d
           -> Transmit d
 addTxHold tx up = ((||) <$> txempty <*> txempty', txidle, out)
@@ -168,7 +170,7 @@ addTxHold tx up = ((||) <$> txempty <*> txempty', txidle, out)
 ------------------------------------------------------------------------------
 -- Receiver.
 
-receive :: (HasClockReset d g s)
+receive :: (HiddenClockResetEnable d)
         => Signal d (Unsigned 16)
         -> Signal d Bit
         -> Signal d (Maybe (Either FramingError (BitVector 8)))
@@ -179,7 +181,7 @@ data RS = RS
   , rsShift :: BitVector 10
   , rsTimer :: Unsigned 16
   , rsNew :: Bool
-  }
+  } deriving (Generic, NFDataX)
 instance Default RS where def = RS def def def False
 
 receiveT :: RS -> (Unsigned 16, Bit) -> RS
@@ -196,11 +198,12 @@ receiveT s0 (cycPerBit, b) =
             else s
     _ -> s { rsBitsLeft = rsBitsLeft s - 1
            , rsTimer = if rsBitsLeft s == 1 then 0 else cycPerBit
-           , rsShift = b ++# slice d9 d1 (rsShift s)
+           , rsShift = pack b ++# slice d9 d1 (rsShift s)
            , rsNew = rsBitsLeft s == 1
            }
 
 data FramingError = FramingError
+  deriving (Generic, NFDataX)
 
 receiveO :: RS -> Maybe (Either FramingError (BitVector 8))
 receiveO s

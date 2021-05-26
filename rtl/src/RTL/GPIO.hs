@@ -1,5 +1,7 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE TypeFamilies #-}
@@ -17,7 +19,7 @@ import CFM.Types
 -- - +4: NAND output pins. 1 bits will clear pins, 0 bits have no effect.
 --
 -- Reading from any address gets the current pin status.
-outport :: (HasClockReset d g s)
+outport :: (HiddenClockResetEnable d)
         => Signal d (Maybe (BitVector 2, Maybe Cell))
         -> ( Signal d Cell
            , Signal d Cell
@@ -41,7 +43,7 @@ outport = moorep outportT repeat id (pure ())
 --
 -- It also produces an interrupt on negative edges of bit 0. The interrupt
 -- condition can be cleared by any write to the port's address space.
-inport :: (KnownNat a, HasClockReset d g s)
+inport :: (KnownNat a, HiddenClockResetEnable d)
        => Signal d Cell
        -> Signal d (Maybe (BitVector a, Maybe Cell))
        -> ( Signal d Cell
@@ -56,7 +58,7 @@ inport = moorep inportT (repeat . \(InportS x _) -> x) (\(InportS _ x) -> x)
           Just (_, Just _) -> False
           -- Otherwise, OR in the negative edge detector.
           _                -> irq || negedge
-        negedge = unpack (lsb reg .&. complement (lsb port))
+        negedge = bitCoerce (lsb reg .&. complement (lsb port))
 
-data InportS = InportS Cell Bool deriving (Show)
+data InportS = InportS Cell Bool deriving (Show, Generic, NFDataX)
 instance Default InportS where def = InportS def False

@@ -14,7 +14,7 @@ import RTL.GPIO
 import RTL.Core
 import RTL.UART
 
-system :: (HasClockReset dom gated synchronous)
+system :: (HiddenClockResetEnable dom)
        => FilePath
        -> Signal dom Cell
        -> Signal dom Bit  -- UART RX
@@ -36,20 +36,20 @@ system raminit ins urx = (outs, utx)
                               partialDecode ioreq3
     irqs = irq0 :> urxne :> repeat (pure False)
 
-{-# ANN topEntity (defTop { t_name = "icestick_soc"
-                          , t_inputs = [ PortName "clk_core"
-                                       , PortName "reset"
-                                       , PortName "inport"
-                                       , PortName "uart_rx"
-                                       ]
-                          , t_output = PortField ""
-                                       [ PortName "out1"
-                                       , PortName "uart_tx"
-                                       ]
-                          }) #-}
-topEntity :: Clock System 'Source
-          -> Reset System 'Asynchronous
+{-# ANN topEntity (Synthesize { t_name = "icestick_soc"
+                              , t_inputs = [ PortName "clk_core"
+                                           , PortName "reset"
+                                           , PortName "inport"
+                                           , PortName "uart_rx"
+                                           ]
+                              , t_output = PortProduct ""
+                                           [ PortName "out1"
+                                           , PortName "uart_tx"
+                                           ]
+                              }) #-}
+topEntity :: Clock System
+          -> Reset System
           -> Signal System Cell
           -> Signal System Bit
           -> (Signal System Cell, Signal System Bit)
-topEntity c r = withClockReset c r $ system "random-3k5.readmemb"
+topEntity c r = withClockResetEnable c r enableGen $ system "rtl/syn/random-3k5.readmemb"
